@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.96"
+license = "AGPL-3.0-only"
+publish = false
+
+[workspace.dependencies]
+angzarr-fmt = { path = "crates/angzarr-fmt" }
+angzarr-fmt-clap = { path = "crates/angzarr-fmt-clap" }
+# annals is pinned by full commit; bumps are deliberate commits.
+annals-diagnostic = { git = "https://github.com/benjaminabbitt/annals", rev = "8a328c8d0fd70a0b43fbfb428250e946ebd273c4" }
+annals-yaml = { git = "https://github.com/benjaminabbitt/annals", rev = "8a328c8d0fd70a0b43fbfb428250e946ebd273c4" }
+clap = { version = "4.5", features = ["derive"] }
+fluent-bundle = "0.15"
+fluent-syntax = "0.11"
+serde = { version = "1", features = ["derive"] }
+# preserve_order keeps a struct's field order in every rendered format.
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+unic-langid = "0.9"
+
+# Every crate opts in with `[lints] workspace = true`.
+[workspace.lints.clippy]
+# Zero-width and other invisible characters in source: never intended.
+invisible_characters = "deny"
+# A literal in another normalization form than NFC reads the same as its NFC
+# twin and compares unequal.
+unicode_not_nfc = "deny"
+# Non-ASCII in a literal is written as an escape, so what the code holds is
+# visible.
+non_ascii_literal = "deny"
