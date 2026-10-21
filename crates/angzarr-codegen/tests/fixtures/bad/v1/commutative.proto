@@ -1,0 +1,11 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+  option (io.angzarr.v1.state) = {conflict_resolutions: [CONFLICT_RESOLUTION_COMMUTATIVE]};
+}

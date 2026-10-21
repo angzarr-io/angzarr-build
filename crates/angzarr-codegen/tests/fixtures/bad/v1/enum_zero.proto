@@ -1,0 +1,16 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+  Mood mood = 1;
+}
+
+enum Mood {
+  MOOD_CALM = 0;
+  MOOD_CROSS = 1;
+}

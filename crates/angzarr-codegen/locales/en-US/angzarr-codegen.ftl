@@ -1,0 +1,11 @@
+angzarr-codegen-descriptors = the descriptor set does not decode: { $detail }
+angzarr-codegen-file-not-in-set = { $file } is not in the descriptor set
+angzarr-codegen-unknown-component = { $message } names the component { $component }, which no message declares
+angzarr-codegen-unknown-emit = { $command } emits { $event }, which is not an event of its component
+angzarr-codegen-unsupported-kind = { $component } is a component of kind { $kind }; only aggregates are generated
+angzarr-codegen-commutative = { $component }'s state lists COMMUTATIVE, which is not generated yet
+angzarr-codegen-oneof = { $message } has the oneof { $oneof }, which is not mapped yet
+angzarr-codegen-nested-type = { $message } declares { $nested } inside it; declare it at the top level
+angzarr-codegen-well-known-type = { $message }.{ $field } is a { $type_name }; only google.protobuf.Timestamp is mapped
+angzarr-codegen-enum-zero = { $enum_name }'s zero value is { $value }; name it *_UNSPECIFIED
+angzarr-codegen-no-wire-path = no Rust path is given for the prost types of package { $package }
