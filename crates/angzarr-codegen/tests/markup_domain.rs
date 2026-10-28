@@ -69,3 +69,18 @@ fn test_markup_domain_leaves_state_and_payloads_to_the_markup() {
         .collect();
     assert_eq!(left, Vec::<&(String, String)>::new());
 }
+
+#[test]
+fn test_markup_domain_accepts_policy_components() {
+    // COMPONENT_KIND_POLICY marker messages are components, not refused as
+    // a kind the generator does not emit, and carry no domain type.
+    let generated = markup_domain(&descriptors(BUYIN), BUYIN, BUYIN_WIRE);
+    let generated = generated.expect("policies are accepted");
+    assert!(
+        generated
+            .iter()
+            .all(|g| !g.source.contains("struct BuyInWalletPolicy")),
+        "a policy's marker message is no domain type"
+    );
+    assert!(!generated.is_empty());
+}
