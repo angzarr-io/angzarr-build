@@ -17,7 +17,7 @@ angzarr-fmt-clap = { path = "crates/angzarr-fmt-clap" }
 annals-diagnostic = { git = "https://github.com/benjaminabbitt/annals", rev = "8a328c8d0fd70a0b43fbfb428250e946ebd273c4" }
 annals-yaml = { git = "https://github.com/benjaminabbitt/annals", rev = "8a328c8d0fd70a0b43fbfb428250e946ebd273c4" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
-angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr-project", rev = "672ed768aa1c8a8e05818c457c757cd406105e55" }
+angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr-project", rev = "636b313f4e12e38c43573e08633f1016306ce3b6" }
 clap = { version = "4.5", features = ["derive"] }
 fluent-bundle = "0.15"
 fluent-syntax = "0.11"
