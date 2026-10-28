@@ -10,7 +10,7 @@ rust-version.workspace = true
 [dependencies]
 annals-diagnostic.workspace = true
 prettyplease = "0.3.0"
-proc-macro2 = "1.0.107"
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 prost-reflect = "0.16"
 quote = "1.0.47"
 syn = { version = "3.0.9", features = ["full"] }

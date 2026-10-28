@@ -28,8 +28,10 @@ name = "angzarr-cli"
 version = "0.1.0"
 dependencies = [
  "angzarr-build",
+ "angzarr-codegen",
  "angzarr-fmt",
  "angzarr-fmt-clap",
+ "annals-diagnostic",
  "clap",
  "serde",
  "serde_json",

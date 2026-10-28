@@ -16,6 +16,11 @@ pub enum CodegenError {
     /// A command's `emits` names a message that is not one of its
     /// component's events.
     UnknownEmit { command: String, event: String },
+    /// A command's `refuses` names a message the descriptor set lacks.
+    UnknownRefusal { command: String, refusal: String },
+    /// A policy's `input_domain` or `output_domain` names a domain no
+    /// aggregate or process manager owns.
+    UnownedDomain { policy: String, domain: String },
     /// A component kind this generator does not emit yet.
     UnsupportedKind { component: String, kind: i32 },
     /// A state listing COMMUTATIVE, whose `changed` this generator does not
@@ -81,9 +86,17 @@ impl fmt::Display for CodegenError {
                 f,
                 "{command} emits {event}, which is not an event of its component"
             ),
+            CodegenError::UnknownRefusal { command, refusal } => write!(
+                f,
+                "{command} refuses {refusal}, which is not a message of the descriptor set"
+            ),
+            CodegenError::UnownedDomain { policy, domain } => write!(
+                f,
+                "{policy} names the domain {domain}, which no aggregate or process manager owns"
+            ),
             CodegenError::UnsupportedKind { component, kind } => write!(
                 f,
-                "{component} is a component of kind {kind}; only aggregates are generated"
+                "{component} is a component of kind {kind}, which this generator does not emit"
             ),
             CodegenError::Commutative { component } => write!(
                 f,
@@ -163,6 +176,8 @@ impl Diagnostic for CodegenError {
             CodegenError::FileNotInSet { .. } => "angzarr-codegen-file-not-in-set",
             CodegenError::UnknownComponent { .. } => "angzarr-codegen-unknown-component",
             CodegenError::UnknownEmit { .. } => "angzarr-codegen-unknown-emit",
+            CodegenError::UnknownRefusal { .. } => "angzarr-codegen-unknown-refusal",
+            CodegenError::UnownedDomain { .. } => "angzarr-codegen-unowned-domain",
             CodegenError::UnsupportedKind { .. } => "angzarr-codegen-unsupported-kind",
             CodegenError::Commutative { .. } => "angzarr-codegen-commutative",
             CodegenError::Oneof { .. } => "angzarr-codegen-oneof",
@@ -196,6 +211,12 @@ impl Diagnostic for CodegenError {
             }
             CodegenError::UnknownEmit { command, event } => {
                 vec![("command", s(command)), ("event", s(event))]
+            }
+            CodegenError::UnknownRefusal { command, refusal } => {
+                vec![("command", s(command)), ("refusal", s(refusal))]
+            }
+            CodegenError::UnownedDomain { policy, domain } => {
+                vec![("policy", s(policy)), ("domain", s(domain))]
             }
             CodegenError::UnsupportedKind { component, kind } => {
                 vec![("component", s(component)), ("kind", (*kind).into())]
@@ -262,6 +283,14 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::UnknownEmit {
             command: s(),
             event: s(),
+        }),
+        Box::new(CodegenError::UnknownRefusal {
+            command: s(),
+            refusal: s(),
+        }),
+        Box::new(CodegenError::UnownedDomain {
+            policy: s(),
+            domain: s(),
         }),
         Box::new(CodegenError::UnsupportedKind {
             component: s(),

@@ -12,6 +12,9 @@ mod rust;
 mod scaffold;
 
 pub use error::{CodegenError, diagnostic_samples};
+
+/// This crate's en-US messages.
+pub const EN_US: &str = include_str!("../locales/en-US/angzarr-codegen.ftl");
 pub use scaffold::{ScaffoldFile, Translate, complete, markup_domain, register, scaffold};
 
 /// The Rust source generated for one proto package.
@@ -32,7 +35,16 @@ pub fn domain(
     files: &[&str],
     wire: &[(&str, &str)],
 ) -> Result<Vec<Generated>, CodegenError> {
-    let packages = model::build(descriptor_set, files)?;
+    generate(model::build(descriptor_set, files)?, wire, rust::package)
+}
+
+/// One [`Generated`] per package, each emitted with its prost types' Rust
+/// path from `wire`.
+fn generate(
+    packages: std::collections::BTreeMap<String, model::Package>,
+    wire: &[(&str, &str)],
+    emit: fn(&model::Package, &syn::Path) -> String,
+) -> Result<Vec<Generated>, CodegenError> {
     let mut generated = Vec::with_capacity(packages.len());
     for (package, content) in packages {
         let path = wire
@@ -43,7 +55,7 @@ pub fn domain(
                 package: package.clone(),
             })?;
         generated.push(Generated {
-            source: rust::package(&content, &path),
+            source: emit(&content, &path),
             package,
         });
     }

@@ -1,4 +1,5 @@
-//! The Rust emitter: a package's domain layer on annals.
+//! The Rust emitter: a package's domain layer on annals, either complete
+//! ([`package`]) or for marked-up components ([`markup_package`]).
 //!
 //! Every domain type is a plain Rust type with its wire conversions: into the
 //! prost message infallibly, back out fallibly with annals' `WireError`
@@ -14,6 +15,28 @@ use quote::{format_ident, quote};
 
 use crate::model::{Component, Package, TIMESTAMP};
 
+/// The runtime crate the generated code targets, as its Rust identifier:
+/// every path into it, the macros crate's name (`<RUNTIME>_macros`) and the
+/// prose naming it in generated docs are built from this one name.
+pub(crate) const RUNTIME: &str = "annals";
+
+/// The runtime crate's identifier.
+pub(crate) fn runtime() -> syn::Ident {
+    format_ident!("{RUNTIME}")
+}
+
+/// The runtime's markup macros crate's identifier.
+pub(crate) fn runtime_macros() -> syn::Ident {
+    format_ident!("{RUNTIME}_macros")
+}
+
+/// `::<runtime>::next`, the runtime API the generated code is written
+/// against.
+pub(crate) fn next() -> TokenStream {
+    let runtime = runtime();
+    quote!(::#runtime::next)
+}
+
 /// The generated source for one package. `wire` is the Rust path of its
 /// prost types.
 pub(crate) fn package(package: &Package, wire: &syn::Path) -> String {
@@ -27,6 +50,52 @@ pub(crate) fn package(package: &Package, wire: &syn::Path) -> String {
     }
     for component in &package.components {
         items.extend(component_items(component, wire));
+    }
+    let file: syn::File = syn::parse2(items).expect("the emitter writes valid Rust");
+    prettyplease::unparse(&file)
+}
+
+/// The markup domain layer for one package: its domain types with their
+/// wire conversions, and a `DomainMessage` impl for every input, event and
+/// refusal of its components. No payload enums and no `State` impl: the
+/// markup generates those.
+pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
+    let mut items = TokenStream::new();
+    for e in &package.enums {
+        items.extend(enumeration(e));
+    }
+    for message in &package.messages {
+        items.extend(structure(message, wire, false));
+    }
+    let mut messages: Vec<&MessageDescriptor> = Vec::new();
+    for component in &package.components {
+        let declared = component
+            .inputs
+            .iter()
+            .flat_map(|i| std::iter::once(&i.message).chain(&i.refuses))
+            .chain(&component.events);
+        for message in declared {
+            if !messages.contains(&message) {
+                messages.push(message);
+            }
+        }
+    }
+    let next = next();
+    for message in messages {
+        let name = ident(message.name());
+        items.extend(quote! {
+            impl #next::markup::DomainMessage for #name {
+                type Wire = #wire::#name;
+
+                fn to_wire(&self) -> #wire::#name {
+                    #wire::#name::from(self.clone())
+                }
+
+                fn from_wire(wire: #wire::#name) -> Result<Self, #next::WireError> {
+                    #name::try_from(wire)
+                }
+            }
+        });
     }
     let file: syn::File = syn::parse2(items).expect("the emitter writes valid Rust");
     prettyplease::unparse(&file)
@@ -70,6 +139,7 @@ fn enumeration(e: &EnumDescriptor) -> TokenStream {
 }
 
 fn structure(message: &MessageDescriptor, wire: &syn::Path, anchor: bool) -> TokenStream {
+    let next = next();
     let name = ident(message.name());
     let full = message.full_name();
     let fields: Vec<Field> = message.fields().map(|f| Field::of(&f, wire)).collect();
@@ -108,7 +178,7 @@ fn structure(message: &MessageDescriptor, wire: &syn::Path, anchor: bool) -> Tok
         }
 
         impl TryFrom<#wire::#name> for #name {
-            type Error = ::annals::next::WireError;
+            type Error = #next::WireError;
 
             fn try_from(#param: #wire::#name) -> Result<Self, Self::Error> {
                 Ok(#name { #(#from),* })
@@ -118,13 +188,12 @@ fn structure(message: &MessageDescriptor, wire: &syn::Path, anchor: bool) -> Tok
 }
 
 fn component_items(component: &Component, wire: &syn::Path) -> TokenStream {
+    let next = next();
     let domain_const = format_ident!("{}_DOMAIN", screaming(&component.name));
     let domain = &component.domain;
-    let commands = payload(
-        &format_ident!("{}Command", component.name),
-        &component.commands,
-        wire,
-    );
+    let inputs: Vec<MessageDescriptor> =
+        component.inputs.iter().map(|i| i.message.clone()).collect();
+    let commands = payload(&format_ident!("{}Command", component.name), &inputs, wire);
     let events = payload(
         &format_ident!("{}Event", component.name),
         &component.events,
@@ -137,7 +206,7 @@ fn component_items(component: &Component, wire: &syn::Path) -> TokenStream {
         #commands
         #events
 
-        impl ::annals::next::State for #state {
+        impl #next::State for #state {
             type Snapshot = #wire::#state;
 
             fn to_snapshot(&self) -> #wire::#state {
@@ -150,13 +219,13 @@ fn component_items(component: &Component, wire: &syn::Path) -> TokenStream {
                 #state::try_from(snapshot).map_err(|error| ::annals_diagnostic::Report::of(&error))
             }
 
-            fn descriptor() -> ::annals::next::v1::StateDescriptor {
-                ::annals::next::v1::StateDescriptor {
+            fn descriptor() -> #next::v1::StateDescriptor {
+                #next::v1::StateDescriptor {
                     type_url: <#wire::#state as ::prost::Name>::type_url(),
-                    options: Some(::annals::next::v1::StateOptions {
+                    options: Some(#next::v1::StateOptions {
                         conflict_resolutions: vec![
-                            ::annals::next::v1::ConflictResolution::Strict as i32,
-                            ::annals::next::v1::ConflictResolution::AggregateHandles as i32,
+                            #next::v1::ConflictResolution::Strict as i32,
+                            #next::v1::ConflictResolution::AggregateHandles as i32,
                         ],
                     }),
                 }
@@ -167,14 +236,15 @@ fn component_items(component: &Component, wire: &syn::Path) -> TokenStream {
 
 /// An enum of `messages`, one variant each, as annals' `Payload`.
 fn payload(name: &syn::Ident, messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStream {
+    let next = next();
     let variants: Vec<syn::Ident> = messages.iter().map(|m| ident(m.name())).collect();
     let to_any = variants
         .iter()
-        .map(|v| quote!(#name::#v(value) => ::annals::next::pack(&#wire::#v::from(value.clone()))));
+        .map(|v| quote!(#name::#v(value) => #next::pack(&#wire::#v::from(value.clone()))));
     let from_any = variants.iter().map(|v| {
         quote! {
             if name == <#wire::#v as ::prost::Name>::full_name() {
-                return ::annals::next::decode_as::<#wire::#v, #v>(any).map(#name::#v);
+                return #next::decode_as::<#wire::#v, #v>(any).map(#name::#v);
             }
         }
     });
@@ -196,17 +266,17 @@ fn payload(name: &syn::Ident, messages: &[MessageDescriptor], wire: &syn::Path) 
 
         #(#froms)*
 
-        impl ::annals::next::Payload for #name {
-            fn to_any(&self) -> ::annals::next::Any {
+        impl #next::Payload for #name {
+            fn to_any(&self) -> #next::Any {
                 match self { #(#to_any),* }
             }
 
             fn from_any(
-                any: &::annals::next::Any,
-            ) -> Result<Self, ::annals::next::PayloadError> {
-                let name = ::annals::next::type_name(&any.type_url);
+                any: &#next::Any,
+            ) -> Result<Self, #next::PayloadError> {
+                let name = #next::type_name(&any.type_url);
                 #(#from_any)*
-                Err(::annals::next::PayloadError::UnknownType {
+                Err(#next::PayloadError::UnknownType {
                     type_url: any.type_url.clone(),
                 })
             }
@@ -284,9 +354,10 @@ impl Elem {
     }
 
     fn domain_type(&self) -> TokenStream {
+        let next = next();
         match self {
             Elem::Scalar(ty) => ty.clone(),
-            Elem::Timestamp => quote!(::annals::next::Timestamp),
+            Elem::Timestamp => quote!(#next::Timestamp),
             Elem::Enum(name) | Elem::Message(name, _) => quote!(#name),
         }
     }
@@ -350,11 +421,12 @@ impl Shape {
     /// `value`, a wire value of this shape, as its domain value, refusing
     /// what the domain type cannot hold.
     fn decoded(&self, value: TokenStream, message: &str, field: &str) -> TokenStream {
+        let next = next();
         let missing = quote! {
-            ::annals::next::WireError::Missing { message: #message, field: #field }
+            #next::WireError::Missing { message: #message, field: #field }
         };
         let unknown = quote! {
-            |value| ::annals::next::WireError::UnknownEnum { message: #message, field: #field, value }
+            |value| #next::WireError::UnknownEnum { message: #message, field: #field, value }
         };
         match self {
             Shape::Single(Elem::Scalar(_)) => value,
@@ -394,9 +466,31 @@ impl Shape {
 }
 
 /// `name` as an identifier, raw where it is a Rust keyword (`type`).
-fn ident(name: &str) -> syn::Ident {
+pub(crate) fn ident(name: &str) -> syn::Ident {
     syn::parse_str::<syn::Ident>(name)
         .unwrap_or_else(|_| syn::Ident::new_raw(name, Span::call_site()))
+}
+
+/// `BuyInWallet` as `buy_in_wallet`: a word starts at an uppercase letter
+/// after a lowercase one or a digit, or before a lowercase one in a run of
+/// uppercase (`HTTPServer` as `http_server`).
+pub(crate) fn snake(camel: &str) -> String {
+    let chars: Vec<char> = camel.chars().collect();
+    let mut out = String::new();
+    for (i, c) in chars.iter().enumerate() {
+        if c.is_ascii_uppercase() && i > 0 {
+            let before = chars[i - 1];
+            let after = chars.get(i + 1);
+            if before.is_ascii_lowercase()
+                || before.is_ascii_digit()
+                || (before.is_ascii_uppercase() && after.is_some_and(char::is_ascii_lowercase))
+            {
+                out.push('_');
+            }
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
 }
 
 /// `CartState` as `CART_STATE`.

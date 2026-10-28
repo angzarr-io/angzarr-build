@@ -16,10 +16,14 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use annals_diagnostic::{Arg, Diagnostic};
 
 pub use angzarr_codegen::Translate;
+
+/// This crate's en-US messages.
+pub const EN_US: &str = include_str!("../locales/en-US/angzarr-build.ftl");
 
 /// The prost types of `protos`, by package (`<package>.rs` in `OUT_DIR`),
 /// with angzarr's settings: `prost::Name` on every message, ordered maps,
@@ -54,8 +58,10 @@ pub fn markup_domain_into(
     includes: &[&str],
     wire: &[(&str, &str)],
 ) -> Result<(), BuildError> {
-    let _ = (out, protos, includes, wire);
-    Ok(())
+    let bytes = build_descriptors(out, protos, includes)?;
+    let generated =
+        angzarr_codegen::markup_domain(&bytes, protos, wire).map_err(BuildError::Codegen)?;
+    write_domain(out, generated)
 }
 
 /// The generated `register(&mut Registry)` for every component in
@@ -67,8 +73,10 @@ pub fn register(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
 
 /// [`register`], into `out`.
 pub fn register_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
-    let _ = (out, protos, includes);
-    Ok(())
+    let bytes = build_descriptors(out, protos, includes)?;
+    let source = angzarr_codegen::register(&bytes, protos).map_err(BuildError::Codegen)?;
+    let path = out.join("angzarr-register.rs");
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
 /// What [`scaffold_into`] does with a component's file that exists.
@@ -95,6 +103,7 @@ pub enum Scaffolded {
 /// under `src` (see `angzarr_codegen::scaffold`), `translate` being the
 /// refusal switch's translate selections. An absent file is written; an
 /// existing one is the user's, kept, or completed with `Existing::Complete`.
+/// Every file is decided before any is written, so a refusal writes none.
 pub fn scaffold_into(
     src: &Path,
     protos: &[&str],
@@ -102,8 +111,52 @@ pub fn scaffold_into(
     translate: &[Translate],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
-    let _ = (src, protos, includes, translate, existing);
-    Ok(Vec::new())
+    let work = scratch_dir()?;
+    let bytes = descriptors(&work, protos, includes);
+    let _ = std::fs::remove_dir_all(&work);
+    let files =
+        angzarr_codegen::scaffold(&bytes?, protos, translate).map_err(BuildError::Codegen)?;
+    let mut writes = Vec::new();
+    let mut done = Vec::new();
+    for file in files {
+        let path = src.join(&file.path);
+        if !path.exists() {
+            writes.push((path.clone(), file.source));
+            done.push(Scaffolded::Created(path));
+            continue;
+        }
+        if existing == Existing::Keep {
+            done.push(Scaffolded::Kept(path));
+            continue;
+        }
+        let mine = std::fs::read_to_string(&path).map_err(|e| io(&path, &e))?;
+        match angzarr_codegen::complete(&file, &mine).map_err(BuildError::Codegen)? {
+            Some(completed) => {
+                writes.push((path.clone(), completed));
+                done.push(Scaffolded::Completed(path));
+            }
+            None => done.push(Scaffolded::Kept(path)),
+        }
+    }
+    if !writes.is_empty() {
+        std::fs::create_dir_all(src).map_err(|e| io(src, &e))?;
+    }
+    for (path, source) in writes {
+        std::fs::write(&path, source).map_err(|e| io(&path, &e))?;
+    }
+    Ok(done)
+}
+
+/// A fresh directory for protoc's output when there is no `OUT_DIR`.
+fn scratch_dir() -> Result<PathBuf, BuildError> {
+    static RUN: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "angzarr-build-{}-{}",
+        std::process::id(),
+        RUN.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).map_err(|e| io(&dir, &e))?;
+    Ok(dir)
 }
 
 /// [`wire`], into `out`.
@@ -128,9 +181,41 @@ pub fn domain_into(
     includes: &[&str],
     wire: &[(&str, &str)],
 ) -> Result<(), BuildError> {
+    let bytes = build_descriptors(out, protos, includes)?;
+    let generated = angzarr_codegen::domain(&bytes, protos, wire).map_err(BuildError::Codegen)?;
+    write_domain(out, generated)
+}
+
+/// Each package's domain layer, as `<package>.domain.rs` in `out`.
+fn write_domain(out: &Path, generated: Vec<angzarr_codegen::Generated>) -> Result<(), BuildError> {
+    for generated in generated {
+        let path = out.join(format!("{}.domain.rs", generated.package));
+        std::fs::write(&path, generated.source).map_err(|e| io(&path, &e))?;
+    }
+    Ok(())
+}
+
+/// [`descriptors`] for a build script: Cargo reruns it when a proto
+/// changes.
+fn build_descriptors(
+    out: &Path,
+    protos: &[&str],
+    includes: &[&str],
+) -> Result<Vec<u8>, BuildError> {
     let includes = with_angzarr(out, includes)?;
     rerun_if_changed(protos, &includes);
-    let set = out.join("angzarr-domain.descriptors");
+    protoc(out, protos, &includes)
+}
+
+/// protoc's descriptor set for `protos`, written under `work`.
+fn descriptors(work: &Path, protos: &[&str], includes: &[&str]) -> Result<Vec<u8>, BuildError> {
+    protoc(work, protos, &with_angzarr(work, includes)?)
+}
+
+/// protoc's descriptor set for `protos` (`--include_imports`, so angzarr's
+/// options survive), written under `work`.
+fn protoc(work: &Path, protos: &[&str], includes: &[PathBuf]) -> Result<Vec<u8>, BuildError> {
+    let set = work.join("angzarr.descriptors");
     let output = Command::new(prost_build::protoc_from_env())
         .arg("--include_imports")
         .arg(format!("--descriptor_set_out={}", set.display()))
@@ -145,12 +230,7 @@ pub fn domain_into(
             detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         });
     }
-    let bytes = std::fs::read(&set).map_err(|e| io(&set, &e))?;
-    for generated in angzarr_codegen::domain(&bytes, protos, wire).map_err(BuildError::Codegen)? {
-        let path = out.join(format!("{}.domain.rs", generated.package));
-        std::fs::write(&path, generated.source).map_err(|e| io(&path, &e))?;
-    }
-    Ok(())
+    std::fs::read(&set).map_err(|e| io(&set, &e))
 }
 
 fn out_dir() -> Result<PathBuf, BuildError> {

@@ -1,6 +1,8 @@
 //! What the descriptor set declares, as the emitters need it: components,
-//! their commands and events, and every message and enum they reach. All
-//! refusals happen here, so an emitter only writes.
+//! their inputs (commands and facts) and events, and every message and enum
+//! they reach. Every refusal of the protos happens here, so an emitter only
+//! writes; the scaffold's own checks (translate selections, the user's
+//! markup) are the scaffold's.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,21 +19,79 @@ const EVENT: &str = "io.angzarr.v1.event";
 const STATE: &str = "io.angzarr.v1.state";
 const RESOLUTION: &str = "io.angzarr.v1.ConflictResolution";
 const COMMUTATIVE: &str = "CONFLICT_RESOLUTION_COMMUTATIVE";
-/// `ComponentKind.COMPONENT_KIND_AGGREGATE`: the only kind emitted.
-const AGGREGATE: i32 = 1;
 /// The one well-known type the domain layer maps (to annals' `Timestamp`).
 pub(crate) const TIMESTAMP: &str = "google.protobuf.Timestamp";
 const WELL_KNOWN: &str = "google.protobuf";
 
-/// One aggregate: its state message (the anchor) and what it handles.
+/// `ComponentKind`'s numbers (types.proto).
+const AGGREGATE: i32 = 1;
+const POLICY: i32 = 2;
+const PROCESS_MANAGER: i32 = 3;
+
+/// A component kind a generator emits.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ComponentKind {
+    Aggregate,
+    Policy,
+    ProcessManager,
+}
+
+impl ComponentKind {
+    fn of(number: i32) -> Option<ComponentKind> {
+        match number {
+            AGGREGATE => Some(ComponentKind::Aggregate),
+            POLICY => Some(ComponentKind::Policy),
+            PROCESS_MANAGER => Some(ComponentKind::ProcessManager),
+            _ => None,
+        }
+    }
+}
+
+/// The kinds the domain layer emits.
+pub(crate) const DOMAIN_KINDS: &[ComponentKind] = &[ComponentKind::Aggregate];
+/// The kinds the markup (scaffold, register, markup domain layer) emits.
+pub(crate) const MARKUP_KINDS: &[ComponentKind] = &[
+    ComponentKind::Aggregate,
+    ComponentKind::Policy,
+    ComponentKind::ProcessManager,
+];
+
+/// One input of an aggregate or a process manager: a command, or a fact
+/// (`CommandOptions.fact`).
+pub(crate) struct Input {
+    pub message: MessageDescriptor,
+    pub emits: Vec<MessageDescriptor>,
+    /// Its typed refusals; always empty for a fact.
+    pub refuses: Vec<MessageDescriptor>,
+    pub starts: bool,
+    pub fact: bool,
+}
+
+/// One component: its anchor message and what it handles.
 pub(crate) struct Component {
     pub anchor: MessageDescriptor,
+    pub kind: ComponentKind,
     /// The generated names' stem: `ComponentOptions.name`, else the anchor's.
     pub name: String,
-    /// The stream domain it owns.
+    /// The stream domain it owns (an aggregate's or a process manager's).
     pub domain: String,
-    pub commands: Vec<MessageDescriptor>,
+    /// A policy's source domain.
+    pub input_domain: String,
+    /// A policy's target domain.
+    pub output_domain: String,
+    pub inputs: Vec<Input>,
+    /// An aggregate's or a process manager's events (folded), or the events
+    /// a policy reacts to.
     pub events: Vec<MessageDescriptor>,
+}
+
+impl Component {
+    /// The input whose message is `full_name`.
+    pub fn input(&self, full_name: &str) -> Option<&Input> {
+        self.inputs
+            .iter()
+            .find(|i| i.message.full_name() == full_name)
+    }
 }
 
 /// Everything generated into one package.
@@ -43,11 +103,80 @@ pub(crate) struct Package {
     pub enums: Vec<EnumDescriptor>,
 }
 
-/// Packages by name, each with a component.
+/// The domain layer's packages by name, each with a component: its
+/// aggregates, every type their state, commands and events reach.
 pub(crate) fn build(
     descriptor_set: &[u8],
     files: &[&str],
 ) -> Result<BTreeMap<String, Package>, CodegenError> {
+    let components = components(descriptor_set, files, DOMAIN_KINDS)?;
+    packages(components, |c| {
+        std::iter::once(&c.anchor)
+            .chain(c.inputs.iter().map(|i| &i.message))
+            .chain(&c.events)
+            .cloned()
+            .collect()
+    })
+}
+
+/// The markup domain layer's packages by name: every type the inputs,
+/// events and refusals of each aggregate and process manager reach. The
+/// state is the markup's, and a policy holds no domain type.
+pub(crate) fn build_markup(
+    descriptor_set: &[u8],
+    files: &[&str],
+) -> Result<BTreeMap<String, Package>, CodegenError> {
+    let components = components(descriptor_set, files, MARKUP_KINDS)?
+        .into_iter()
+        .filter(|c| c.kind != ComponentKind::Policy)
+        .collect();
+    packages(components, |c| {
+        c.inputs
+            .iter()
+            .flat_map(|i| std::iter::once(&i.message).chain(&i.refuses))
+            .chain(&c.events)
+            .cloned()
+            .collect()
+    })
+}
+
+/// `components` grouped by their anchor's package, with every type `roots`
+/// reaches.
+fn packages(
+    components: Vec<Component>,
+    roots: impl Fn(&Component) -> Vec<MessageDescriptor>,
+) -> Result<BTreeMap<String, Package>, CodegenError> {
+    let mut packages: BTreeMap<String, Package> = BTreeMap::new();
+    for component in components {
+        let mut reach = Reach::default();
+        for root in roots(&component) {
+            reach.message(&root)?;
+        }
+        let package = packages
+            .entry(component.anchor.package_name().to_string())
+            .or_default();
+        for message in reach.messages {
+            if !package.messages.contains(&message) {
+                package.messages.push(message);
+            }
+        }
+        for e in reach.enums {
+            if !package.enums.contains(&e) {
+                package.enums.push(e);
+            }
+        }
+        package.components.push(component);
+    }
+    Ok(packages)
+}
+
+/// Every component declared in `files`, in declaration order, refusing a
+/// kind outside `kinds`.
+pub(crate) fn components(
+    descriptor_set: &[u8],
+    files: &[&str],
+    kinds: &[ComponentKind],
+) -> Result<Vec<Component>, CodegenError> {
     let pool = DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
         detail: e.to_string(),
     })?;
@@ -62,7 +191,7 @@ pub(crate) fn build(
     }
     // A set that never imported options.proto declares no component.
     let Some(component_ext) = pool.get_extension_by_name(COMPONENT) else {
-        return Ok(BTreeMap::new());
+        return Ok(Vec::new());
     };
     let command_ext = pool.get_extension_by_name(COMMAND);
     let event_ext = pool.get_extension_by_name(EVENT);
@@ -80,13 +209,13 @@ pub(crate) fn build(
         let Some(declared) = message_value(&options, &component_ext) else {
             continue;
         };
-        let kind = enum_field(&declared, "kind");
-        if kind != AGGREGATE {
+        let number = enum_field(&declared, "kind");
+        let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
             return Err(CodegenError::UnsupportedKind {
                 component: message.full_name().to_string(),
-                kind,
+                kind: number,
             });
-        }
+        };
         if let (Some(state_ext), Some(commutative)) =
             (pool.get_extension_by_name(STATE), commutative)
             && let Some(state) = message_value(&options, &state_ext)
@@ -104,9 +233,12 @@ pub(crate) fn build(
         };
         components.push(Component {
             anchor: message.clone(),
+            kind,
             name,
             domain: string_field(&declared, "domain"),
-            commands: Vec::new(),
+            input_domain: string_field(&declared, "input_domain"),
+            output_domain: string_field(&declared, "output_domain"),
+            inputs: Vec::new(),
             events: Vec::new(),
         });
     }
@@ -146,46 +278,49 @@ pub(crate) fn build(
             else {
                 continue;
             };
+            let mut emits = Vec::new();
             for emitted in list_field(&declared, "emits") {
                 let Value::String(event) = emitted else {
                     continue;
                 };
-                if !component.events.iter().any(|e| e.full_name() == event) {
+                let Some(event) = component.events.iter().find(|e| e.full_name() == event) else {
                     return Err(CodegenError::UnknownEmit {
                         command: message.full_name().to_string(),
                         event: event.clone(),
                     });
-                }
+                };
+                emits.push(event.clone());
             }
-            component.commands.push(message.clone());
+            let fact = bool_field(&declared, "fact");
+            let refused = list_field(&declared, "refuses");
+            if fact && !refused.is_empty() {
+                return Err(CodegenError::RefusesOnFact {
+                    message: message.full_name().to_string(),
+                });
+            }
+            let mut refuses = Vec::new();
+            for refusal in refused {
+                let Value::String(refusal) = refusal else {
+                    continue;
+                };
+                let found = pool.get_message_by_name(&refusal).ok_or_else(|| {
+                    CodegenError::UnknownRefusal {
+                        command: message.full_name().to_string(),
+                        refusal: refusal.clone(),
+                    }
+                })?;
+                refuses.push(found);
+            }
+            component.inputs.push(Input {
+                message: message.clone(),
+                emits,
+                refuses,
+                starts: bool_field(&declared, "starts"),
+                fact,
+            });
         }
     }
-
-    let mut packages: BTreeMap<String, Package> = BTreeMap::new();
-    for component in components {
-        let mut reach = Reach::default();
-        let roots = std::iter::once(&component.anchor)
-            .chain(&component.commands)
-            .chain(&component.events);
-        for root in roots {
-            reach.message(root)?;
-        }
-        let package = packages
-            .entry(component.anchor.package_name().to_string())
-            .or_default();
-        for message in reach.messages {
-            if !package.messages.contains(&message) {
-                package.messages.push(message);
-            }
-        }
-        for e in reach.enums {
-            if !package.enums.contains(&e) {
-                package.enums.push(e);
-            }
-        }
-        package.components.push(component);
-    }
-    Ok(packages)
+    Ok(components)
 }
 
 /// The component a `(command)` or `(event)` names: `Some` when it is
@@ -299,6 +434,13 @@ fn string_field(message: &DynamicMessage, name: &str) -> String {
         Some(Value::String(s)) => s.clone(),
         _ => String::new(),
     }
+}
+
+fn bool_field(message: &DynamicMessage, name: &str) -> bool {
+    matches!(
+        message.get_field_by_name(name).as_deref(),
+        Some(Value::Bool(true))
+    )
 }
 
 fn enum_field(message: &DynamicMessage, name: &str) -> i32 {
