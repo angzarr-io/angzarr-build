@@ -31,7 +31,8 @@ fn registrations(source: &str) -> Vec<String> {
         })
         .expect("fn register");
     assert_eq!(
-        text(&body.sig),
+        // syn keeps `pub` in `vis`, apart from the signature.
+        format!("{}{}", text(&body.vis), text(&body.sig)),
         "pubfnregister(registry:&mut::annals::next::Registry)"
     );
     body.block.stmts.iter().map(text).collect()
