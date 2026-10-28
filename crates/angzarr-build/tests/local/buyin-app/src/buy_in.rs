@@ -3,7 +3,7 @@
 use std::convert::Infallible;
 
 use annals::next::markup::Context;
-use annals_macros::{applies, handles_cmd, process_manager};
+use annals_macros::{applies, handles_cmd, handles_fact, process_manager};
 
 use crate::domain::*;
 
@@ -41,10 +41,10 @@ impl BuyIn {
         Ok(BuyInHeld { cents: cmd.cents })
     }
 
-    #[handles_cmd(HoldLost)]
-    fn hold_lost(&self, cmd: HoldLost, ctx: &Context) -> Result<BuyInFailed, Infallible> {
+    #[handles_fact(HoldLost)]
+    fn hold_lost(&self, fact: HoldLost, ctx: &Context) -> BuyInFailed {
         let _ = ctx;
-        Ok(BuyInFailed { short: cmd.short })
+        BuyInFailed { short: fact.short }
     }
 
     #[applies(BuyInStarted)]

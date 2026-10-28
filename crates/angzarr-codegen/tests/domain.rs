@@ -311,6 +311,16 @@ fn test_domain_refuses_a_component_kind_it_does_not_emit() {
 }
 
 #[test]
+fn test_domain_refuses_refuses_on_a_fact() {
+    assert_eq!(
+        refusal("bad/v1/refusing_fact.proto"),
+        CodegenError::RefusesOnFact {
+            message: "bad.v1.Happened".to_string(),
+        }
+    );
+}
+
+#[test]
 fn test_domain_refuses_a_package_without_a_wire_path() {
     assert_eq!(
         domain(&descriptors(&[SHOP]), &[SHOP], &[]),

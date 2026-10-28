@@ -7,8 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use angzarr_build::{
-    Existing, Scaffolded, Translate, markup_domain_into, register_into, scaffold_into,
+    BuildError, Existing, Scaffolded, Translate, markup_domain_into, register_into, scaffold_into,
 };
+use angzarr_codegen::CodegenError;
 
 const BUYIN: &[&str] = &[
     "buyin/v1/wallet.proto",
@@ -111,6 +112,30 @@ fn test_scaffold_into_with_complete_adds_only_absent_stubs() {
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("on_refused(Hold)"), "{after}");
     assert!(after.len() > before.len());
+    std::fs::remove_dir_all(&src).unwrap();
+}
+
+#[test]
+fn test_scaffold_into_with_complete_refuses_a_marker_the_proto_contradicts() {
+    let src = empty_dir();
+    scaffold(&src, Existing::Keep);
+    let path = src.join("buy_in.rs");
+    // The user marked HoldLost, a fact, as a command.
+    let mine = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("handles_fact(HoldLost)", "handles_cmd(HoldLost)");
+    std::fs::write(&path, &mine).unwrap();
+    let error = scaffold_into(&src, BUYIN, &[&fixtures()], &[], Existing::Complete)
+        .expect_err("a mismatched marker");
+    assert!(
+        matches!(
+            &error,
+            BuildError::Codegen(CodegenError::MarkerMismatch { message, .. })
+                if message == "buyin.v1.HoldLost"
+        ),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), mine);
     std::fs::remove_dir_all(&src).unwrap();
 }
 

@@ -109,11 +109,19 @@ fn test_scaffold_marks_a_process_managers_starting_command() {
         s(&[
             ("handles_cmd", "StartBuyIn,starts"),
             ("handles_cmd", "RecordHeld"),
-            ("handles_cmd", "HoldLost"),
+            ("handles_fact", "HoldLost"),
             ("applies", "BuyInStarted"),
             ("applies", "BuyInHeld"),
             ("applies", "BuyInFailed"),
         ])
+    );
+    assert_eq!(
+        signatures(imp)[..3],
+        [
+            "fnstart_buy_in(&self,cmd:StartBuyIn,ctx:&Context)->Result<BuyInStarted,Infallible>",
+            "fnrecord_held(&self,cmd:RecordHeld,ctx:&Context)->Result<BuyInHeld,Infallible>",
+            "fnhold_lost(&self,fact:HoldLost,ctx:&Context)->BuyInFailed",
+        ]
     );
     assert!(bodies_are_todo(imp), "every body is todo!()");
 }
@@ -310,19 +318,103 @@ fn test_complete_of_a_complete_file_changes_nothing() {
     assert_eq!(complete(&fresh, &fresh.source), Ok(None));
 }
 
-#[test]
-fn test_complete_counts_any_marker_naming_the_type_as_present() {
-    // The proto cannot say HoldLost is a fact, so the scaffold writes a
-    // command handler; a user who made it a fact handler has it.
-    let fresh = buyin(&[])
+/// The buy-in's fresh scaffold.
+fn buy_in_scaffold() -> ScaffoldFile {
+    buyin(&[])
         .into_iter()
         .find(|f| f.component == "buyin.v1.BuyInState")
-        .unwrap();
+        .unwrap()
+}
+
+#[test]
+fn test_scaffold_writes_handles_fact_for_a_fact_and_handles_cmd_for_a_command() {
+    // HoldLost is declared `fact: true`; the buy-in's other inputs are
+    // commands. A fact's handler returns no Result and refuses nothing.
+    let file = syn::parse_file(&buy_in_scaffold().source).unwrap();
+    let imp = inherent_impl(&file, "BuyIn");
+    let inputs: Vec<(String, String)> = markers(imp)
+        .into_iter()
+        .filter(|(name, _)| name.starts_with("handles_"))
+        .collect();
+    assert_eq!(
+        inputs,
+        s(&[
+            ("handles_cmd", "StartBuyIn,starts"),
+            ("handles_cmd", "RecordHeld"),
+            ("handles_fact", "HoldLost"),
+        ])
+    );
+    let fact = methods(imp)
+        .into_iter()
+        .find(|f| f.sig.ident == "hold_lost")
+        .expect("hold_lost");
+    assert!(
+        !text(&fact.sig.output).contains("Result"),
+        "a fact's handler is infallible: {}",
+        text(&fact.sig.output)
+    );
+}
+
+#[test]
+fn test_complete_refuses_handles_cmd_on_a_fact() {
+    let fresh = buy_in_scaffold();
+    let as_command = fresh
+        .source
+        .replace("handles_fact(HoldLost)", "handles_cmd(HoldLost)");
+    assert_ne!(as_command, fresh.source, "the scaffold handles HoldLost");
+    assert_eq!(
+        complete(&fresh, &as_command),
+        Err(CodegenError::MarkerMismatch {
+            path: "buy_in.rs".to_string(),
+            message: "buyin.v1.HoldLost".to_string(),
+            expected: "handles_fact".to_string(),
+            found: "handles_cmd".to_string(),
+        })
+    );
+}
+
+#[test]
+fn test_complete_refuses_handles_fact_on_a_command() {
+    let fresh = buy_in_scaffold();
     let as_fact = fresh
         .source
-        .replace("handles_cmd(HoldLost)", "handles_fact(HoldLost)");
-    assert_ne!(as_fact, fresh.source, "the scaffold handles HoldLost");
-    assert_eq!(complete(&fresh, &as_fact), Ok(None));
+        .replace("handles_cmd(RecordHeld)", "handles_fact(RecordHeld)");
+    assert_ne!(as_fact, fresh.source, "the scaffold handles RecordHeld");
+    assert_eq!(
+        complete(&fresh, &as_fact),
+        Err(CodegenError::MarkerMismatch {
+            path: "buy_in.rs".to_string(),
+            message: "buyin.v1.RecordHeld".to_string(),
+            expected: "handles_cmd".to_string(),
+            found: "handles_fact".to_string(),
+        })
+    );
+}
+
+#[test]
+fn test_scaffold_refuses_refuses_on_a_fact() {
+    const FILE: &str = "bad/v1/refusing_fact.proto";
+    assert_eq!(
+        scaffold(&descriptors(&[FILE]), &[FILE], &[]),
+        Err(CodegenError::RefusesOnFact {
+            message: "bad.v1.Happened".to_string(),
+        })
+    );
+}
+
+#[test]
+fn test_scaffold_refuses_translate_to_a_command_of_its_source() {
+    let selection = Translate {
+        fact: "buyin.v1.RecordHeld".to_string(),
+        ..translate_hold()
+    };
+    assert_eq!(
+        scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
+        Err(CodegenError::TranslateNotAFact {
+            policy: "buyin.v1.BuyInWalletPolicy".to_string(),
+            fact: "buyin.v1.RecordHeld".to_string(),
+        })
+    );
 }
 
 #[test]

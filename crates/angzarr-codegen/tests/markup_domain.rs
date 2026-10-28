@@ -84,3 +84,18 @@ fn test_markup_domain_accepts_policy_components() {
     );
     assert!(!generated.is_empty());
 }
+
+#[test]
+fn test_markup_domain_refuses_refuses_on_a_fact() {
+    const FILE: &str = "bad/v1/refusing_fact.proto";
+    assert_eq!(
+        markup_domain(
+            &descriptors(&[FILE]),
+            &[FILE],
+            &[("bad.v1", "::bad_proto::v1")]
+        ),
+        Err(angzarr_codegen::CodegenError::RefusesOnFact {
+            message: "bad.v1.Happened".to_string(),
+        })
+    );
+}

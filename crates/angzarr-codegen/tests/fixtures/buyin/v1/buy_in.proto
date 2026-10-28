@@ -39,11 +39,12 @@ message RecordHeld {
 }
 
 // The domestic fact BuyInWallet's translate callback hands the buy-in when
-// the wallet refuses a Hold.
+// the wallet refuses a Hold: a fact, recorded, never refused.
 message HoldLost {
   option (io.angzarr.v1.command) = {
     component: "buyin.v1.BuyInState"
     emits: ["buyin.v1.BuyInFailed"]
+    fact: true
   };
 
   int64 short = 1;

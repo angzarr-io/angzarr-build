@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// A fact declaring refuses: a fact cannot be refused.
+package bad.v1;
+
+import "io/angzarr/v1/options.proto";
+
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+}
+
+message Happened {
+  option (io.angzarr.v1.command) = {
+    component: "bad.v1.ThingState"
+    fact: true
+    refuses: ["bad.v1.Nope"]
+  };
+}
+
+message Nope {}

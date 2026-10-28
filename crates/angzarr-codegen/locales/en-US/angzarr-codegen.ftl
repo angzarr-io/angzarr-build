@@ -13,3 +13,6 @@ angzarr-codegen-translate-unknown-policy = translate names the policy { $policy 
 angzarr-codegen-translate-not-a-target-command = translate names { $command }, which is not a command of { $policy }'s target
 angzarr-codegen-translate-not-a-source-fact = translate names { $fact }, which is not an input of { $policy }'s source
 angzarr-codegen-scaffold-impl-not-found = { $path } holds no decorated impl of { $component }; it is left as it is
+angzarr-codegen-refuses-on-fact = { $message } is a fact and declares refuses; a fact cannot be refused
+angzarr-codegen-translate-not-a-fact = translate names { $fact }, a command of { $policy }'s source; it must name a fact
+angzarr-codegen-marker-mismatch = { $path } marks { $message } #[{ $found }], but the proto declares it for #[{ $expected }]

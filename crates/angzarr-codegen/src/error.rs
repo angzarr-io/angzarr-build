@@ -47,6 +47,21 @@ pub enum CodegenError {
     /// The user's file for a component holds no decorated impl of it, so
     /// `--missing` has nowhere to add stubs; the file is left as it is.
     ScaffoldImplNotFound { path: String, component: String },
+    /// A fact (`(command).fact`) declaring `refuses`: a fact cannot be
+    /// refused.
+    RefusesOnFact { message: String },
+    /// A translate selection's fact is an input of the policy's source, but
+    /// a command, not a fact.
+    TranslateNotAFact { policy: String, fact: String },
+    /// The user's file marks an input with the other marker than the proto
+    /// declares: `#[handles_cmd]` on a fact, or `#[handles_fact]` on a
+    /// command. `expected` and `found` are the markers' names.
+    MarkerMismatch {
+        path: String,
+        message: String,
+        expected: String,
+        found: String,
+    },
 }
 
 impl fmt::Display for CodegenError {
@@ -118,6 +133,23 @@ impl fmt::Display for CodegenError {
                 f,
                 "{path} holds no decorated impl of {component}; it is left as it is"
             ),
+            CodegenError::RefusesOnFact { message } => write!(
+                f,
+                "{message} is a fact and declares refuses; a fact cannot be refused"
+            ),
+            CodegenError::TranslateNotAFact { policy, fact } => write!(
+                f,
+                "translate names {fact}, a command of {policy}'s source; it must name a fact"
+            ),
+            CodegenError::MarkerMismatch {
+                path,
+                message,
+                expected,
+                found,
+            } => write!(
+                f,
+                "{path} marks {message} #[{found}], but the proto declares it for #[{expected}]"
+            ),
         }
     }
 }
@@ -148,6 +180,9 @@ impl Diagnostic for CodegenError {
                 "angzarr-codegen-translate-not-a-source-fact"
             }
             CodegenError::ScaffoldImplNotFound { .. } => "angzarr-codegen-scaffold-impl-not-found",
+            CodegenError::RefusesOnFact { .. } => "angzarr-codegen-refuses-on-fact",
+            CodegenError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
+            CodegenError::MarkerMismatch { .. } => "angzarr-codegen-marker-mismatch",
         }
     }
 
@@ -195,6 +230,21 @@ impl Diagnostic for CodegenError {
             CodegenError::ScaffoldImplNotFound { path, component } => {
                 vec![("path", s(path)), ("component", s(component))]
             }
+            CodegenError::RefusesOnFact { message } => vec![("message", s(message))],
+            CodegenError::TranslateNotAFact { policy, fact } => {
+                vec![("policy", s(policy)), ("fact", s(fact))]
+            }
+            CodegenError::MarkerMismatch {
+                path,
+                message,
+                expected,
+                found,
+            } => vec![
+                ("path", s(path)),
+                ("message", s(message)),
+                ("expected", s(expected)),
+                ("found", s(found)),
+            ],
         }
     }
 }
@@ -248,6 +298,17 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::ScaffoldImplNotFound {
             path: s(),
             component: s(),
+        }),
+        Box::new(CodegenError::RefusesOnFact { message: s() }),
+        Box::new(CodegenError::TranslateNotAFact {
+            policy: s(),
+            fact: s(),
+        }),
+        Box::new(CodegenError::MarkerMismatch {
+            path: s(),
+            message: s(),
+            expected: s(),
+            found: s(),
         }),
     ]
 }
