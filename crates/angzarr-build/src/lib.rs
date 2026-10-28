@@ -1,6 +1,9 @@
 //! Helpers for `build.rs`: angzarr's settings for prost types ([`wire`]),
-//! and the generated domain layer ([`domain`]), written to `OUT_DIR`, never
-//! into the source tree.
+//! and the generated domain layer ([`domain`], or [`markup_domain`] for
+//! marked-up components) and component registration ([`register`]), written
+//! to `OUT_DIR`, never into the source tree. And the one thing written into
+//! the source tree, once, as the user's: the markup scaffold
+//! ([`scaffold_into`], behind `angzarr scaffold rust`).
 //!
 //! These read the build environment themselves, so a calling build script
 //! needs none of it: a crate whose lints forbid `std::env` in its own code
@@ -16,6 +19,8 @@ use std::process::Command;
 
 use annals_diagnostic::{Arg, Diagnostic};
 
+pub use angzarr_codegen::Translate;
+
 /// The prost types of `protos`, by package (`<package>.rs` in `OUT_DIR`),
 /// with angzarr's settings: `prost::Name` on every message, ordered maps,
 /// and angzarr's own types taken from angzarr-proto.
@@ -28,6 +33,77 @@ pub fn wire(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
 /// path of its prost types (see `angzarr_codegen::domain`).
 pub fn domain(protos: &[&str], includes: &[&str], wire: &[(&str, &str)]) -> Result<(), BuildError> {
     domain_into(&out_dir()?, protos, includes, wire)
+}
+
+/// The domain layer for marked-up components (annals-macros), by package
+/// (`<package>.domain.rs` in `OUT_DIR`): the domain types, their wire
+/// conversions and `DomainMessage` impls (see
+/// `angzarr_codegen::markup_domain`).
+pub fn markup_domain(
+    protos: &[&str],
+    includes: &[&str],
+    wire: &[(&str, &str)],
+) -> Result<(), BuildError> {
+    markup_domain_into(&out_dir()?, protos, includes, wire)
+}
+
+/// [`markup_domain`], into `out`.
+pub fn markup_domain_into(
+    out: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    wire: &[(&str, &str)],
+) -> Result<(), BuildError> {
+    let _ = (out, protos, includes, wire);
+    Ok(())
+}
+
+/// The generated `register(&mut Registry)` for every component in
+/// `protos` (`angzarr-register.rs` in `OUT_DIR`), for the crate root to
+/// `include!`.
+pub fn register(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+    register_into(&out_dir()?, protos, includes)
+}
+
+/// [`register`], into `out`.
+pub fn register_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+    let _ = (out, protos, includes);
+    Ok(())
+}
+
+/// What [`scaffold_into`] does with a component's file that exists.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Existing {
+    /// Leave it as it is: the file is the user's.
+    Keep,
+    /// `--missing`: add the stubs it lacks, changing nothing else.
+    Complete,
+}
+
+/// What [`scaffold_into`] did with one component's file.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Scaffolded {
+    /// It was absent, and is written.
+    Created(PathBuf),
+    /// It existed and lacked stubs, which are added.
+    Completed(PathBuf),
+    /// It existed and is unchanged.
+    Kept(PathBuf),
+}
+
+/// The markup scaffold of every component in `protos`, one file each
+/// under `src` (see `angzarr_codegen::scaffold`), `translate` being the
+/// refusal switch's translate selections. An absent file is written; an
+/// existing one is the user's, kept, or completed with `Existing::Complete`.
+pub fn scaffold_into(
+    src: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    translate: &[Translate],
+    existing: Existing,
+) -> Result<Vec<Scaffolded>, BuildError> {
+    let _ = (src, protos, includes, translate, existing);
+    Ok(Vec::new())
 }
 
 /// [`wire`], into `out`.

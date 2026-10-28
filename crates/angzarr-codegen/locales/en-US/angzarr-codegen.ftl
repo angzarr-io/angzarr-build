@@ -9,3 +9,7 @@ angzarr-codegen-nested-type = { $message } declares { $nested } inside it; decla
 angzarr-codegen-well-known-type = { $message }.{ $field } is a { $type_name }; only google.protobuf.Timestamp is mapped
 angzarr-codegen-enum-zero = { $enum_name }'s zero value is { $value }; name it *_UNSPECIFIED
 angzarr-codegen-no-wire-path = no Rust path is given for the prost types of package { $package }
+angzarr-codegen-translate-unknown-policy = translate names the policy { $policy }, which no message declares
+angzarr-codegen-translate-not-a-target-command = translate names { $command }, which is not a command of { $policy }'s target
+angzarr-codegen-translate-not-a-source-fact = translate names { $fact }, which is not an input of { $policy }'s source
+angzarr-codegen-scaffold-impl-not-found = { $path } holds no decorated impl of { $component }; it is left as it is

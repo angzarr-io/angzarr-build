@@ -37,6 +37,16 @@ pub enum CodegenError {
     EnumZero { enum_name: String, value: String },
     /// A package with domain types but no Rust path for its prost types.
     NoWirePath { package: String },
+    /// A translate selection names a policy no message declares.
+    TranslateUnknownPolicy { policy: String },
+    /// A translate selection names a command that is not one of the
+    /// policy's target's.
+    TranslateNotATargetCommand { policy: String, command: String },
+    /// A translate selection's fact is not an input of the policy's source.
+    TranslateNotASourceFact { policy: String, fact: String },
+    /// The user's file for a component holds no decorated impl of it, so
+    /// `--missing` has nowhere to add stubs; the file is left as it is.
+    ScaffoldImplNotFound { path: String, component: String },
 }
 
 impl fmt::Display for CodegenError {
@@ -90,6 +100,24 @@ impl fmt::Display for CodegenError {
                 f,
                 "no Rust path is given for the prost types of package {package}"
             ),
+            CodegenError::TranslateUnknownPolicy { policy } => {
+                write!(
+                    f,
+                    "translate names the policy {policy}, which no message declares"
+                )
+            }
+            CodegenError::TranslateNotATargetCommand { policy, command } => write!(
+                f,
+                "translate names {command}, which is not a command of {policy}'s target"
+            ),
+            CodegenError::TranslateNotASourceFact { policy, fact } => write!(
+                f,
+                "translate names {fact}, which is not an input of {policy}'s source"
+            ),
+            CodegenError::ScaffoldImplNotFound { path, component } => write!(
+                f,
+                "{path} holds no decorated impl of {component}; it is left as it is"
+            ),
         }
     }
 }
@@ -110,6 +138,16 @@ impl Diagnostic for CodegenError {
             CodegenError::WellKnownType { .. } => "angzarr-codegen-well-known-type",
             CodegenError::EnumZero { .. } => "angzarr-codegen-enum-zero",
             CodegenError::NoWirePath { .. } => "angzarr-codegen-no-wire-path",
+            CodegenError::TranslateUnknownPolicy { .. } => {
+                "angzarr-codegen-translate-unknown-policy"
+            }
+            CodegenError::TranslateNotATargetCommand { .. } => {
+                "angzarr-codegen-translate-not-a-target-command"
+            }
+            CodegenError::TranslateNotASourceFact { .. } => {
+                "angzarr-codegen-translate-not-a-source-fact"
+            }
+            CodegenError::ScaffoldImplNotFound { .. } => "angzarr-codegen-scaffold-impl-not-found",
         }
     }
 
@@ -147,6 +185,16 @@ impl Diagnostic for CodegenError {
                 vec![("enum_name", s(enum_name)), ("value", s(value))]
             }
             CodegenError::NoWirePath { package } => vec![("package", s(package))],
+            CodegenError::TranslateUnknownPolicy { policy } => vec![("policy", s(policy))],
+            CodegenError::TranslateNotATargetCommand { policy, command } => {
+                vec![("policy", s(policy)), ("command", s(command))]
+            }
+            CodegenError::TranslateNotASourceFact { policy, fact } => {
+                vec![("policy", s(policy)), ("fact", s(fact))]
+            }
+            CodegenError::ScaffoldImplNotFound { path, component } => {
+                vec![("path", s(path)), ("component", s(component))]
+            }
         }
     }
 }
@@ -188,5 +236,18 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             value: s(),
         }),
         Box::new(CodegenError::NoWirePath { package: s() }),
+        Box::new(CodegenError::TranslateUnknownPolicy { policy: s() }),
+        Box::new(CodegenError::TranslateNotATargetCommand {
+            policy: s(),
+            command: s(),
+        }),
+        Box::new(CodegenError::TranslateNotASourceFact {
+            policy: s(),
+            fact: s(),
+        }),
+        Box::new(CodegenError::ScaffoldImplNotFound {
+            path: s(),
+            component: s(),
+        }),
     ]
 }

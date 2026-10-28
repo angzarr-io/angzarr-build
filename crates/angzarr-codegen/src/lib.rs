@@ -9,8 +9,10 @@
 mod error;
 mod model;
 mod rust;
+mod scaffold;
 
 pub use error::{CodegenError, diagnostic_samples};
+pub use scaffold::{ScaffoldFile, Translate, complete, markup_domain, register, scaffold};
 
 /// The Rust source generated for one proto package.
 #[derive(Clone, PartialEq, Eq, Debug)]

@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+// The buy-in: a process manager (a domain), started by StartBuyIn only.
+package buyin.v1;
+
+import "io/angzarr/v1/options.proto";
+
+message BuyInState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROCESS_MANAGER
+    domain: "buyin"
+    name: "BuyIn"
+  };
+
+  bool started = 1;
+  int64 held = 2;
+  bool failed = 3;
+}
+
+// The starting input.
+message StartBuyIn {
+  option (io.angzarr.v1.command) = {
+    component: "buyin.v1.BuyInState"
+    emits: ["buyin.v1.BuyInStarted"]
+    starts: true
+  };
+
+  bytes wallet = 1;
+  int64 cents = 2;
+}
+
+message RecordHeld {
+  option (io.angzarr.v1.command) = {
+    component: "buyin.v1.BuyInState"
+    emits: ["buyin.v1.BuyInHeld"]
+  };
+
+  int64 cents = 1;
+}
+
+// The domestic fact BuyInWallet's translate callback hands the buy-in when
+// the wallet refuses a Hold.
+message HoldLost {
+  option (io.angzarr.v1.command) = {
+    component: "buyin.v1.BuyInState"
+    emits: ["buyin.v1.BuyInFailed"]
+  };
+
+  int64 short = 1;
+}
+
+// Folded by the buy-in, and translated into a Hold by BuyInWallet.
+message BuyInStarted {
+  option (io.angzarr.v1.event) = {component: "buyin.v1.BuyInState"};
+  option (io.angzarr.v1.event) = {
+    component: "buyin.v1.BuyInWalletPolicy"
+    domain: "buyin"
+  };
+
+  bytes wallet = 1;
+  int64 cents = 2;
+}
+
+message BuyInHeld {
+  option (io.angzarr.v1.event) = {component: "buyin.v1.BuyInState"};
+
+  int64 cents = 1;
+}
+
+message BuyInFailed {
+  option (io.angzarr.v1.event) = {component: "buyin.v1.BuyInState"};
+
+  int64 short = 1;
+}
