@@ -1,5 +1,5 @@
 # The end-to-end fixture of angzarr-build's tests/local.rs: an application on
-# angzarr-local (annals), its domain layer and register() generated from the
+# angzarr-local (angzarr-embedded), its domain layer and register() generated from the
 # buy-in fixture protos, its components the scaffold with bodies written.
 # Built and run by that test only; a workspace of its own, outside
 # angzarr-cli's.
@@ -11,14 +11,14 @@ publish = false
 
 [workspace]
 
-# annals and angzarr-router at the revs the POC lands on. Both are
-# placeholders until annals step 2 (angzarr-ports) and annals dispatching
+# angzarr-embedded and angzarr-router at the revs the POC lands on. Both are
+# placeholders until angzarr-embedded step 2 (angzarr-ports) and angzarr-embedded dispatching
 # through the router land: re-pin here then (the test that builds this is
 # ignored until it can pass).
 [dependencies]
-annals = { git = "https://github.com/benjaminabbitt/annals", rev = "aa11c8c117fa756f05a4e88c5376c28e47ccc4fe" }
-annals-macros = { git = "https://github.com/benjaminabbitt/annals", rev = "aa11c8c117fa756f05a4e88c5376c28e47ccc4fe" }
-annals-diagnostic = { git = "https://github.com/benjaminabbitt/annals", rev = "aa11c8c117fa756f05a4e88c5376c28e47ccc4fe" }
+angzarr-embedded = { git = "https://github.com/benjaminabbitt/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
+angzarr-embedded-macros = { git = "https://github.com/benjaminabbitt/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
+angzarr-embedded-diagnostic = { git = "https://github.com/benjaminabbitt/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
 angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "70528f0b2de4a2de812886ea90aebb483ed47f75" }
 prost = "0.14"
 

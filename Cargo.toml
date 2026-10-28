@@ -13,9 +13,9 @@ angzarr-build = { path = "crates/angzarr-build" }
 angzarr-codegen = { path = "crates/angzarr-codegen" }
 angzarr-fmt = { path = "crates/angzarr-fmt" }
 angzarr-fmt-clap = { path = "crates/angzarr-fmt-clap" }
-# annals is pinned by full commit; bumps are deliberate commits.
-annals-diagnostic = { git = "https://github.com/benjaminabbitt/annals", rev = "8a328c8d0fd70a0b43fbfb428250e946ebd273c4" }
-annals-yaml = { git = "https://github.com/benjaminabbitt/annals", rev = "8a328c8d0fd70a0b43fbfb428250e946ebd273c4" }
+# angzarr-embedded is pinned by full commit; bumps are deliberate commits.
+angzarr-embedded-diagnostic = { git = "https://github.com/benjaminabbitt/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
+angzarr-embedded-yaml = { git = "https://github.com/benjaminabbitt/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
 angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr-project", rev = "1c2fd0e142af8d8367d9e7dc59478ff87698adbc" }
 clap = { version = "4.5", features = ["derive"] }

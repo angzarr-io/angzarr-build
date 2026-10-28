@@ -1,8 +1,8 @@
-//! The Rust emitter: a package's domain layer on annals, either complete
+//! The Rust emitter: a package's domain layer on angzarr-embedded, either complete
 //! ([`package`]) or for marked-up components ([`markup_package`]).
 //!
 //! Every domain type is a plain Rust type with its wire conversions: into the
-//! prost message infallibly, back out fallibly with annals' `WireError`
+//! prost message infallibly, back out fallibly with angzarr-embedded's `WireError`
 //! naming the field. Message fields are required (the wire's `Option` is
 //! gone), proto3 `optional` stays an `Option`, and enums are closed: the
 //! zero value (`*_UNSPECIFIED`) and any number without a variant are refused.
@@ -18,7 +18,7 @@ use crate::model::{Component, Package, TIMESTAMP};
 /// The runtime crate the generated code targets, as its Rust identifier:
 /// every path into it, the macros crate's name (`<RUNTIME>_macros`) and the
 /// prose naming it in generated docs are built from this one name.
-pub(crate) const RUNTIME: &str = "annals";
+pub(crate) const RUNTIME: &str = "angzarr_embedded";
 
 /// The runtime crate's identifier.
 pub(crate) fn runtime() -> syn::Ident {
@@ -215,8 +215,8 @@ fn component_items(component: &Component, wire: &syn::Path) -> TokenStream {
 
             fn from_snapshot(
                 snapshot: #wire::#state,
-            ) -> Result<Self, ::annals_diagnostic::Report> {
-                #state::try_from(snapshot).map_err(|error| ::annals_diagnostic::Report::of(&error))
+            ) -> Result<Self, ::angzarr_embedded_diagnostic::Report> {
+                #state::try_from(snapshot).map_err(|error| ::angzarr_embedded_diagnostic::Report::of(&error))
             }
 
             fn descriptor() -> #next::v1::StateDescriptor {
@@ -234,7 +234,7 @@ fn component_items(component: &Component, wire: &syn::Path) -> TokenStream {
     }
 }
 
-/// An enum of `messages`, one variant each, as annals' `Payload`.
+/// An enum of `messages`, one variant each, as angzarr-embedded's `Payload`.
 fn payload(name: &syn::Ident, messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStream {
     let next = next();
     let variants: Vec<syn::Ident> = messages.iter().map(|m| ident(m.name())).collect();
@@ -324,7 +324,7 @@ impl Field {
 enum Elem {
     /// A scalar: the same Rust type on both sides.
     Scalar(TokenStream),
-    /// A `google.protobuf.Timestamp`: annals' `Timestamp` on both sides.
+    /// A `google.protobuf.Timestamp`: angzarr-embedded's `Timestamp` on both sides.
     Timestamp,
     /// A domain enum; `i32` on the wire.
     Enum(syn::Ident),

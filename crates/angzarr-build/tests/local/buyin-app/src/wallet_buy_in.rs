@@ -1,8 +1,8 @@
 //! WalletBuyIn: the scaffold of `buyin.v1.WalletBuyInPolicy`, bodies
 //! written. The buy-in's root is the correlation.
 
-use annals::next::markup::{Commands, PolicyContext};
-use annals_macros::{on_event, policy};
+use angzarr_embedded::next::markup::{Commands, PolicyContext};
+use angzarr_embedded_macros::{on_event, policy};
 
 use crate::buy_in::BuyIn;
 use crate::domain::*;

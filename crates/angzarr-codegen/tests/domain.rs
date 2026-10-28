@@ -1,6 +1,6 @@
 //! The domain layer generated from a component's protos: one domain type per
 //! message the component reaches, its wire conversions, payload enums of its
-//! commands and events, and its state's annals impl. Whether the generated
+//! commands and events, and its state's angzarr-embedded impl. Whether the generated
 //! code compiles and converts correctly is held by the crates that build on
 //! it; these tests hold what is generated, read back as Rust items.
 
@@ -131,7 +131,10 @@ fn test_domain_emits_payload_enums_of_a_components_commands_and_events() {
     let impls = impls(&file);
     for payload in ["CartCommand", "CartEvent"] {
         assert!(
-            impls.contains(&("::annals::next::Payload".to_string(), payload.to_string())),
+            impls.contains(&(
+                "::angzarr_embedded::next::Payload".to_string(),
+                payload.to_string()
+            )),
             "{payload} implements Payload: {impls:?}"
         );
     }
@@ -161,7 +164,7 @@ fn test_domain_message_fields_are_required_and_optional_scalars_stay_optional() 
             ("lines", "Vec<Line>"),
             ("totals", "::std::collections::BTreeMap<String,i64>"),
             ("discount", "Option<i32>"),
-            ("opened_at", "::annals::next::Timestamp"),
+            ("opened_at", "::angzarr_embedded::next::Timestamp"),
             ("by_sku", "::std::collections::BTreeMap<String,Line>"),
         ])
     );
@@ -213,11 +216,11 @@ fn test_domain_converts_each_type_to_and_from_its_wire_message() {
 }
 
 #[test]
-fn test_domain_implements_annals_state_for_the_anchor_only() {
+fn test_domain_implements_angzarr_embedded_state_for_the_anchor_only() {
     let impls = impls(&shop());
     let states: Vec<&String> = impls
         .iter()
-        .filter(|(t, _)| t == "::annals::next::State")
+        .filter(|(t, _)| t == "::angzarr_embedded::next::State")
         .map(|(_, ty)| ty)
         .collect();
     assert_eq!(states, ["CartState"]);

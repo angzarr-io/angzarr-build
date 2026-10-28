@@ -12,7 +12,7 @@ rust-version.workspace = true
 [dependencies]
 angzarr-codegen.workspace = true
 angzarr-proto.workspace = true
-annals-diagnostic.workspace = true
+angzarr-embedded-diagnostic.workspace = true
 prost-build = "0.14"
 
 [dev-dependencies]

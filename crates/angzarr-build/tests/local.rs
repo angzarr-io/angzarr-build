@@ -1,7 +1,7 @@
 //! End to end on angzarr-local: `tests/local/buyin-app`, an application
 //! whose domain layer and `register()` are generated from the buy-in
 //! fixture protos and whose components are the scaffold with its bodies
-//! written, is built against annals and angzarr-router and run: one
+//! written, is built against angzarr-embedded and angzarr-router and run: one
 //! command, a policy step each way, and a refusal translated by a policy.
 
 use std::path::{Path, PathBuf};
@@ -75,7 +75,7 @@ fn test_the_apps_components_are_the_complete_scaffold() {
 }
 
 #[test]
-#[ignore = "runs once annals step 2 (angzarr-ports) and annals' dispatch through \
+#[ignore = "runs once angzarr-embedded step 2 (angzarr-ports) and angzarr-embedded's dispatch through \
             angzarr-router land: re-pin tests/local/buyin-app/Cargo.toml then"]
 fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/buyin-app");

@@ -1,5 +1,5 @@
 //! The buy-in on angzarr-local: one generated `register` call wires the
-//! wallet, the buy-in and both policies into annals, which dispatches each
+//! wallet, the buy-in and both policies into angzarr-embedded, which dispatches each
 //! through angzarr-router. Prints what happened, one line per fact the test
 //! checks.
 
@@ -16,8 +16,8 @@ pub mod buy_in_wallet;
 pub mod wallet;
 pub mod wallet_buy_in;
 
-use annals::next::local::Local;
-use annals::next::v1::Uuid;
+use angzarr_embedded::next::local::Local;
+use angzarr_embedded::next::v1::Uuid;
 
 use crate::domain::{Deposit, StartBuyIn};
 
@@ -27,10 +27,10 @@ fn root(n: u8) -> Uuid {
     }
 }
 
-// The one file to adjust when annals' local entry point settles: the
+// The one file to adjust when angzarr-embedded's local entry point settles: the
 // in-memory runtime, a command to a stream, and a read of a stream's state.
 fn main() {
-    let mut registry = annals::next::Registry::new();
+    let mut registry = angzarr_embedded::next::Registry::new();
     register(&mut registry);
     let local = Local::in_memory(registry);
 

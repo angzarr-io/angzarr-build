@@ -1,7 +1,7 @@
-//! What a project's protos give angzarr-local (annals) besides the domain
-//! layer: the scaffolded markup impls (annals-macros), written once into the
+//! What a project's protos give angzarr-local (angzarr-embedded) besides the domain
+//! layer: the scaffolded markup impls (angzarr-embedded-macros), written once into the
 //! user's source tree, and the generated `register`, which registers every
-//! component of the project with annals' `Registry`, so an application
+//! component of the project with angzarr-embedded's `Registry`, so an application
 //! calls one function.
 //!
 //! Pure, as the rest of the crate: descriptors (and, for [`complete`], the

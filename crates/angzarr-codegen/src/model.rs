@@ -19,7 +19,7 @@ const EVENT: &str = "io.angzarr.v1.event";
 const STATE: &str = "io.angzarr.v1.state";
 const RESOLUTION: &str = "io.angzarr.v1.ConflictResolution";
 const COMMUTATIVE: &str = "CONFLICT_RESOLUTION_COMMUTATIVE";
-/// The one well-known type the domain layer maps (to annals' `Timestamp`).
+/// The one well-known type the domain layer maps (to angzarr-embedded's `Timestamp`).
 pub(crate) const TIMESTAMP: &str = "google.protobuf.Timestamp";
 const WELL_KNOWN: &str = "google.protobuf";
 

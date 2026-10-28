@@ -1,9 +1,9 @@
 //! BuyInWallet: the scaffold of `buyin.v1.BuyInWalletPolicy`, with Hold
 //! translated (the refusal switch), bodies written.
 
-use annals::next::markup::{Commands, PolicyContext, Refusal};
-use annals::next::v1::Uuid;
-use annals_macros::{on_event, on_refused, policy};
+use angzarr_embedded::next::markup::{Commands, PolicyContext, Refusal};
+use angzarr_embedded::next::v1::Uuid;
+use angzarr_embedded_macros::{on_event, on_refused, policy};
 
 use crate::buy_in::BuyIn;
 use crate::domain::*;

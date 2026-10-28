@@ -163,7 +163,7 @@ fn test_markup_domain_into_writes_the_markup_domain_layer_by_package() {
     .unwrap();
     let source = std::fs::read_to_string(out.join("buyin.v1.domain.rs")).expect("domain file");
     assert!(
-        source.contains("::annals::next::markup::DomainMessage"),
+        source.contains("::angzarr_embedded::next::markup::DomainMessage"),
         "{source}"
     );
     std::fs::remove_dir_all(&out).unwrap();

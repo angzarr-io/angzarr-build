@@ -8,7 +8,7 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-annals-diagnostic.workspace = true
+angzarr-embedded-diagnostic.workspace = true
 prettyplease = "0.3.0"
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 prost-reflect = "0.16"

@@ -1,7 +1,7 @@
 //! The scaffold: from a project's protos, each component's markup impl for
-//! annals-macros, written once into the user's source tree (`angzarr
+//! angzarr-embedded-macros, written once into the user's source tree (`angzarr
 //! scaffold rust`), and completed, never overwritten (`--missing`). Read
-//! back as Rust items; that the scaffold compiles against annals is the
+//! back as Rust items; that the scaffold compiles against angzarr-embedded is the
 //! end-to-end test's (angzarr-build's `tests/local.rs`).
 
 mod common;
@@ -245,8 +245,8 @@ const USER_WALLET: &str = r#"//! The wallet.
 
 use std::convert::Infallible;
 
-use annals::next::markup::{Context, Refuses};
-use annals_macros::{aggregate, applies, handles_cmd};
+use angzarr_embedded::next::markup::{Context, Refuses};
+use angzarr_embedded_macros::{aggregate, applies, handles_cmd};
 
 use crate::domain::*;
 

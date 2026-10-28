@@ -2,8 +2,8 @@
 
 use std::convert::Infallible;
 
-use annals::next::markup::{Context, Refuses};
-use annals_macros::{aggregate, applies, handles_cmd};
+use angzarr_embedded::next::markup::{Context, Refuses};
+use angzarr_embedded_macros::{aggregate, applies, handles_cmd};
 
 use crate::domain::*;
 

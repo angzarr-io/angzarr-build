@@ -1,5 +1,5 @@
 //! The generated `register(&mut Registry)`: every component the protos
-//! declare, registered with annals at the path its scaffold gives it, so an
+//! declare, registered with angzarr-embedded at the path its scaffold gives it, so an
 //! application calls one function. Pinned by a golden file; the
 //! end-to-end test (angzarr-build's `tests/local.rs`) runs it.
 
@@ -33,7 +33,7 @@ fn registrations(source: &str) -> Vec<String> {
     assert_eq!(
         // syn keeps `pub` in `vis`, apart from the signature.
         format!("{}{}", text(&body.vis), text(&body.sig)),
-        "pubfnregister(registry:&mut::annals::next::Registry)"
+        "pubfnregister(registry:&mut::angzarr_embedded::next::Registry)"
     );
     body.block.stmts.iter().map(text).collect()
 }

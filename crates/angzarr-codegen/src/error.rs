@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use annals_diagnostic::{Arg, Diagnostic};
+use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CodegenError {

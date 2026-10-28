@@ -16,9 +16,9 @@ name = "angzarr-build"
 version = "0.1.0"
 dependencies = [
  "angzarr-codegen",
+ "angzarr-embedded-diagnostic",
  "angzarr-fmt",
  "angzarr-proto",
- "annals-diagnostic",
  "prost-build",
  "syn 3.0.9",
 ]
@@ -29,9 +29,9 @@ version = "0.1.0"
 dependencies = [
  "angzarr-build",
  "angzarr-codegen",
+ "angzarr-embedded-diagnostic",
  "angzarr-fmt",
  "angzarr-fmt-clap",
- "annals-diagnostic",
  "clap",
  "serde",
  "serde_json",
@@ -41,9 +41,9 @@ dependencies = [
 name = "angzarr-codegen"
 version = "0.1.0"
 dependencies = [
+ "angzarr-embedded-diagnostic",
  "angzarr-fmt",
  "angzarr-proto",
- "annals-diagnostic",
  "prettyplease 0.3.0",
  "proc-macro2",
  "prost",
@@ -53,11 +53,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "angzarr-embedded-diagnostic"
+version = "0.1.0"
+source = "git+https://github.com/benjaminabbitt/angzarr-embedded?rev=02b876dd525c5d78c7395fb40631b9e7f21193b1#02b876dd525c5d78c7395fb40631b9e7f21193b1"
+
+[[package]]
+name = "angzarr-embedded-yaml"
+version = "0.1.0"
+source = "git+https://github.com/benjaminabbitt/angzarr-embedded?rev=02b876dd525c5d78c7395fb40631b9e7f21193b1#02b876dd525c5d78c7395fb40631b9e7f21193b1"
+dependencies = [
+ "angzarr-embedded-diagnostic",
+]
+
+[[package]]
 name = "angzarr-fmt"
 version = "0.1.0"
 dependencies = [
- "annals-diagnostic",
- "annals-yaml",
+ "angzarr-embedded-diagnostic",
+ "angzarr-embedded-yaml",
  "fluent-bundle",
  "fluent-syntax",
  "serde",
@@ -84,19 +97,6 @@ dependencies = [
  "prost-build",
  "prost-types",
  "uuid",
-]
-
-[[package]]
-name = "annals-diagnostic"
-version = "0.1.0"
-source = "git+https://github.com/benjaminabbitt/annals?rev=8a328c8d0fd70a0b43fbfb428250e946ebd273c4#8a328c8d0fd70a0b43fbfb428250e946ebd273c4"
-
-[[package]]
-name = "annals-yaml"
-version = "0.1.0"
-source = "git+https://github.com/benjaminabbitt/annals?rev=8a328c8d0fd70a0b43fbfb428250e946ebd273c4#8a328c8d0fd70a0b43fbfb428250e946ebd273c4"
-dependencies = [
- "annals-diagnostic",
 ]
 
 [[package]]

@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use annals_diagnostic::{Arg, Diagnostic};
+use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
 pub use angzarr_codegen::Translate;
 
@@ -39,7 +39,7 @@ pub fn domain(protos: &[&str], includes: &[&str], wire: &[(&str, &str)]) -> Resu
     domain_into(&out_dir()?, protos, includes, wire)
 }
 
-/// The domain layer for marked-up components (annals-macros), by package
+/// The domain layer for marked-up components (angzarr-embedded-macros), by package
 /// (`<package>.domain.rs` in `OUT_DIR`): the domain types, their wire
 /// conversions and `DomainMessage` impls (see
 /// `angzarr_codegen::markup_domain`).
