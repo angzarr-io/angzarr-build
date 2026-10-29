@@ -3,7 +3,9 @@ name = "angzarr-codegen"
 version = "0.1.0"
 description = "angzarr's generator core: descriptors in, generated source out. Pure: no I/O."
 edition.workspace = true
-license.workspace = true
+# BSD-3-Clause, not the workspace's AGPL: angzarr-build, which application
+# build scripts depend on, depends on this crate. See LICENSE beside it.
+license = "BSD-3-Clause"
 publish.workspace = true
 rust-version.workspace = true
 
