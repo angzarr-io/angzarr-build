@@ -14,7 +14,7 @@ impl WalletBuyIn for WalletBuyInImpl {
         _source: &[u8],
         _event: &Held,
         _ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, BuyInCommand)>, Error> {
+    ) -> Result<Vec<(Vec<u8>, BuyInCommand)>, Bug> {
         todo!()
     }
 }

@@ -158,16 +158,17 @@ pub(crate) fn build_markup(
 
 /// The names the generated domain layers give the runtime's types, which no
 /// domain type may take: a handler's `Context`, a policy reaction's
-/// `PolicyContext`, a refused command's `CommandContext`, and the two
-/// classes a handler fails with: the business `Rejection`, and the defect,
-/// Rust's `Error` (a policy's) and Python's `Bug`.
+/// `PolicyContext`, a refused command's `CommandContext`, the two classes
+/// a handler fails with, the business `Rejection` and the defect `Bug`, and
+/// Rust's `Failed` of either, with its `BusinessStatus`.
 pub(crate) const RESERVED: &[&str] = &[
     "Context",
     "PolicyContext",
     "CommandContext",
-    "Error",
     "Rejection",
     "Bug",
+    "Failed",
+    "BusinessStatus",
 ];
 
 /// The first of `names` (each a type's full name and the name the domain

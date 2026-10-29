@@ -5,7 +5,7 @@
 //!   rust` and completed with `--missing`: per component an interface (a
 //!   trait over the domain types) and its implementation (every body
 //!   `todo!()`), neither importing anything of angzarr-embedded directly:
-//!   their context types and `Error` are the generated domain layer's
+//!   their context types, `Failed` and `Bug` are the generated domain layer's
 //!   re-exports;
 //! - the CLI's, regenerated into `OUT_DIR` every build: the adapters
 //!   ([`adapters`]), each component's angzarr-embedded markup delegating to
@@ -224,7 +224,7 @@ fn interface_methods(
                     ("ctx".to_string(), "&PolicyContext".to_string()),
                 ],
                 output: Some(format!(
-                    "Result<Vec<(Vec<u8>, {}Command)>, Error>",
+                    "Result<Vec<(Vec<u8>, {}Command)>, Bug>",
                     target.name
                 )),
             });
@@ -248,7 +248,7 @@ fn interface_methods(
                 name: format!("{}_refused", snake(&command)),
                 receiver: "&self",
                 params,
-                output: Some(format!("Result<{fact}, Error>")),
+                output: Some(format!("Result<{fact}, Bug>")),
             });
         }
         return Ok(methods);
@@ -269,8 +269,8 @@ fn interface_methods(
             continue;
         }
         let error = match input.refuses.as_slice() {
-            [] => "Rejection".to_string(),
-            [one] => one.name().to_string(),
+            [] => "Failed<Rejection>".to_string(),
+            [one] => format!("Failed<{}>", one.name()),
             _ => {
                 return Err(CodegenError::SeveralRefusals {
                     command: input.message.full_name().to_string(),
@@ -307,7 +307,7 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
              //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
              //! methods it lacks. Each reaction takes the source stream's root, the\n\
              //! event and its context, and returns the commands to send, each with its\n\
-             //! target root, or its `Error`: a bug, since a policy reacts to events the\n\
+             //! target root, or its `Bug`: a defect, since a policy reacts to events the\n\
              //! application's own domains recorded. The generated adapter\n\
              //! (`crate::adapters::{name}`) carries the markup.\n\n"
         )
@@ -806,7 +806,7 @@ fn domain_adapter(component: &Component) -> TokenStream {
         match input.refuses.as_slice() {
             [] => methods.push(quote! {
                 #[handles_cmd(#ty #starts)]
-                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Rejection> {
+                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
                     #interface::#m(&self.0, &cmd, ctx).map(#emit)
                 }
             }),
@@ -814,8 +814,8 @@ fn domain_adapter(component: &Component) -> TokenStream {
                 let refusals: Vec<syn::Ident> = refusals.iter().map(|r| ident(r.name())).collect();
                 methods.push(quote! {
                     #[handles_cmd(#ty #starts, refuses(#(#refusals),*))]
-                    fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Refuses<Self, #ty>> {
-                        #interface::#m(&self.0, &cmd, ctx).map(#emit).map_err(Into::into)
+                    fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Refuses<Self, #ty>>> {
+                        #interface::#m(&self.0, &cmd, ctx).map(#emit).map_err(Failed::widen)
                     }
                 });
             }
@@ -882,7 +882,7 @@ fn contract(component: &Component) -> TokenStream {
         } else {
             methods.push(quote! {
                 #[handles_cmd(#ty)]
-                fn #m(&self, _cmd: #ty, _ctx: &Context) -> Result<Emit<Self>, Rejection> {
+                fn #m(&self, _cmd: #ty, _ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
                     unreachable!(#served)
                 }
             });
@@ -1024,7 +1024,7 @@ fn policy_adapter(
                 &self,
                 event: &#ty,
                 ctx: &PolicyContext,
-            ) -> ::core::result::Result<Commands<#target_ty>, Error> {
+            ) -> ::core::result::Result<Commands<#target_ty>, Bug> {
                 let orders = #interface::#m(&self.0, &source_root(ctx), event, ctx)?;
                 ::core::result::Result::Ok(orders
                     .into_iter()
@@ -1054,7 +1054,7 @@ fn policy_adapter(
                 &self,
                 refusal: &Refusal<#command>,
                 ctx: &CommandContext,
-            ) -> ::core::result::Result<#fact, Error> {
+            ) -> ::core::result::Result<#fact, Bug> {
                 #interface::#m(&self.0, #args, ctx)
             }
         }

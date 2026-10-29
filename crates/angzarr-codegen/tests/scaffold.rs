@@ -147,7 +147,7 @@ fn test_scaffold_takes_a_fact_as_fact_and_a_command_as_cmd() {
     );
     assert!(
         source.contains(
-            "fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Rejection>;"
+            "fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Failed<Rejection>>;"
         ),
         "{source}"
     );
@@ -159,7 +159,7 @@ fn test_scaffold_adds_a_refused_method_for_each_command_the_switch_translates() 
     let source = &file_at(&files, "buy_in_wallet.rs").source;
     assert!(
         source.contains(
-            "    fn hold_refused(\n        &self,\n        command: &Hold,\n        refusal: Option<InsufficientFunds>,\n        ctx: &CommandContext,\n    ) -> Result<HoldLost, Error>;"
+            "    fn hold_refused(\n        &self,\n        command: &Hold,\n        refusal: Option<InsufficientFunds>,\n        ctx: &CommandContext,\n    ) -> Result<HoldLost, Bug>;"
         ),
         "{source}"
     );
@@ -276,13 +276,13 @@ fn test_a_decision_returns_its_one_event_or_any_of_its_events() {
     let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
     let table = &file_at(&files, "table_aggregate.rs").source;
     for expected in [
-        "fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Result<BetPlaced, Rejection>;",
+        "fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Result<BetPlaced, Failed<Rejection>>;",
         // Hit emits a variable subset of its four (the card, then a turn or
         // the dealer and the settlement): any of its events, not a tuple.
-        "fn hit(&self, cmd: &Hit, ctx: &Context) -> Result<Vec<TableAggregateEvent>, Rejection>;",
-        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Rejection>;",
-        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Rejection>;",
-        "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<PlayerSeated, SeatNotConfirmable>;",
+        "fn hit(&self, cmd: &Hit, ctx: &Context) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
+        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
+        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
+        "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<PlayerSeated, Failed<SeatNotConfirmable>>;",
     ] {
         assert!(table.contains(expected), "{expected}:\n{table}");
     }
@@ -335,7 +335,7 @@ fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
     );
     // The callback takes the refused command's context and answers a
     // Result, and forwards both: the interface's method reads the context
-    // and answers the Result, its error the domain's `Error`.
+    // and answers the Result, its error the domain's `Bug`.
     let callback = methods(imp)[1];
     assert_eq!(
         callback
@@ -352,7 +352,7 @@ fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
     );
     assert_eq!(
         text(&callback.sig.output),
-        "->::core::result::Result<HoldLost,Error>"
+        "->::core::result::Result<HoldLost,Bug>"
     );
     assert_eq!(
         text(&callback.block),
@@ -368,7 +368,7 @@ fn test_adapters_forward_the_context_to_a_refused_method_with_no_typed_refusal()
         (path == "buy_in_wallet.rs").then(|| {
             "pub trait BuyInWallet {\n\
              fn hold_refused(&self, command: &Hold, ctx: &CommandContext) \
-             -> Result<HoldLost, Error>;\n}\n"
+             -> Result<HoldLost, Bug>;\n}\n"
                 .to_string()
         })
     };
@@ -414,7 +414,7 @@ fn test_adapters_forward_each_handlers_context() {
     let reaction = methods(policy)[0];
     assert_eq!(
         text(&reaction.sig.output),
-        "->::core::result::Result<Commands<Wallet>,Error>"
+        "->::core::result::Result<Commands<Wallet>,Bug>"
     );
     assert!(
         text(&reaction.block).starts_with(
@@ -433,7 +433,7 @@ fn test_scaffold_gives_a_policy_reaction_its_context_and_a_result() {
     let source = &file_at(&files, "buy_in_wallet.rs").source;
     assert!(
         source.contains(
-            "    fn buy_in_started(\n        &self,\n        source: &[u8],\n        event: &BuyInStarted,\n        ctx: &PolicyContext,\n    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Error>;"
+            "    fn buy_in_started(\n        &self,\n        source: &[u8],\n        event: &BuyInStarted,\n        ctx: &PolicyContext,\n    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Bug>;"
         ),
         "{source}"
     );
@@ -508,7 +508,7 @@ fn test_complete_adds_only_the_absent_methods_to_the_interface() {
         .expect("hold and apply_held are absent");
     let expected = USER_WALLET.replace(
         "// USER-WRITTEN\n}",
-        "// USER-WRITTEN\n\n    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, InsufficientFunds>;\n\n    \
+        "// USER-WRITTEN\n\n    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, Failed<InsufficientFunds>>;\n\n    \
          fn apply_held(&mut self, event: &Held);\n}",
     );
     assert_eq!(completed, expected);
@@ -523,7 +523,7 @@ fn test_complete_adds_only_the_absent_methods_to_the_implementation() {
     let expected = USER_WALLET_IMPL.replace(
         "        self.state.balance += event.cents;\n    }\n}",
         "        self.state.balance += event.cents;\n    }\n\n    \
-         fn hold(&self, _cmd: &Hold, _ctx: &Context) -> Result<Held, InsufficientFunds> {\n        todo!()\n    }\n\n    \
+         fn hold(&self, _cmd: &Hold, _ctx: &Context) -> Result<Held, Failed<InsufficientFunds>> {\n        todo!()\n    }\n\n    \
          fn apply_held(&mut self, _event: &Held) {\n        todo!()\n    }\n}",
     );
     assert_eq!(completed, expected);
@@ -612,7 +612,7 @@ fn test_complete_inserts_before_a_closing_brace_that_ends_a_line() {
         .expect("hold and apply_held are absent");
     let expected = user.replace(
         "event: &Deposited); }\n",
-        "event: &Deposited); \n\n    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, InsufficientFunds>;\n\n    \
+        "event: &Deposited); \n\n    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, Failed<InsufficientFunds>>;\n\n    \
          fn apply_held(&mut self, event: &Held);\n}\n",
     );
     assert_eq!(completed, expected);

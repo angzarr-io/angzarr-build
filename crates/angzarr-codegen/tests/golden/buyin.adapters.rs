@@ -27,12 +27,22 @@ impl std::ops::Deref for Wallet {
 #[aggregate(domain = "wallet")]
 impl Wallet {
     #[handles_cmd(Deposit)]
-    fn deposit(&self, cmd: Deposit, ctx: &Context) -> Result<Emit<Self>, Rejection> {
+    fn deposit(
+        &self,
+        cmd: Deposit,
+        ctx: &Context,
+    ) -> Result<Emit<Self>, Failed<Rejection>> {
         crate::wallet::Wallet::deposit(&self.0, &cmd, ctx).map(Emit::of)
     }
     #[handles_cmd(Hold, refuses(InsufficientFunds))]
-    fn hold(&self, cmd: Hold, ctx: &Context) -> Result<Emit<Self>, Refuses<Self, Hold>> {
-        crate::wallet::Wallet::hold(&self.0, &cmd, ctx).map(Emit::of).map_err(Into::into)
+    fn hold(
+        &self,
+        cmd: Hold,
+        ctx: &Context,
+    ) -> Result<Emit<Self>, Failed<Refuses<Self, Hold>>> {
+        crate::wallet::Wallet::hold(&self.0, &cmd, ctx)
+            .map(Emit::of)
+            .map_err(Failed::widen)
     }
     #[applies(Deposited)]
     fn deposited(&mut self, event: Deposited) {
@@ -59,7 +69,7 @@ impl BuyIn {
         &self,
         cmd: StartBuyIn,
         ctx: &Context,
-    ) -> Result<Emit<Self>, Rejection> {
+    ) -> Result<Emit<Self>, Failed<Rejection>> {
         crate::buy_in::BuyIn::start_buy_in(&self.0, &cmd, ctx).map(Emit::of)
     }
     #[handles_cmd(RecordHeld)]
@@ -67,7 +77,7 @@ impl BuyIn {
         &self,
         cmd: RecordHeld,
         ctx: &Context,
-    ) -> Result<Emit<Self>, Rejection> {
+    ) -> Result<Emit<Self>, Failed<Rejection>> {
         crate::buy_in::BuyIn::record_held(&self.0, &cmd, ctx).map(Emit::of)
     }
     #[handles_fact(HoldLost)]
@@ -97,7 +107,7 @@ impl BuyInWallet {
         &self,
         event: &BuyInStarted,
         ctx: &PolicyContext,
-    ) -> ::core::result::Result<Commands<Wallet>, Error> {
+    ) -> ::core::result::Result<Commands<Wallet>, Bug> {
         let orders = crate::buy_in_wallet::BuyInWallet::buy_in_started(
             &self.0,
             &source_root(ctx),
@@ -130,7 +140,7 @@ impl WalletBuyIn {
         &self,
         event: &Held,
         ctx: &PolicyContext,
-    ) -> ::core::result::Result<Commands<BuyIn>, Error> {
+    ) -> ::core::result::Result<Commands<BuyIn>, Bug> {
         let orders = crate::wallet_buy_in::WalletBuyIn::held(
             &self.0,
             &source_root(ctx),

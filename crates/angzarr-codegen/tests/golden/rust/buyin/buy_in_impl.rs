@@ -12,11 +12,19 @@ pub struct BuyInImpl {
 }
 
 impl BuyIn for BuyInImpl {
-    fn start_buy_in(&self, _cmd: &StartBuyIn, _ctx: &Context) -> Result<BuyInStarted, Rejection> {
+    fn start_buy_in(
+        &self,
+        _cmd: &StartBuyIn,
+        _ctx: &Context,
+    ) -> Result<BuyInStarted, Failed<Rejection>> {
         todo!()
     }
 
-    fn record_held(&self, _cmd: &RecordHeld, _ctx: &Context) -> Result<BuyInHeld, Rejection> {
+    fn record_held(
+        &self,
+        _cmd: &RecordHeld,
+        _ctx: &Context,
+    ) -> Result<BuyInHeld, Failed<Rejection>> {
         todo!()
     }
 

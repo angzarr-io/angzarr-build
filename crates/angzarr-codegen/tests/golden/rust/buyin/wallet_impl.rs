@@ -12,11 +12,11 @@ pub struct WalletImpl {
 }
 
 impl Wallet for WalletImpl {
-    fn deposit(&self, _cmd: &Deposit, _ctx: &Context) -> Result<Deposited, Rejection> {
+    fn deposit(&self, _cmd: &Deposit, _ctx: &Context) -> Result<Deposited, Failed<Rejection>> {
         todo!()
     }
 
-    fn hold(&self, _cmd: &Hold, _ctx: &Context) -> Result<Held, InsufficientFunds> {
+    fn hold(&self, _cmd: &Hold, _ctx: &Context) -> Result<Held, Failed<InsufficientFunds>> {
         todo!()
     }
 

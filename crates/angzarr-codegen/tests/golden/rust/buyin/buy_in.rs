@@ -7,9 +7,13 @@
 use crate::domain::*;
 
 pub trait BuyIn {
-    fn start_buy_in(&self, cmd: &StartBuyIn, ctx: &Context) -> Result<BuyInStarted, Rejection>;
+    fn start_buy_in(
+        &self,
+        cmd: &StartBuyIn,
+        ctx: &Context,
+    ) -> Result<BuyInStarted, Failed<Rejection>>;
 
-    fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Rejection>;
+    fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Failed<Rejection>>;
 
     fn hold_lost(&self, fact: &HoldLost, ctx: &Context) -> BuyInFailed;
 

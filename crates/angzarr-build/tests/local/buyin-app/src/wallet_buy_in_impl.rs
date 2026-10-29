@@ -13,7 +13,7 @@ impl WalletBuyIn for WalletBuyInImpl {
         _source: &[u8],
         event: &Held,
         _ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, BuyInCommand)>, Error> {
+    ) -> Result<Vec<(Vec<u8>, BuyInCommand)>, Bug> {
         Ok(vec![(
             event.buy_in.clone(),
             BuyInCommand::RecordHeld(RecordHeld { cents: event.cents }),

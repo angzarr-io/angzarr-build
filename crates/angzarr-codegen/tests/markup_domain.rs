@@ -103,8 +103,9 @@ fn test_markup_domain_refuses_refuses_on_a_fact() {
 }
 
 /// A message named as one of the names the domain layer gives the
-/// runtime's types (`Context`, `PolicyContext`, `CommandContext`, `Error`,
-/// `Rejection`) is refused, naming both, never renamed.
+/// runtime's types (`Context`, `PolicyContext`, `CommandContext`,
+/// `Rejection`, `Bug`, `Failed`, `BusinessStatus`) is refused, naming
+/// both, never renamed.
 #[test]
 fn test_markup_domain_refuses_a_message_named_as_a_reserved_name() {
     const FILE: &str = "bad/v1/reserved_name.proto";
@@ -165,13 +166,15 @@ fn test_markup_domain_has_the_rejection_and_each_components_command_and_event_en
     }
 }
 
-/// The domain layer gives the user's files the runtime's contexts and a
-/// policy's error under its own names, so a user file imports only
+/// The domain layer gives the user's files the runtime's contexts and what
+/// a handler fails with under its own names, so a user file imports only
 /// `crate::domain`: a handler's `Context`, a policy reaction's
-/// `PolicyContext`, a refused command's `CommandContext`, and `Error`, a
-/// diagnostic key and its args.
+/// `PolicyContext`, a refused command's `CommandContext`, `Failed` and
+/// `BusinessStatus`, and `Bug`, a diagnostic key and its args, which a
+/// command handler's `Failed` of its rejection or of a typed refusal takes
+/// by `?`.
 #[test]
-fn test_markup_domain_gives_the_users_files_the_contexts_and_the_error() {
+fn test_markup_domain_gives_the_users_files_the_contexts_and_the_bug() {
     let file = buyin();
     let reexports: Vec<String> = file
         .items
@@ -185,21 +188,33 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_error() {
             _ => None,
         })
         .collect();
-    for name in ["Context", "PolicyContext", "CommandContext"] {
+    for name in [
+        "Context",
+        "PolicyContext",
+        "CommandContext",
+        "{BusinessStatus,Failed}",
+    ] {
         assert!(
             reexports.contains(&format!("angzarr_embedded::next::markup::{name}")),
             "{name}: {reexports:?}"
         );
     }
     assert!(
-        items(&file).contains(&"Error".to_string()),
+        items(&file).contains(&"Bug".to_string()),
         "{:?}",
         items(&file)
     );
-    assert!(impls(&file).contains(&(
+    let impls = impls(&file);
+    assert!(impls.contains(&(
         "::angzarr_embedded_diagnostic::Diagnostic".to_string(),
-        "Error".to_string()
+        "Bug".to_string()
     )));
+    for failed in ["Failed<Rejection>", "Failed<InsufficientFunds>"] {
+        assert!(
+            impls.contains(&("::core::convert::From<Bug>".to_string(), failed.to_string())),
+            "{failed}: {impls:?}"
+        );
+    }
 }
 
 #[test]

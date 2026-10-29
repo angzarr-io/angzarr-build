@@ -13,7 +13,7 @@ impl BuyInWallet for BuyInWalletImpl {
         source: &[u8],
         event: &BuyInStarted,
         _ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Error> {
+    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Bug> {
         Ok(vec![(
             event.wallet.clone(),
             WalletCommand::Hold(Hold {
@@ -28,7 +28,7 @@ impl BuyInWallet for BuyInWalletImpl {
         command: &Hold,
         refusal: Option<InsufficientFunds>,
         _ctx: &CommandContext,
-    ) -> Result<HoldLost, Error> {
+    ) -> Result<HoldLost, Bug> {
         Ok(HoldLost {
             short: refusal.map(|r| r.short).unwrap_or(command.cents),
         })

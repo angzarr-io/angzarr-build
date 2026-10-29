@@ -153,8 +153,8 @@ fn rejection() -> TokenStream {
         /// command refused under a business status (this one crosses as
         /// FAILED_PRECONDITION) and the issuing policy's refusal handler
         /// told. One of the two classes a handler fails
-        /// with; the other is [`Error`], a bug. A diagnostic key and its
-        /// args, never text.
+        /// with; the other is [`Bug`]. A diagnostic key and its args,
+        /// never text.
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Rejection {
             pub key: &'static str,
@@ -199,8 +199,8 @@ fn rejection() -> TokenStream {
 
 /// What the user's handlers read and fail with, under the domain layer's
 /// names, so a user file imports only `crate::domain`: the runtime's
-/// contexts re-exported, and `Error`, a policy's failure (a bug): a
-/// diagnostic key and its args, never text (decision 14.37).
+/// contexts and its `Failed` and `BusinessStatus` re-exported, and `Bug`,
+/// a defect: a diagnostic key and its args, never text (decision 14.37).
 fn handler_context() -> TokenStream {
     let next = next();
     quote! {
@@ -218,40 +218,49 @@ fn handler_context() -> TokenStream {
         /// was handed it: what a `<command>_refused` method reads.
         pub use #next::markup::CommandContext;
 
-        /// Why a policy cannot answer: a bug, a defect, never a business
-        /// refusal (a policy reacts to events the application's own
-        /// domains recorded). The other of the two classes a handler fails
-        /// with; the first is [`Rejection`], a business "no". A diagnostic
-        /// key and its args, never text; the runtime alerts it and
-        /// dead-letters the trigger.
+        /// What a command handler fails with: `Failed::Rejected`, a
+        /// [`Rejection`] (or a typed refusal) under a [`BusinessStatus`],
+        /// FAILED_PRECONDITION unless `with_status` says otherwise; or
+        /// `Failed::Bug`, a [`Bug`]. `Err(rejection)?` and `Err(bug)?` both
+        /// convert.
+        pub use #next::markup::{BusinessStatus, Failed};
+
+        /// A bug: a defect, never a business answer. The other of the two
+        /// classes a handler fails with; the first is [`Rejection`], a
+        /// business "no". A command handler fails with it as
+        /// `Failed::Bug` (`Err(Bug::new("key").arg(..))?`), a policy as its
+        /// `Err`, since a policy reacts to events the application's own
+        /// domains recorded. A diagnostic key and its args, never text; it
+        /// goes out as UNHANDLED_HANDLER_ERROR, the key its `cause`, and
+        /// the runtime alerts it and dead-letters the input.
         #[derive(Clone, Debug, PartialEq, Eq)]
-        pub struct Error {
+        pub struct Bug {
             pub key: &'static str,
             pub args: Vec<(&'static str, String)>,
         }
 
-        impl Error {
-            /// An error keyed `key`, with no args yet.
-            pub fn new(key: &'static str) -> Error {
-                Error { key, args: Vec::new() }
+        impl Bug {
+            /// A bug keyed `key`, with no args yet.
+            pub fn new(key: &'static str) -> Bug {
+                Bug { key, args: Vec::new() }
             }
 
-            /// This error with the arg `name` set to `value`.
-            pub fn arg(mut self, name: &'static str, value: impl ToString) -> Error {
+            /// This bug with the arg `name` set to `value`.
+            pub fn arg(mut self, name: &'static str, value: impl ToString) -> Bug {
                 self.args.push((name, value.to_string()));
                 self
             }
         }
 
-        impl ::std::fmt::Display for Error {
+        impl ::std::fmt::Display for Bug {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 f.write_str(self.key)
             }
         }
 
-        impl ::std::error::Error for Error {}
+        impl ::std::error::Error for Bug {}
 
-        impl ::angzarr_embedded_diagnostic::Diagnostic for Error {
+        impl ::angzarr_embedded_diagnostic::Diagnostic for Bug {
             fn code(&self) -> &'static str {
                 self.key
             }
@@ -263,6 +272,13 @@ fn handler_context() -> TokenStream {
                     .collect()
             }
         }
+
+        /// A command handler's bug, as it fails: `Failed::Bug`.
+        impl ::core::convert::From<Bug> for Failed<Rejection> {
+            fn from(bug: Bug) -> Self {
+                Failed::bug(&bug)
+            }
+        }
     }
 }
 
@@ -271,6 +287,14 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
     let name = ident(message.name());
     let code = message.full_name().replace('.', "-").to_lowercase();
     quote! {
+        /// A bug of the handler refusing with this, as it fails:
+        /// `Failed::Bug`.
+        impl ::core::convert::From<Bug> for Failed<#name> {
+            fn from(bug: Bug) -> Self {
+                Failed::bug(&bug)
+            }
+        }
+
         impl ::std::fmt::Display for #name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 f.write_str(#code)

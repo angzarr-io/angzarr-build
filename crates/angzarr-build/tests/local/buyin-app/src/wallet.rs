@@ -7,9 +7,9 @@
 use crate::domain::*;
 
 pub trait Wallet {
-    fn deposit(&self, cmd: &Deposit, ctx: &Context) -> Result<Deposited, Rejection>;
+    fn deposit(&self, cmd: &Deposit, ctx: &Context) -> Result<Deposited, Failed<Rejection>>;
 
-    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, InsufficientFunds>;
+    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, Failed<InsufficientFunds>>;
 
     fn apply_deposited(&mut self, event: &Deposited);
 
