@@ -5,7 +5,10 @@
 
 mod common;
 
-use angzarr_codegen::{CodegenError, Owner, StartupApp, StartupLint, lint_startup, startup};
+use angzarr_codegen::{
+    CodegenError, Owner, StartupApp, StartupLint, component_packages, lint_startup, remote_domains,
+    startup,
+};
 use common::*;
 
 const GOLDEN: &str = concat!(
@@ -158,4 +161,28 @@ fn test_startup_pins_angzarr_embedded_by_the_one_constant() {
             "{krate}:\n{manifest}"
         );
     }
+}
+
+#[test]
+fn test_remote_domains_are_those_not_in_rust_or_given_a_launch() {
+    let config = "[[domain]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                  [[domain]]\nname = \"player\"\nlanguage = \"python\"\n\n\
+                  [[domain]]\nname = \"dealer\"\nlanguage = \"rust\"\nlaunch = [\"./dealer\"]\n";
+    assert_eq!(
+        remote_domains(config).unwrap(),
+        ["player".to_string(), "dealer".to_string()]
+    );
+}
+
+#[test]
+fn test_component_packages_names_each_package_once_in_order() {
+    let mut files = BUYIN.to_vec();
+    files.extend(FILES);
+    let mut every = BUYIN.to_vec();
+    every.extend(BLACKJACK);
+    let set = descriptors(&every);
+    assert_eq!(
+        component_packages(&set, &files).unwrap(),
+        ["buyin.v1".to_string(), "io.angzarr.examples.v1".to_string()]
+    );
 }

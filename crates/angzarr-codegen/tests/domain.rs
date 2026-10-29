@@ -357,3 +357,94 @@ fn test_every_error_has_a_catalog_message_with_its_args() {
     let problems = angzarr_fmt::check(ftl, &angzarr_codegen::diagnostic_samples());
     assert!(problems.is_empty(), "{problems:#?}");
 }
+
+#[test]
+fn test_every_catalog_message_is_the_code_of_a_sample() {
+    let ftl = include_str!("../locales/en-US/angzarr-codegen.ftl");
+    let mut messages: Vec<&str> = ftl
+        .lines()
+        .filter_map(|line| line.split_once(" = ").map(|(id, _)| id))
+        .filter(|id| id.starts_with("angzarr-codegen-"))
+        .collect();
+    messages.sort_unstable();
+    let mut codes: Vec<&str> = angzarr_codegen::diagnostic_samples()
+        .iter()
+        .map(|d| d.code())
+        .collect();
+    codes.sort_unstable();
+    assert_eq!(codes, messages);
+}
+
+#[test]
+fn test_every_errors_english_is_its_catalog_message() {
+    let mut catalog = angzarr_fmt::Catalog::en_us();
+    catalog.add(angzarr_codegen::EN_US).unwrap();
+    for sample in angzarr_codegen::diagnostic_samples() {
+        let rendered: String = catalog
+            .render(&*sample)
+            .chars()
+            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
+            .collect();
+        assert_eq!(sample.to_string(), rendered, "{}", sample.code());
+    }
+}
+
+/// The structs of the file deriving `Default`.
+fn defaulted(file: &syn::File) -> Vec<String> {
+    file.items
+        .iter()
+        .filter_map(|i| match i {
+            syn::Item::Struct(s)
+                if s.attrs.iter().any(|a| {
+                    a.path().is_ident("derive")
+                        && a.to_token_stream().to_string().contains("Default")
+                }) =>
+            {
+                Some(s.ident.to_string())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn test_domain_derives_default_for_the_anchor_only() {
+    assert_eq!(defaulted(&shop()), ["CartState"]);
+}
+
+#[test]
+fn test_domain_refuses_a_command_naming_a_message_that_is_no_component() {
+    assert_eq!(
+        refusal("bad/v1/not_a_component.proto"),
+        CodegenError::UnknownComponent {
+            message: "bad.v1.Poke".to_string(),
+            component: "bad.v1.Plain".to_string(),
+        }
+    );
+}
+
+#[test]
+fn test_domain_refuses_a_well_known_type_other_than_timestamp() {
+    assert_eq!(
+        refusal("bad/v1/well_known.proto"),
+        CodegenError::WellKnownType {
+            message: "bad.v1.ThingState".to_string(),
+            field: "timeout".to_string(),
+            type_name: "google.protobuf.Duration".to_string(),
+        }
+    );
+}
+
+#[test]
+fn test_domain_maps_a_map_field_without_a_type_for_its_entry() {
+    let names: Vec<String> = shop()
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            syn::Item::Struct(s) => Some(s.ident.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert!(names.contains(&"Line".to_string()), "{names:?}");
+    assert!(!names.iter().any(|n| n.ends_with("Entry")), "{names:?}");
+}

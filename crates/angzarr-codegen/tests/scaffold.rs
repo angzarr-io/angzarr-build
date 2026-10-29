@@ -486,3 +486,33 @@ fn test_complete_refuses_a_file_without_the_components_trait() {
         })
     );
 }
+
+#[test]
+fn test_complete_inserts_before_a_closing_brace_that_ends_a_line() {
+    let files = buyin(&[]);
+    let user = USER_WALLET.replace(
+        "event: &Deposited); // USER-WRITTEN\n}\n",
+        "event: &Deposited); }\n",
+    );
+    assert_ne!(user, USER_WALLET);
+    let completed = complete(file_at(&files, "wallet.rs"), &user)
+        .unwrap()
+        .expect("hold and apply_held are absent");
+    let expected = user.replace(
+        "event: &Deposited); }\n",
+        "event: &Deposited); \n\n    fn hold(&self, cmd: &Hold) -> Result<Held, InsufficientFunds>;\n\n    \
+         fn apply_held(&mut self, event: &Held);\n}\n",
+    );
+    assert_eq!(completed, expected);
+}
+
+#[test]
+fn test_complete_takes_a_method_naming_its_event_otherwise_as_present() {
+    let files = buyin(&[]);
+    let fresh = file_at(&files, "wallet.rs");
+    let renamed = fresh
+        .source
+        .replace("event: &Deposited", "deposited: &Deposited");
+    assert_ne!(renamed, fresh.source);
+    assert_eq!(complete(fresh, &renamed), Ok(None));
+}

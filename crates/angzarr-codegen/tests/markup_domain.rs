@@ -155,3 +155,41 @@ fn test_markup_domain_maps_a_nested_enum_after_its_message() {
         items(&file)
     );
 }
+
+/// Only a component's state derives `Default`, and the markup domain layer
+/// holds no state (the markup's own type is the state).
+#[test]
+fn test_markup_domain_derives_default_for_no_type() {
+    let defaulted: Vec<String> = buyin()
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            syn::Item::Struct(s)
+                if s.attrs
+                    .iter()
+                    .any(|a| a.path().is_ident("derive") && text(a).contains("Default")) =>
+            {
+                Some(s.ident.to_string())
+            }
+            _ => None,
+        })
+        .collect::<Vec<String>>();
+    assert_eq!(defaulted, Vec::<String>::new());
+}
+
+#[test]
+fn test_markup_domain_command_enum_holds_the_commands_not_the_facts() {
+    let file = buyin();
+    let variants: Vec<String> = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            syn::Item::Enum(e) if e.ident == "BuyInCommand" => {
+                Some(e.variants.iter().map(|v| v.ident.to_string()).collect())
+            }
+            _ => None,
+        })
+        .expect("BuyInCommand");
+    assert!(variants.contains(&"StartBuyIn".to_string()), "{variants:?}");
+    assert!(!variants.contains(&"HoldLost".to_string()), "{variants:?}");
+}

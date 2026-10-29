@@ -301,3 +301,132 @@ fn test_reroot_python_takes_the_longest_package_a_line_names() {
         "from angzarr_client.proto.io.angzarr.v1 import options_pb2\n"
     );
 }
+
+#[test]
+fn test_complete_adds_an_absent_method_that_is_not_the_classes_last() {
+    let fresh = file(&player(), IMPL).clone();
+    let decide = "    def decide_move(self, cmd: DecideMove, state: PlayerState) -> MoveDecided:\n        \
+                  raise NotImplementedError  # TODO: decide DecideMove\n";
+    let user = fresh.source.replace(&format!("{decide}\n"), "");
+    assert_ne!(user, fresh.source);
+    let completed = complete(&fresh, &user)
+        .unwrap()
+        .expect("decide_move is absent");
+    assert_eq!(completed, format!("{user}\n{decide}"));
+}
+
+#[test]
+fn test_complete_takes_a_method_naming_its_event_otherwise_as_present() {
+    let fresh = file(&player(), INTERFACE).clone();
+    let renamed = fresh
+        .source
+        .replace("event: MoveDecided", "decided: MoveDecided");
+    assert_ne!(renamed, fresh.source);
+    assert_eq!(complete(&fresh, &renamed), Ok(None));
+}
+
+// ------------------------------------------------------------- field shapes
+
+const BASKET: &[&str] = &["pyshop/v1/mood.proto", "pyshop/v1/basket.proto"];
+
+fn basket_app() -> PythonApp {
+    PythonApp {
+        domain: "store".to_string(),
+        protos: ProtoInput::Directory("proto".to_string()),
+        rules_version: "0.1.0".to_string(),
+    }
+}
+
+/// The basket's project (`tests/fixtures/pyshop`): every field shape the
+/// Python scaffold maps.
+fn basket() -> Vec<ScaffoldFile> {
+    scaffold_python(
+        &descriptors(BASKET),
+        &["pyshop/v1/basket.proto"],
+        &basket_app(),
+    )
+    .unwrap()
+}
+
+fn basket_file(path: &str) -> String {
+    file(&basket(), path).source.clone()
+}
+
+const DISPATCH: &str = "src/angzarr_store/_gen/pyshop/v1/basket_angzarr.py";
+
+#[test]
+fn test_scaffold_python_types_each_field_shape_with_its_default() {
+    let domain = basket_file("src/angzarr_store/domain.py");
+    for expected in [
+        "    owner: str = \"\"\n",
+        "    weight: float = 0.0\n",
+        "    ratio: float = 0.0\n",
+        "    discount: int | None = None\n",
+        "    counts: tuple[int, ...] = ()\n",
+        "    last: Item | None = None\n",
+        "    items: tuple[Item, ...] = ()\n",
+        "    mood: Mood = Mood.UNSPECIFIED\n",
+    ] {
+        assert!(domain.contains(expected), "{expected}:\n{domain}");
+    }
+}
+
+#[test]
+fn test_scaffold_python_declares_an_enum_two_messages_use_once() {
+    let domain = basket_file("src/angzarr_store/domain.py");
+    assert_eq!(
+        domain.matches("class Mood(enum.IntEnum):").count(),
+        1,
+        "{domain}"
+    );
+}
+
+#[test]
+fn test_scaffold_python_converts_a_repeated_scalar_as_a_sequence() {
+    let dispatch = basket_file(DISPATCH);
+    for expected in ["counts=tuple(pb.counts),", "counts=list(value.counts),"] {
+        assert!(dispatch.contains(expected), "{expected}:\n{dispatch}");
+    }
+}
+
+#[test]
+fn test_scaffold_python_generates_every_domain_file_its_messages_reach() {
+    let buf = basket_file("buf.gen.yaml");
+    assert!(
+        buf.contains(
+            "    paths:\n      - pyshop/v1/basket.proto\n      - pyshop/v1/mood.proto\nplugins:"
+        ),
+        "{buf}"
+    );
+}
+
+#[test]
+fn test_scaffold_python_keeps_a_call_of_88_columns_on_one_line() {
+    let dispatch = basket_file(DISPATCH);
+    let call = "    dispatch.on_command(\"pyshop.v1.EmptyTheBasketShelves\", _on_empty_the_basket_shelves)\n";
+    assert_eq!(call.len(), 89);
+    assert!(dispatch.contains(call), "{dispatch}");
+}
+
+#[test]
+fn test_scaffold_python_wraps_the_interfaces_doc_at_79_columns() {
+    let logic = basket_file("src/angzarr_store/logic.py");
+    let first =
+        "\"\"\"StoreLogic: the store domain's logic, for ``pyshop.v1.BasketState``. Written\n";
+    assert_eq!(first.len(), 80);
+    assert!(logic.starts_with(first), "{logic}");
+}
+
+#[test]
+fn test_scaffold_python_refuses_a_command_with_a_typed_refusal() {
+    let app = PythonApp {
+        domain: "wallet".to_string(),
+        ..basket_app()
+    };
+    assert_eq!(
+        scaffold_python(&descriptors(BUYIN), &["buyin/v1/wallet.proto"], &app),
+        Err(CodegenError::PythonRefuses {
+            message: "buyin.v1.Hold".to_string()
+        })
+    );
+}
