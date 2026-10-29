@@ -3,7 +3,9 @@ name = "angzarr-build"
 version = "0.1.0"
 description = "build.rs helpers: angzarr's prost settings for wire crates, and the generated domain layer, written to OUT_DIR."
 edition.workspace = true
-license.workspace = true
+# BSD-3-Clause, not the workspace's AGPL: application build scripts depend
+# on this crate. See LICENSE beside it.
+license = "BSD-3-Clause"
 publish.workspace = true
 rust-version.workspace = true
 
