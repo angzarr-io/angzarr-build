@@ -152,22 +152,24 @@ fn test_the_users_files_name_nothing_of_the_harness() {
     }
 }
 
-/// A decision refuses its command by raising the domain module's
-/// `Rejection`: the harness's coded error as a business refusal
-/// (FAILED_PRECONDITION), a diagnostic key and its args, never text.
+/// A decision fails in one of two classes, both angzarr-client-python's,
+/// re-exported by the domain module: `Rejection`, a business "no"
+/// (FAILED_PRECONDITION), and `Bug`, a defect the runtime alerts and
+/// dead-letters (UNHANDLED_HANDLER_ERROR, its key the cause). Each is a
+/// diagnostic key and its args, never text.
 #[test]
-fn test_domain_py_gives_the_logic_its_rejection() {
+fn test_domain_py_gives_the_logic_its_rejection_and_its_bug() {
     let files = player();
     let domain = &file(&files, "src/angzarr_player/domain.py").source;
     for expected in [
-        "from angzarr_client.router import CodedError as _CodedError\n",
-        "from angzarr_client.router import GrpcCode as _GrpcCode\n",
-        "class Rejection(_CodedError):\n",
-        "    def __init__(self, key: str, **args: object) -> None:\n",
-        "grpc=_GrpcCode.FAILED_PRECONDITION",
-        "extras={name: str(value) for name, value in args.items()}",
+        "from angzarr_client.router import Bug as Bug\n",
+        "from angzarr_client.router import Rejection as Rejection\n",
+        "from angzarr_client.router import CommandContext as CommandContext\n",
     ] {
         assert!(domain.contains(expected), "{expected}:\n{domain}");
+    }
+    for gone in ["class Rejection(", "_CodedError", "_GrpcCode"] {
+        assert!(!domain.contains(gone), "{gone}:\n{domain}");
     }
 }
 
@@ -184,6 +186,22 @@ fn test_scaffold_python_refuses_a_message_named_as_a_reserved_name() {
     assert!(
         matches!(&refused, Err(CodegenError::ReservedName { message, name })
             if message == "bad.v1.Context" && name == "Context"),
+        "{refused:?}"
+    );
+}
+
+/// `Bug`, the class `domain.py` re-exports for a defect, is reserved too.
+#[test]
+fn test_scaffold_python_refuses_a_message_named_bug() {
+    const FILE: &str = "bad/v1/reserved_bug.proto";
+    let app = PythonApp {
+        domain: "things".to_string(),
+        ..player_app()
+    };
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app);
+    assert!(
+        matches!(&refused, Err(CodegenError::ReservedName { message, name })
+            if message == "bad.v1.Bug" && name == "Bug"),
         "{refused:?}"
     );
 }

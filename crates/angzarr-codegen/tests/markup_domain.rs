@@ -121,6 +121,24 @@ fn test_markup_domain_refuses_a_message_named_as_a_reserved_name() {
     );
 }
 
+/// `Bug` is reserved as well: the name a defect's class takes in the
+/// domain layers.
+#[test]
+fn test_markup_domain_refuses_a_message_named_bug() {
+    const FILE: &str = "bad/v1/reserved_bug.proto";
+    assert_eq!(
+        markup_domain(
+            &descriptors(&[FILE]),
+            &[FILE],
+            &[("bad.v1", "::bad_proto::v1")]
+        ),
+        Err(angzarr_codegen::CodegenError::ReservedName {
+            message: "bad.v1.Bug".to_string(),
+            name: "Bug".to_string(),
+        })
+    );
+}
+
 /// The names of the file's top-level enums and structs.
 fn items(file: &syn::File) -> Vec<String> {
     file.items
