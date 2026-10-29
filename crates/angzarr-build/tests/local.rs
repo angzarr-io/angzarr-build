@@ -98,9 +98,12 @@ fn test_the_app_type_checks_against_angzarr_embedded() {
     );
 }
 
+/// The generated register() is what angzarr_embedded_host::run takes: the
+/// app, run from its angzarr.toml, handles one command, a policy step each
+/// way, and a refusal its policy translates.
 #[test]
-#[ignore = "runs once angzarr-embedded has a local entry point (main.rs's `Local`) and dispatches \
-            through angzarr-router: re-pin tests/local/buyin-app/Cargo.toml then"]
+#[ignore = "builds angzarr-embedded, angzarr-embedded-host and their dependencies, fetched from \
+            the network on a cold cache: slow; run with --ignored"]
 fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/buyin-app");
     let out = Command::new(env!("CARGO"))

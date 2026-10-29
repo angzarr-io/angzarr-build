@@ -1,8 +1,9 @@
 # The end-to-end fixture of angzarr-build's tests/local.rs: an application on
-# angzarr-local (angzarr-embedded), its domain layer and register() generated from the
-# buy-in fixture protos, its components the scaffold with bodies written.
-# Built and run by that test only; a workspace of its own, outside
-# angzarr-cli's.
+# angzarr-embedded, its domain layer and register() generated from the
+# buy-in fixture protos, its components the scaffold with bodies written,
+# run by angzarr-embedded-host from angzarr.toml beside this file. Built and
+# run by that test only; a workspace of its own, outside angzarr-cli's. Its
+# Cargo.lock is a build artifact, ignored.
 [package]
 name = "buyin-app"
 version = "0.0.0"
@@ -11,12 +12,13 @@ publish = false
 
 [workspace]
 
-# angzarr-embedded at the rev that dispatches through angzarr-router, and the
-# router at the rev it names, so the app has one router and one angzarr-proto
-# (55eab0f, angzarr-embedded's). The run test is ignored until
-# angzarr-embedded has a local entry point.
+# angzarr-embedded at the rev that dispatches through angzarr-router and has
+# its entry point (angzarr-embedded-host's `run`), and the router at the rev
+# it names, so the app has one router and one angzarr-proto (55eab0f,
+# angzarr-embedded's).
 [dependencies]
 angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "3fa53265d5f2812c6057e4931b75dbfdadf65909" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "3fa53265d5f2812c6057e4931b75dbfdadf65909" }
 angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "3fa53265d5f2812c6057e4931b75dbfdadf65909" }
 angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "3fa53265d5f2812c6057e4931b75dbfdadf65909" }
 angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "6be9159962b4d3beffa3936855a55b6469ca0cc7" }
