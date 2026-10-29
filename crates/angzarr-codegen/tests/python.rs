@@ -286,3 +286,18 @@ fn test_the_logic_takes_and_returns_the_domains_plain_types() {
         assert!(domain.contains(plain), "{plain}:\n{domain}");
     }
 }
+
+#[test]
+fn test_reroot_python_takes_the_longest_package_a_line_names() {
+    let rules = vec![
+        ("io".to_string(), "wrong.io".to_string()),
+        (
+            "io.angzarr.v1".to_string(),
+            "angzarr_client.proto.io.angzarr.v1".to_string(),
+        ),
+    ];
+    assert_eq!(
+        reroot_python("from io.angzarr.v1 import options_pb2\n", &rules),
+        "from angzarr_client.proto.io.angzarr.v1 import options_pb2\n"
+    );
+}

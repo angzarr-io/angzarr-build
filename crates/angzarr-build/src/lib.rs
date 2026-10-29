@@ -341,8 +341,13 @@ pub fn proto_gen_python(root: &Path, app: &PythonApp) -> Result<(), BuildError> 
         .join("_gen");
     let mut modules = Vec::new();
     collect_python(&gen_dir, &mut modules)?;
+    // The packages buf generated: the directories holding a `_pb2` module.
     let mut packages: Vec<String> = modules
         .iter()
+        .filter(|m| {
+            m.file_name()
+                .is_some_and(|n| n.to_string_lossy().ends_with("_pb2.py"))
+        })
         .filter_map(|m| m.parent()?.strip_prefix(&gen_dir).ok())
         .map(|dir| dir.to_string_lossy().replace(['/', '\\'], "."))
         .filter(|p| !p.is_empty())

@@ -885,10 +885,13 @@ pub fn python_reroots(app: &PythonApp, packages: &[&str]) -> Vec<(String, String
 /// under a rule's package rerooted to the rule's target: `from io.angzarr.v1
 /// import x` and `import io.angzarr.v1.x` alike. Nothing else changes.
 pub fn reroot_python(source: &str, rules: &[(String, String)]) -> String {
+    // The longest package a line names wins: `io.angzarr.v1` is not `io`.
+    let mut rules: Vec<&(String, String)> = rules.iter().collect();
+    rules.sort_by_key(|(from, _)| std::cmp::Reverse(from.len()));
     let mut out = String::with_capacity(source.len());
     for line in source.split_inclusive('\n') {
         let mut rewritten = None;
-        for (from, to) in rules {
+        for (from, to) in &rules {
             for keyword in ["from ", "import "] {
                 let Some(rest) = line.strip_prefix(keyword) else {
                     continue;
@@ -896,7 +899,7 @@ pub fn reroot_python(source: &str, rules: &[(String, String)]) -> String {
                 let Some(after) = rest.strip_prefix(from.as_str()) else {
                     continue;
                 };
-                if after.starts_with([' ', '.']) {
+                if rewritten.is_none() && after.starts_with([' ', '.']) {
                     rewritten = Some(format!("{keyword}{to}{after}"));
                 }
             }
