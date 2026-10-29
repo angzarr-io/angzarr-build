@@ -182,23 +182,22 @@ fn method(message: &str) -> String {
     ident(&snake(message)).to_string()
 }
 
-/// What a decision returns for `emits`: the one event, a tuple of two to
-/// four in declaration order, else the component's event enum, any number
-/// of any of its events. The user may change the first two to any shape
-/// angzarr-embedded takes (`Option<E>`, `Vec<E>`); the adapter takes them
-/// all.
+/// What a decision returns for `emits`: its one event, else the
+/// component's event enum, any number of any of its events (a command
+/// declaring several emits may emit any subset of them: Hit emits its card
+/// and then a turn or the dealer's play and the settlement). The user may
+/// change the one event to any shape angzarr-embedded takes (`Option<E>`,
+/// `Vec<E>`); the adapter takes them all.
 fn decided(component: &Component, emits: &[MessageDescriptor]) -> String {
-    let events: Vec<&str> = emits.iter().map(|e| e.name()).collect();
-    match events.as_slice() {
-        [one] => one.to_string(),
-        several if (2..=4).contains(&several.len()) => format!("({})", several.join(", ")),
+    match emits {
+        [one] => one.name().to_string(),
         _ => format!("Vec<{}Event>", component.name),
     }
 }
 
 /// Whether [`decided`] is the event enum.
 fn is_open(emits: &[MessageDescriptor]) -> bool {
-    !(1..=4).contains(&emits.len())
+    emits.len() != 1
 }
 
 fn interface_methods(

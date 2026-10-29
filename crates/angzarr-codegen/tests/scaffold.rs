@@ -259,13 +259,16 @@ fn test_scaffold_of_one_file_finds_its_policies_owners_and_events_elsewhere() {
 }
 
 #[test]
-fn test_a_decision_returns_one_event_a_tuple_or_the_event_enum() {
+fn test_a_decision_returns_its_one_event_or_any_of_its_events() {
     const TABLE: &str = "io/angzarr/examples/v1/table.proto";
     let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
     let table = &file_at(&files, "table_aggregate.rs").source;
     for expected in [
         "fn place_bet(&self, cmd: &PlaceBet) -> Result<BetPlaced, Rejection>;",
-        "fn create_table(&self, cmd: &CreateTable) -> Result<(TableCreated, ShoeShuffled), Rejection>;",
+        // Hit emits a variable subset of its four (the card, then a turn or
+        // the dealer and the settlement): any of its events, not a tuple.
+        "fn hit(&self, cmd: &Hit) -> Result<Vec<TableAggregateEvent>, Rejection>;",
+        "fn create_table(&self, cmd: &CreateTable) -> Result<Vec<TableAggregateEvent>, Rejection>;",
         "fn deal_round(&self, cmd: &DealRound) -> Result<Vec<TableAggregateEvent>, Rejection>;",
         "fn confirm_seat(&self, cmd: &ConfirmSeat) -> Result<PlayerSeated, SeatNotConfirmable>;",
     ] {
