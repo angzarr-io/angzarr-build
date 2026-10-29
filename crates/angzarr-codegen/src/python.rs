@@ -611,6 +611,12 @@ fn converter_pair(m: &MessageDescriptor) -> String {
                         format!("tuple({ty}(v) for v in {wire})"),
                         format!("[int(v) for v in {value}]"),
                     )
+                } else if f.supports_presence() {
+                    // An `optional` enum: absent is None both ways.
+                    (
+                        format!("{ty}({wire}) if pb.HasField({:?}) else None", f.name()),
+                        format!("None if {value} is None else int({value})"),
+                    )
                 } else {
                     (format!("{ty}({wire})"), format!("int({value})"))
                 }
