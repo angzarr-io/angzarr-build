@@ -101,24 +101,26 @@ impl BuyInWallet {
         &self,
         event: &BuyInStarted,
         ctx: &PolicyContext,
-    ) -> Commands<Wallet> {
+    ) -> ::core::result::Result<Commands<Wallet>, ::core::convert::Infallible> {
         let orders = crate::buy_in_wallet::BuyInWallet::buy_in_started(
             &self.0,
             &source_root(ctx),
             event,
         );
-        orders
-            .into_iter()
-            .fold(
-                Commands::none(),
-                |commands, (root, command)| {
-                    let root = Uuid { value: root.into() };
-                    match command {
-                        WalletCommand::Deposit(command) => commands.to(root, command),
-                        WalletCommand::Hold(command) => commands.to(root, command),
-                    }
-                },
-            )
+        ::core::result::Result::Ok(
+            orders
+                .into_iter()
+                .fold(
+                    Commands::none(),
+                    |commands, (root, command)| {
+                        let root = Uuid { value: root.into() };
+                        match command {
+                            WalletCommand::Deposit(command) => commands.to(root, command),
+                            WalletCommand::Hold(command) => commands.to(root, command),
+                        }
+                    },
+                ),
+        )
     }
 }
 /// `buyin.v1.WalletBuyInPolicy`, delegating to `crate::wallet_buy_in::WalletBuyIn`.
@@ -127,24 +129,34 @@ pub struct WalletBuyIn(pub crate::wallet_buy_in_impl::WalletBuyInImpl);
 #[policy(name = "policy-wallet-buyin", source = Wallet, target = BuyIn)]
 impl WalletBuyIn {
     #[on_event(Held)]
-    fn held(&self, event: &Held, ctx: &PolicyContext) -> Commands<BuyIn> {
+    fn held(
+        &self,
+        event: &Held,
+        ctx: &PolicyContext,
+    ) -> ::core::result::Result<Commands<BuyIn>, ::core::convert::Infallible> {
         let orders = crate::wallet_buy_in::WalletBuyIn::held(
             &self.0,
             &source_root(ctx),
             event,
         );
-        orders
-            .into_iter()
-            .fold(
-                Commands::none(),
-                |commands, (root, command)| {
-                    let root = Uuid { value: root.into() };
-                    match command {
-                        BuyInCommand::StartBuyIn(command) => commands.to(root, command),
-                        BuyInCommand::RecordHeld(command) => commands.to(root, command),
-                    }
-                },
-            )
+        ::core::result::Result::Ok(
+            orders
+                .into_iter()
+                .fold(
+                    Commands::none(),
+                    |commands, (root, command)| {
+                        let root = Uuid { value: root.into() };
+                        match command {
+                            BuyInCommand::StartBuyIn(command) => {
+                                commands.to(root, command)
+                            }
+                            BuyInCommand::RecordHeld(command) => {
+                                commands.to(root, command)
+                            }
+                        }
+                    },
+                ),
+        )
     }
 }
 /// The root of the stream a policy's trigger was recorded on.

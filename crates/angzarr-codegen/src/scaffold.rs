@@ -1000,16 +1000,20 @@ fn policy_adapter(
         let m = format_ident!("{}", method(event.name()));
         quote! {
             #[on_event(#ty)]
-            fn #m(&self, event: &#ty, ctx: &PolicyContext) -> Commands<#target_ty> {
+            fn #m(
+                &self,
+                event: &#ty,
+                ctx: &PolicyContext,
+            ) -> ::core::result::Result<Commands<#target_ty>, ::core::convert::Infallible> {
                 let orders = #interface::#m(&self.0, &source_root(ctx), event);
-                orders
+                ::core::result::Result::Ok(orders
                     .into_iter()
                     .fold(Commands::none(), |commands, (root, command)| {
                         let root = Uuid { value: root.into() };
                         match command {
                             #(#arms,)*
                         }
-                    })
+                    }))
             }
         }
     });
