@@ -5,19 +5,21 @@
 //! The project is split so that the user's logic never names the harness:
 //!
 //! - written once, the user's ([`Owner::User`]): `pyproject.toml`, the
-//!   package's `__init__.py`, `tests/__init__.py`, and per component its
-//!   interface (a `typing.Protocol` over the domain's messages) and its
-//!   implementation (every method `raise NotImplementedError  # TODO`);
-//! - rewritten on every run, the CLI's ([`Owner::Generated`]): `buf.gen.yaml`
-//!   (the message types), `main.py`, `__main__.py`, `_version.py`, the
-//!   `_gen` packages' `__init__.py`, and per component its dispatch, which
-//!   adapts the router binding's wire calls to calls on the interface.
+//!   package's `__init__.py`, `tests/__init__.py`, the domain's logic
+//!   interface (`logic.py`, a `typing.Protocol`: a decision per command, a
+//!   fold per event, over the domain's plain types) and its implementation
+//!   (`logic_impl.py`, every method `raise NotImplementedError  # TODO`);
+//! - rewritten on every run, the CLI's ([`Owner::Generated`]): `domain.py`
+//!   (the domain's messages as frozen dataclasses and enums, no protobuf),
+//!   `buf.gen.yaml` (the wire types), `main.py`, `__main__.py`,
+//!   `_version.py`, the `_gen` packages' `__init__.py`, and the dispatch,
+//!   which converts the router binding's wire calls to calls on the logic.
 //!
 //! A change to the harness or to the scaffold touches only generated files.
 
 use std::collections::BTreeSet;
 
-use prost_reflect::{Kind, MessageDescriptor};
+use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 
 use crate::error::CodegenError;
 use crate::model::{self, Component, ComponentKind, MARKUP_KINDS};
@@ -149,15 +151,21 @@ pub fn scaffold_python(
         let stem = snake(&component.name);
         out.push(ScaffoldFile {
             component: component.anchor.full_name().to_string(),
-            path: format!("{src}/{stem}.py"),
+            path: format!("{src}/logic.py"),
             source: interface(app, component),
             owner: Owner::User,
         });
         out.push(ScaffoldFile {
             component: component.anchor.full_name().to_string(),
-            path: format!("{src}/{stem}_impl.py"),
+            path: format!("{src}/logic_impl.py"),
             source: implementation(app, component),
             owner: Owner::User,
+        });
+        out.push(ScaffoldFile {
+            component: component.anchor.full_name().to_string(),
+            path: format!("{src}/domain.py"),
+            source: domain_py(app, component),
+            owner: Owner::Generated,
         });
         out.push(ScaffoldFile {
             component: component.anchor.full_name().to_string(),
@@ -224,7 +232,7 @@ fn alias(message: &MessageDescriptor) -> String {
     format!("_{stem}")
 }
 
-/// One method of a component's interface.
+/// One method of the domain's logic interface.
 struct Method {
     name: String,
     /// `(param, type)`, after `self`.
@@ -233,6 +241,27 @@ struct Method {
     todo: String,
 }
 
+/// The interface's name: the domain's, camel-cased, then `Logic`
+/// (`player` as `PlayerLogic`).
+fn logic_name(app: &PythonApp) -> String {
+    let camel: String = app
+        .domain
+        .split(['_', '-'])
+        .filter(|w| !w.is_empty())
+        .map(|w| {
+            let mut chars = w.chars();
+            chars
+                .next()
+                .map(|c| c.to_ascii_uppercase().to_string() + chars.as_str())
+                .unwrap_or_default()
+        })
+        .collect();
+    format!("{camel}Logic")
+}
+
+/// A decision decides a command from the state and returns what it emits;
+/// a fold takes the state and an event and returns the next state. All of
+/// it in the domain's plain types (`domain.py`).
 fn methods(component: &Component) -> Vec<Method> {
     let state = component.anchor.name().to_string();
     let mut out = Vec::new();
@@ -265,39 +294,30 @@ fn methods(component: &Component) -> Vec<Method> {
         out.push(Method {
             name: format!("apply_{}", snake(&ty)),
             params: vec![
-                ("event".to_string(), ty.clone()),
                 ("state".to_string(), state.clone()),
+                ("event".to_string(), ty.clone()),
             ],
-            returns: "None".to_string(),
+            returns: state.clone(),
             todo: format!("fold {ty} into the state"),
         });
     }
     out
 }
 
-/// Every message the interface names, by pb2 module.
+/// The import of the plain types the interface names.
 fn interface_imports(app: &PythonApp, component: &Component) -> String {
-    let mut by_module: std::collections::BTreeMap<String, BTreeSet<String>> = Default::default();
-    let mut add = |m: &MessageDescriptor| {
-        by_module
-            .entry(pb2_module(app, m))
-            .or_default()
-            .insert(m.name().to_string());
-    };
-    add(&component.anchor);
+    let mut names = BTreeSet::new();
+    names.insert(component.anchor.name().to_string());
     for input in &component.inputs {
-        add(&input.message);
-        input.emits.iter().for_each(&mut add);
+        names.insert(input.message.name().to_string());
+        names.extend(input.emits.iter().map(|e| e.name().to_string()));
     }
-    component.events.iter().for_each(&mut add);
-    let mut out = String::new();
-    for (module, names) in by_module {
-        out.push_str(&format!("from {module} import (\n"));
-        for name in names {
-            out.push_str(&format!("    {name},\n"));
-        }
-        out.push_str(")\n");
+    names.extend(component.events.iter().map(|e| e.name().to_string()));
+    let mut out = format!("from {}.domain import (\n", app.package());
+    for name in names {
+        out.push_str(&format!("    {name},\n"));
     }
+    out.push_str(")\n");
     out
 }
 
@@ -332,15 +352,19 @@ fn signature(indent: usize, method: &Method, tail: &str) -> String {
 }
 
 fn interface(app: &PythonApp, component: &Component) -> String {
-    let name = &component.name;
-    let stem = snake(name);
+    let name = logic_name(app);
+    let doc = wrap(&format!(
+        "\"\"\"{name}: the {} domain's logic, for ``{}``. Written once by \
+         ``angzarr scaffold python`` and yours from then on: ``--missing`` adds the methods \
+         it lacks. It takes and returns the domain's plain types (:mod:`.domain`) and \
+         names nothing of angzarr; the generated dispatch (``_gen/.../{}_angzarr.py``) \
+         calls it.",
+        app.domain,
+        component.anchor.full_name(),
+        snake(&component.name),
+    ));
     let mut out = format!(
-        "\"\"\"{name}: the interface of ``{}``,\n\
-         written once by ``angzarr scaffold python`` and yours from then on:\n\
-         ``--missing`` adds the methods it lacks. It names only the domain's messages;\n\
-         the generated dispatch (``_gen/.../{stem}_angzarr.py``) calls it.\n\"\"\"\n\n\
-         from __future__ import annotations\n\nfrom typing import Protocol\n\n",
-        component.anchor.full_name()
+        "{doc}\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom typing import Protocol\n\n"
     );
     out.push_str(&interface_imports(app, component));
     out.push_str(&format!("\n\nclass {name}(Protocol):\n"));
@@ -353,22 +377,38 @@ fn interface(app: &PythonApp, component: &Component) -> String {
 }
 
 fn implementation(app: &PythonApp, component: &Component) -> String {
-    let name = &component.name;
+    let name = logic_name(app);
     let mut out = format!(
-        "\"\"\"{name}Impl: the implementation of ``{name}``, written\n\
-         once by ``angzarr scaffold python`` and yours from then on: ``--missing``\n\
-         adds the methods it lacks, each a TODO.\n\"\"\"\n\n\
+        "\"\"\"{name}Impl: the implementation of ``{name}``, written once by\n\
+         ``angzarr scaffold python`` and yours from then on: ``--missing`` adds the\n\
+         methods it lacks, each a TODO.\n\"\"\"\n\n\
          from __future__ import annotations\n\n"
     );
     out.push_str(&interface_imports(app, component));
     out.push_str(&format!(
-        "from {}.{} import {name}\n\n\nclass {name}Impl({name}):\n",
+        "from {}.logic import {name}\n\n\nclass {name}Impl({name}):\n",
         app.package(),
-        snake(name)
     ));
     let body: Vec<String> = methods(component).iter().map(stub).collect();
     out.push_str(&body.join("\n"));
     out
+}
+
+/// `text` wrapped at 79 columns, on spaces.
+fn wrap(text: &str) -> String {
+    let mut lines: Vec<String> = vec![String::new()];
+    for word in text.split(' ') {
+        let line = lines.last_mut().expect("a line");
+        if !line.is_empty() && line.len() + 1 + word.len() > 79 {
+            lines.push(word.to_string());
+        } else {
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+    }
+    lines.join("\n")
 }
 
 /// An implementation method: its signature and a TODO body.
@@ -391,47 +431,270 @@ fn call(indent: usize, head: &str, args: &str) -> String {
     format!("{pad}{head}(\n{pad}    {args}\n{pad})\n")
 }
 
+/// The domain's messages and enums, every one the component's state,
+/// inputs and events reach, in the order they are reached; angzarr's own
+/// and google's excepted.
+fn reached(component: &Component) -> (Vec<MessageDescriptor>, Vec<EnumDescriptor>) {
+    let mut messages: Vec<MessageDescriptor> = Vec::new();
+    let mut enums: Vec<EnumDescriptor> = Vec::new();
+    let foreign =
+        |package: &str| FRAMEWORK_PACKAGES.contains(&package) || package.starts_with("google.");
+    let mut queue: Vec<MessageDescriptor> = vec![component.anchor.clone()];
+    for input in &component.inputs {
+        queue.push(input.message.clone());
+        queue.extend(input.emits.iter().cloned());
+    }
+    queue.extend(component.events.iter().cloned());
+    let mut i = 0;
+    while i < queue.len() {
+        let message = queue[i].clone();
+        i += 1;
+        if messages.contains(&message) || foreign(message.package_name()) {
+            continue;
+        }
+        for field in message.fields() {
+            match field.kind() {
+                Kind::Message(m) if !m.is_map_entry() => queue.push(m),
+                Kind::Enum(e) if !foreign(e.package_name()) && !enums.contains(&e) => enums.push(e),
+                _ => {}
+            }
+        }
+        messages.push(message);
+    }
+    (messages, enums)
+}
+
+/// A Python name for a proto name: itself, `_` appended where it is a
+/// keyword.
+fn py_name(name: &str) -> String {
+    const KEYWORDS: &[&str] = &[
+        "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
+        "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+        "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
+        "try", "while", "with", "yield",
+    ];
+    if KEYWORDS.contains(&name) {
+        format!("{name}_")
+    } else {
+        name.to_string()
+    }
+}
+
+/// A nested type's plain name: its enclosing messages' names, then its own.
+fn local_name(full: &str, package: &str) -> String {
+    full.strip_prefix(package)
+        .map_or(full, |rest| rest.trim_start_matches('.'))
+        .replace('.', "")
+}
+
+/// `MOVE_ACTION_HIT` of `MoveAction` as `HIT`.
+fn member(e: &EnumDescriptor, value: &str) -> String {
+    let mut prefix = String::new();
+    for (i, c) in e.name().chars().enumerate() {
+        if c.is_ascii_uppercase() && i > 0 {
+            prefix.push('_');
+        }
+        prefix.push(c.to_ascii_uppercase());
+    }
+    prefix.push('_');
+    py_name(value.strip_prefix(&prefix).unwrap_or(value))
+}
+
+/// A field's plain type and its default.
+fn field_type(field: &prost_reflect::FieldDescriptor) -> (String, String) {
+    let (ty, zero) = match field.kind() {
+        Kind::Message(m) => (local_name(m.full_name(), m.package_name()), None),
+        Kind::Enum(e) => {
+            let name = local_name(e.full_name(), e.package_name());
+            let zero = e
+                .values()
+                .find(|v| v.number() == 0)
+                .map(|v| format!("{name}.{}", member(&e, v.name())));
+            (name, zero)
+        }
+        Kind::Double | Kind::Float => ("float".to_string(), Some("0.0".to_string())),
+        Kind::Bool => ("bool".to_string(), Some("False".to_string())),
+        Kind::String => ("str".to_string(), Some("\"\"".to_string())),
+        Kind::Bytes => ("bytes".to_string(), Some("b\"\"".to_string())),
+        _ => ("int".to_string(), Some("0".to_string())),
+    };
+    if field.is_list() {
+        return (format!("tuple[{ty}, ...]"), "()".to_string());
+    }
+    match zero {
+        Some(zero) if !field.supports_presence() => (ty, zero),
+        _ => (format!("{ty} | None"), "None".to_string()),
+    }
+}
+
+fn domain_py(app: &PythonApp, component: &Component) -> String {
+    let (messages, enums) = reached(component);
+    let mut out = format!(
+        "{GENERATED}\"\"\"The {} domain's messages as plain Python: frozen dataclasses and\n\
+         integer enums, with no protobuf in them. The dispatch converts the wire's\n\
+         messages to these and back.\n\"\"\"\n\n\
+         from __future__ import annotations\n\n\
+         import enum\n\
+         from dataclasses import dataclass\n",
+        app.domain
+    );
+    for e in &enums {
+        out.push_str(&format!(
+            "\n\nclass {}(enum.IntEnum):\n",
+            local_name(e.full_name(), e.package_name())
+        ));
+        for v in e.values() {
+            out.push_str(&format!("    {} = {}\n", member(e, v.name()), v.number()));
+        }
+    }
+    for m in &messages {
+        out.push_str(&format!(
+            "\n\n@dataclass(frozen=True)\nclass {}:\n",
+            local_name(m.full_name(), m.package_name())
+        ));
+        let fields: Vec<_> = m.fields().collect();
+        if fields.is_empty() {
+            out.push_str("    pass\n");
+        }
+        for f in fields {
+            let (ty, default) = field_type(&f);
+            out.push_str(&format!("    {}: {ty} = {default}\n", py_name(f.name())));
+        }
+    }
+    out
+}
+
+/// The converter names of a message: `_to_card`, `_from_card`.
+fn converters(m: &MessageDescriptor) -> (String, String) {
+    let stem = snake(&local_name(m.full_name(), m.package_name()));
+    (format!("_to_{stem}"), format!("_from_{stem}"))
+}
+
+/// A message's pb2 class, through its module's alias: `_cards.Card`.
+fn pb2_class(m: &MessageDescriptor) -> String {
+    let local = m
+        .full_name()
+        .strip_prefix(m.package_name())
+        .map_or(m.full_name(), |rest| rest.trim_start_matches('.'));
+    format!("{}.{local}", alias(m))
+}
+
+/// The two converters of one message, wire to plain and plain to wire.
+fn converter_pair(m: &MessageDescriptor) -> String {
+    let plain = format!("_d.{}", local_name(m.full_name(), m.package_name()));
+    let (to, from) = converters(m);
+    let mut to_args = Vec::new();
+    let mut from_args = Vec::new();
+    for f in m.fields() {
+        let name = py_name(f.name());
+        let wire = format!("pb.{}", f.name());
+        let value = format!("value.{name}");
+        let (into, out) = match f.kind() {
+            Kind::Message(sub) => {
+                let (sub_to, sub_from) = converters(&sub);
+                if f.is_list() {
+                    (
+                        format!("tuple({sub_to}(m) for m in {wire})"),
+                        format!("[{sub_from}(m) for m in {value}]"),
+                    )
+                } else {
+                    (
+                        format!("{sub_to}({wire}) if pb.HasField({:?}) else None", f.name()),
+                        format!("None if {value} is None else {sub_from}({value})"),
+                    )
+                }
+            }
+            Kind::Enum(e) => {
+                let ty = format!("_d.{}", local_name(e.full_name(), e.package_name()));
+                if f.is_list() {
+                    (
+                        format!("tuple({ty}(v) for v in {wire})"),
+                        format!("[int(v) for v in {value}]"),
+                    )
+                } else {
+                    (format!("{ty}({wire})"), format!("int({value})"))
+                }
+            }
+            _ if f.is_list() => (format!("tuple({wire})"), format!("list({value})")),
+            _ => (wire.clone(), value.clone()),
+        };
+        to_args.push(format!("        {name}={into},\n"));
+        from_args.push(format!("        {}={out},\n", f.name()));
+    }
+    format!(
+        "\n\ndef {to}(pb) -> {plain}:\n    return {plain}(\n{}    )\n\n\n\
+         def {from}(value: {plain}):\n    return {}(\n{}    )\n",
+        to_args.concat(),
+        pb2_class(m),
+        from_args.concat(),
+    )
+}
+
 fn dispatch(app: &PythonApp, component: &Component) -> String {
     let name = &component.name;
     let stem = snake(name);
     let package = app.package();
+    let logic = logic_name(app);
+    let (messages, _) = reached(component);
     let mut modules = BTreeSet::new();
-    modules.insert((pb2_module(app, &component.anchor), alias(&component.anchor)));
-    for input in &component.inputs {
-        modules.insert((pb2_module(app, &input.message), alias(&input.message)));
-    }
-    for event in &component.events {
-        modules.insert((pb2_module(app, event), alias(event)));
+    for m in &messages {
+        modules.insert((pb2_module(app, m), alias(m)));
     }
     let mut out = format!(
         "{GENERATED}\"\"\"The {name}'s dispatch for the router binding: each entry decodes\n\
-         the wire payload and calls the ``{name}`` interface with the domain's\n\
-         messages, and packs what it returns (one event, an iterable of events, or\n\
-         None) into the event book.\n\"\"\"\n\n\
+         the wire payload, converts it and the state to the domain's plain types\n\
+         (:mod:`{package}.domain`), calls ``{logic}``, and converts what it\n\
+         returns back: a decision's events (one, an iterable, or None) into the\n\
+         event book, a fold's next state into the state.\n\"\"\"\n\n\
          from __future__ import annotations\n\n\
+         import dataclasses\n\n\
          import angzarr_client.router as _az\n\
-         from angzarr_client.proto.io.angzarr.v1 import types_pb2 as _t\n\
-         from google.protobuf import message as _message\n\n"
+         from angzarr_client.proto.io.angzarr.v1 import types_pb2 as _t\n\n\
+         from {package} import domain as _d\n"
     );
     for (module, alias) in &modules {
         let (parent, leaf) = module.rsplit_once('.').unwrap_or(("", module));
         out.push_str(&format!("from {parent} import {leaf} as {alias}\n"));
     }
-    out.push_str(&format!("from {package}.{stem} import {name}\n"));
+    out.push_str(&format!("from {package}.logic import {logic}\n"));
     out.push_str(
-        "\n\ndef _decode(message, payload):\n    try:\n        message.ParseFromString(payload.value)\n    except Exception as exc:\n        raise _az.any_decode_error(payload.type_url, exc)\n    return message\n\n\n\
-         def _book(result) -> _t.EventBook:\n    if result is None:\n        events = ()\n    elif isinstance(result, _message.Message):\n        events = (result,)\n    else:\n        events = result\n    book = _t.EventBook()\n    for event in events:\n        book.pages.add().payload.CopyFrom(_az.pack(event))\n    return book\n\n\n",
+        "\n\ndef _decode(message, payload):\n    try:\n        message.ParseFromString(payload.value)\n    except Exception as exc:\n        raise _az.any_decode_error(payload.type_url, exc)\n    return message\n",
     );
-    let state = format!("{}.{}", alias(&component.anchor), component.anchor.name());
+    for m in &messages {
+        out.push_str(&converter_pair(m));
+    }
+    let events: Vec<String> = component
+        .events
+        .iter()
+        .map(|e| {
+            let (_, from) = converters(e);
+            format!(
+                "    _d.{}: {from},\n",
+                local_name(e.full_name(), e.package_name())
+            )
+        })
+        .collect();
     out.push_str(&format!(
-        "def new_{stem}_dispatch(impl: {name}) -> _az.AggregateDispatch:\n    rebuilder = _az.Rebuilder({state})\n"
+        "\n\n# Each event's plain type, and its converter to the wire.\n_EVENTS = {{\n{}}}\n",
+        events.concat()
+    ));
+    out.push_str(
+        "\n\ndef _book(result) -> _t.EventBook:\n    if result is None:\n        events = ()\n    elif dataclasses.is_dataclass(result):\n        events = (result,)\n    else:\n        events = result\n    book = _t.EventBook()\n    for event in events:\n        wire = _EVENTS[type(event)](event)\n        book.pages.add().payload.CopyFrom(_az.pack(wire))\n    return book\n\n\n",
+    );
+    let (state_to, state_from) = converters(&component.anchor);
+    out.push_str(&format!(
+        "def new_{stem}_dispatch(logic: {logic}) -> _az.AggregateDispatch:\n    rebuilder = _az.Rebuilder({})\n",
+        pb2_class(&component.anchor)
     ));
     for event in &component.events {
         let method = format!("apply_{}", snake(event.name()));
+        let (event_to, _) = converters(event);
         out.push_str(&format!(
-            "\n    def _{method}(state, payload, ctx):\n        impl.{method}(_decode({}.{}(), payload), state)\n\n",
-            alias(event),
-            event.name()
+            "\n    def _{method}(state, payload, ctx):\n        \
+             event = {event_to}(_decode({}(), payload))\n        \
+             folded = logic.{method}({state_to}(state), event)\n        \
+             state.CopyFrom({state_from}(folded))\n\n",
+            pb2_class(event),
         ));
         out.push_str(&call(
             4,
@@ -445,10 +708,12 @@ fn dispatch(app: &PythonApp, component: &Component) -> String {
     ));
     for input in &component.inputs {
         let method = snake(input.message.name());
+        let (cmd_to, _) = converters(&input.message);
         out.push_str(&format!(
-            "\n    def _on_{method}(payload, state, cctx):\n        return _book(impl.{method}(_decode({}.{}(), payload), state))\n\n",
-            alias(&input.message),
-            input.message.name()
+            "\n    def _on_{method}(payload, state, cctx):\n        \
+             cmd = {cmd_to}(_decode({}(), payload))\n        \
+             return _book(logic.{method}(cmd, {state_to}(state)))\n\n",
+            pb2_class(&input.message),
         ));
         out.push_str(&call(
             4,
@@ -464,34 +729,26 @@ fn main_py(app: &PythonApp, components: &[Component]) -> String {
     let package = app.package();
     let script = app.script();
     let domain = &app.domain;
+    let logic = logic_name(app);
     let mut imports = Vec::new();
-    let mut registers = Vec::new();
+    let mut chain = String::from("host");
     for component in components {
-        let name = &component.name;
-        let stem = snake(name);
+        let stem = snake(&component.name);
         let dir = module_dir(&component.anchor).replace('/', ".");
         imports.push(format!(
             "from {package}._gen.{dir}.{stem}_angzarr import (\n    new_{stem}_dispatch,\n)\n"
         ));
-        imports.push(format!("from {package}.{stem}_impl import {name}Impl\n"));
-        registers.push(format!("new_{stem}_dispatch({name}Impl())"));
+        chain = format!("{chain}.add_aggregate(new_{stem}_dispatch({logic}Impl()))");
     }
+    imports.push(format!("from {package}.logic_impl import {logic}Impl\n"));
     imports.push(format!("from {package}._version import __version__\n"));
     imports.sort();
     let names: Vec<&str> = components.iter().map(|c| c.name.as_str()).collect();
-    let mut chain = String::from("host");
-    for register in &registers {
-        chain = format!("{chain}.add_aggregate({register})");
-    }
-    let lead = names
-        .first()
-        .map(|n| format!("{n}Impl"))
-        .unwrap_or_default();
     format!(
         "{GENERATED}\"\"\"{script}: the {domain} domain as an angzarr-embedded child process.\n\n\
          angzarr-embedded launches it (``uv run --locked {script}``), reads the\n\
          handshake it writes once it is serving, and calls it over gRPC on a Unix\n\
-         socket. The logic is ``{lead}``'s; nothing here is yours.\n\"\"\"\n\n\
+         socket. The logic is ``{logic}Impl``'s; nothing here is yours.\n\"\"\"\n\n\
          from __future__ import annotations\n\n\
          from angzarr_client import ComponentHost, configure_logging\n\
          from angzarr_client.child import run_child\n\n\
@@ -805,7 +1062,12 @@ fn first_param(def: &str) -> Option<(String, String)> {
     if first != "self" {
         return None;
     }
-    let (name, ty) = parts.next()?.split_once(':')?;
+    let (name, ty) = parts
+        .find(|p| {
+            p.split_once(':')
+                .is_some_and(|(n, _)| n.trim().trim_start_matches('_') != "state")
+        })?
+        .split_once(':')?;
     let ty = ty.trim().rsplit('.').next()?.to_string();
     Some((name.trim().trim_start_matches('_').to_string(), ty))
 }

@@ -1,0 +1,25 @@
+"""PlayerLogic: the player domain's logic, for
+``io.angzarr.examples.v1.PlayerState``. Written once by ``angzarr scaffold
+python`` and yours from then on: ``--missing`` adds the methods it lacks. It
+takes and returns the domain's plain types (:mod:`.domain`) and names nothing
+of angzarr; the generated dispatch (``_gen/.../player_aggregate_angzarr.py``)
+calls it.
+"""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from angzarr_player.domain import (
+    DecideMove,
+    MoveDecided,
+    PlayerState,
+)
+
+
+class PlayerLogic(Protocol):
+    def decide_move(self, cmd: DecideMove, state: PlayerState) -> MoveDecided: ...
+
+    def apply_move_decided(
+        self, state: PlayerState, event: MoveDecided
+    ) -> PlayerState: ...

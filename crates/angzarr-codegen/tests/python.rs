@@ -1,6 +1,6 @@
-//! The Python scaffold: one domain's uv project, the user's interface and
-//! implementation written once, the dispatch and the harness glue the
-//! CLI's. Pinned by golden files (`tests/golden/python/player`), the
+//! The Python scaffold: one domain's uv project, the user's logic
+//! interface and implementation written once over the domain's plain types,
+//! the plain types, the dispatch and the harness glue the CLI's. Pinned by golden files (`tests/golden/python/player`), the
 //! blackjack player of spec decision 14.38.
 
 mod common;
@@ -39,8 +39,8 @@ fn file<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
         .unwrap_or_else(|| panic!("no {path}"))
 }
 
-const IMPL: &str = "src/angzarr_player/player_aggregate_impl.py";
-const INTERFACE: &str = "src/angzarr_player/player_aggregate.py";
+const IMPL: &str = "src/angzarr_player/logic_impl.py";
+const INTERFACE: &str = "src/angzarr_player/logic.py";
 
 #[test]
 fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
@@ -53,6 +53,7 @@ fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
         ("pyproject.toml", Owner::User),
         ("src/angzarr_player/__init__.py", Owner::User),
         ("src/angzarr_player/__main__.py", Owner::Generated),
+        ("src/angzarr_player/domain.py", Owner::Generated),
         (&format!("{gen_dir}/__init__.py"), Owner::Generated),
         (&format!("{gen_dir}/io/__init__.py"), Owner::Generated),
         (
@@ -110,14 +111,35 @@ fn test_scaffold_python_pins_the_client_by_the_one_constant() {
 
 #[test]
 fn test_the_users_files_name_nothing_of_the_harness() {
-    for f in player().iter().filter(|f| f.owner == Owner::User) {
-        for harness in ["angzarr_client", "ComponentHost", "_az", "run_child"] {
+    // pyproject.toml depends on angzarr-client and protobuf; the user's code
+    // names neither.
+    for f in player()
+        .iter()
+        .filter(|f| f.owner == Owner::User && f.path.ends_with(".py"))
+    {
+        for harness in [
+            "angzarr_client",
+            "ComponentHost",
+            "_az",
+            "run_child",
+            "_pb2",
+            "protobuf",
+        ] {
             assert!(
                 !f.source.contains(harness),
                 "{} names {harness}:\n{}",
                 f.path,
                 f.source
             );
+        }
+        // It imports the plain types and its own interface, nothing generated
+        // from protobuf.
+        for import in f
+            .source
+            .lines()
+            .filter(|l| l.starts_with("from ") || l.starts_with("import "))
+        {
+            assert!(!import.contains("_gen"), "{}: {import}", f.path);
         }
     }
 }
@@ -138,24 +160,24 @@ fn test_scaffold_python_refuses_a_domain_the_protos_do_not_declare() {
 
 // ------------------------------------------------------------- --missing
 
-/// The implementation as a user has it: DecideMove's body written, the
-/// applier not there yet.
+/// The implementation as a user has it: the decision written, the fold not
+/// there yet.
 const USER_IMPL: &str = r#""""The player bot."""
 
 from __future__ import annotations
 
-from angzarr_player._gen.io.angzarr.examples.v1.player_pb2 import (
+from angzarr_player.domain import (
     DecideMove,
     MoveAction,
     MoveDecided,
     PlayerState,
 )
-from angzarr_player.player_aggregate import PlayerAggregate
+from angzarr_player.logic import PlayerLogic
 
 
-class PlayerAggregateImpl(PlayerAggregate):
+class PlayerLogicImpl(PlayerLogic):
     def decide_move(self, cmd: DecideMove, state: PlayerState) -> MoveDecided:
-        action = MoveAction.MOVE_ACTION_HIT if cmd.total < 17 else MoveAction.MOVE_ACTION_STAND
+        action = MoveAction.HIT if cmd.total < 17 else MoveAction.STAND
         return MoveDecided(table_root=cmd.table_root, round=cmd.round, seat=cmd.seat, action=action)  # USER-WRITTEN
 
 
@@ -173,8 +195,8 @@ fn test_complete_adds_only_the_absent_methods_to_the_class() {
     // user's text changes.
     let expected = USER_IMPL.replace(
         "  # USER-WRITTEN\n",
-        "  # USER-WRITTEN\n\n    def apply_move_decided(self, event: MoveDecided, state: PlayerState) \
-         -> None:\n        raise NotImplementedError  # TODO: fold MoveDecided into the state\n",
+        "  # USER-WRITTEN\n\n    def apply_move_decided(self, state: PlayerState, event: MoveDecided) \
+         -> PlayerState:\n        raise NotImplementedError  # TODO: fold MoveDecided into the state\n",
     );
     assert_eq!(completed, expected);
     let helper = completed.find("def helper").unwrap();
@@ -235,4 +257,32 @@ fn test_reroot_python_moves_framework_and_domain_imports_under_their_packages() 
          import angzarr_client.proto.io.angzarr.v1.types_pb2\n\
          x = 'from io.angzarr.v1 import y'\n"
     );
+}
+
+#[test]
+fn test_the_logic_takes_and_returns_the_domains_plain_types() {
+    let files = player();
+    let logic = &file(&files, INTERFACE).source;
+    assert!(logic.contains("class PlayerLogic(Protocol):"), "{logic}");
+    assert!(
+        logic.contains(
+            "    def decide_move(self, cmd: DecideMove, state: PlayerState) -> MoveDecided: ..."
+        ),
+        "a decision: the command and the state in, the event out:\n{logic}"
+    );
+    assert!(
+        logic.contains("self, state: PlayerState, event: MoveDecided\n    ) -> PlayerState: ..."),
+        "a fold: the state and the event in, the next state out:\n{logic}"
+    );
+    let domain = &file(&files, "src/angzarr_player/domain.py").source;
+    for plain in [
+        "class MoveAction(enum.IntEnum):",
+        "    DOUBLE_DOWN = 3",
+        "@dataclass(frozen=True)\nclass DecideMove:",
+        "    dealer_up: Card | None = None",
+        "    cards: tuple[Card, ...] = ()",
+        "    action: MoveAction = MoveAction.UNSPECIFIED",
+    ] {
+        assert!(domain.contains(plain), "{plain}:\n{domain}");
+    }
 }

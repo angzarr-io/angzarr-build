@@ -3,7 +3,7 @@
 
 angzarr-embedded launches it (``uv run --locked angzarr-player``), reads the
 handshake it writes once it is serving, and calls it over gRPC on a Unix
-socket. The logic is ``PlayerAggregateImpl``'s; nothing here is yours.
+socket. The logic is ``PlayerLogicImpl``'s; nothing here is yours.
 """
 
 from __future__ import annotations
@@ -15,12 +15,12 @@ from angzarr_player._gen.io.angzarr.examples.v1.player_aggregate_angzarr import 
     new_player_aggregate_dispatch,
 )
 from angzarr_player._version import __version__
-from angzarr_player.player_aggregate_impl import PlayerAggregateImpl
+from angzarr_player.logic_impl import PlayerLogicImpl
 
 
 def register(host: ComponentHost) -> ComponentHost:
     """The PlayerAggregate on ``host``."""
-    return host.add_aggregate(new_player_aggregate_dispatch(PlayerAggregateImpl()))
+    return host.add_aggregate(new_player_aggregate_dispatch(PlayerLogicImpl()))
 
 
 def host() -> ComponentHost:
