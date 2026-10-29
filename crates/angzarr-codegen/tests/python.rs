@@ -153,15 +153,22 @@ fn test_the_users_files_name_nothing_of_the_harness() {
 }
 
 /// A decision fails in one of two classes, both angzarr-client-python's,
-/// re-exported by the domain module: `Rejection`, a business "no"
-/// (FAILED_PRECONDITION), and `Bug`, a defect the runtime alerts and
-/// dead-letters (UNHANDLED_HANDLER_ERROR, its key the cause). Each is a
-/// diagnostic key and its args, never text.
+/// re-exported by the domain module: `Rejection`, a business "no" under a
+/// business status (FAILED_PRECONDITION unless given), and `Bug`, a defect
+/// the runtime alerts and dead-letters (UNHANDLED_HANDLER_ERROR, its key
+/// the cause). Each is a diagnostic key and its args, never text.
 #[test]
 fn test_domain_py_gives_the_logic_its_rejection_and_its_bug() {
     let files = player();
     let domain = &file(&files, "src/angzarr_player/domain.py").source;
+    assert!(
+        !domain.contains("(FAILED_PRECONDITION);"),
+        "a rejection is not FAILED_PRECONDITION alone:\n{domain}"
+    );
     for expected in [
+        "# - Rejection(key, [status,] **args):",
+        "INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE",
+        "PERMISSION_DENIED",
         "from angzarr_client.router import Bug as Bug\n",
         "from angzarr_client.router import Rejection as Rejection\n",
         "from angzarr_client.router import CommandContext as CommandContext\n",
