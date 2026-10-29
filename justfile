@@ -98,10 +98,10 @@ push-check remote *lefthook:
     mkdir -p "$top/target/logs"
     exec 9> "$top/target/.push-tree.lock"
     flock 9
-    # git exports repository-locating variables into a hook; the push tree's
-    # git must not inherit them.
-    scrub=(env)
-    while IFS= read -r var; do scrub+=(-u "$var"); done < <(git rev-parse --local-env-vars)
+    # git exports repository-locating variables (GIT_DIR, ...) into a hook;
+    # with them, a git -C the push tree would act on this checkout instead,
+    # and so would git run by a test there.
+    unset $(git rev-parse --local-env-vars)
     pushed=0
     while read -r local_ref local_sha remote_ref remote_sha; do
         [ -n "${local_sha:-}" ] || continue
@@ -125,13 +125,13 @@ push-check remote *lefthook:
         fi
         range="$(git -C "$top" rev-parse --short "$base")..$(git -C "$top" rev-parse --short "$local_sha") to $remote/$target"
         # The pushed commit's tree, alone, no hook run for it.
-        if ! "${scrub[@]}" git -C "$tree" rev-parse --git-dir > /dev/null 2>&1; then
+        if ! git -C "$tree" rev-parse --git-dir > /dev/null 2>&1; then
             rm -rf "$tree"
-            "${scrub[@]}" git -C "$top" worktree prune
-            "${scrub[@]}" git -c core.hooksPath=/dev/null -C "$top" worktree add --quiet --detach "$tree" "$local_sha"
+            git -C "$top" worktree prune
+            git -c core.hooksPath=/dev/null -C "$top" worktree add --quiet --detach "$tree" "$local_sha"
         fi
-        "${scrub[@]}" git -c core.hooksPath=/dev/null -C "$tree" checkout --quiet --detach --force "$local_sha"
-        "${scrub[@]}" git -C "$tree" clean -fdqx -e /target/
+        git -c core.hooksPath=/dev/null -C "$tree" checkout --quiet --detach --force "$local_sha"
+        git -C "$tree" clean -fdqx -e /target/
         log="$top/target/logs/push-tests.log"
         rc=0
         (cd "$tree" && CARGO_TARGET_DIR="$top/target/push" cargo test --workspace) > "$log" 2>&1 9>&- || rc=$?
