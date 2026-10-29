@@ -77,6 +77,10 @@ def _to_move_decided(pb) -> _d.MoveDecided:
         round=pb.round,
         seat=pb.seat,
         action=_d.MoveAction(pb.action),
+        cards=tuple(_to_card(m) for m in pb.cards),
+        total=pb.total,
+        soft=pb.soft,
+        dealer_up=_to_card(pb.dealer_up) if pb.HasField("dealer_up") else None,
     )
 
 
@@ -86,6 +90,10 @@ def _from_move_decided(value: _d.MoveDecided):
         round=value.round,
         seat=value.seat,
         action=int(value.action),
+        cards=[_from_card(m) for m in value.cards],
+        total=value.total,
+        soft=value.soft,
+        dealer_up=None if value.dealer_up is None else _from_card(value.dealer_up),
     )
 
 

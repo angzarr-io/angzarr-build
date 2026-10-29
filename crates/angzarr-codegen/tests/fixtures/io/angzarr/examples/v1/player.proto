@@ -79,7 +79,11 @@ enum MoveAction {
 }
 
 // The player's decision. policy-player-table turns it into Hit, Stand or
-// DoubleDown{seat} for table_root.
+// DoubleDown{seat} for table_root. It copies from the DecideMove everything
+// the decision used (cards, total, soft, dealer_up), so the player's state
+// is rebuilt from its events alone (hands_seen counts the decisions on a
+// two-card hand) and each event is a self-describing (state, action) row.
+// Owner ruling, 2026-10-29 (decision 14.38, amended).
 message MoveDecided {
   option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.PlayerState"};
   option (io.angzarr.v1.event) = {
@@ -90,6 +94,10 @@ message MoveDecided {
   uint32 round = 2;
   int32 seat = 3;
   MoveAction action = 4;
+  repeated Card cards = 5; // The hand decided on, as DecideMove.cards
+  uint32 total = 6; // As DecideMove.total
+  bool soft = 7; // As DecideMove.soft
+  Card dealer_up = 8; // As DecideMove.dealer_up
 }
 
 // -----------------------------------------------------------------------------

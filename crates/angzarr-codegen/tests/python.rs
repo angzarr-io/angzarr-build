@@ -18,7 +18,7 @@ fn player_app() -> PythonApp {
         domain: "player".to_string(),
         protos: ProtoInput::Git {
             url: "https://github.com/angzarr-io/angzarr-project".to_string(),
-            rev: "a91b88262921786c246e63e2e694509fe8060a86".to_string(),
+            rev: "b9b87bfc30acbb90b089515761186ceb5aa6d52d".to_string(),
             subdir: "proto".to_string(),
         },
         rules_version: "0.1.0".to_string(),

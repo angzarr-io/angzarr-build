@@ -51,6 +51,10 @@ class MoveDecided:
     round: int = 0
     seat: int = 0
     action: MoveAction = MoveAction.UNSPECIFIED
+    cards: tuple[Card, ...] = ()
+    total: int = 0
+    soft: bool = False
+    dealer_up: Card | None = None
 
 
 @dataclass(frozen=True)

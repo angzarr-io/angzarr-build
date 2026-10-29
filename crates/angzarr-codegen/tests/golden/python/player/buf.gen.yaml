@@ -7,7 +7,7 @@
 version: v2
 inputs:
   - git_repo: https://github.com/angzarr-io/angzarr-project
-    ref: a91b88262921786c246e63e2e694509fe8060a86
+    ref: b9b87bfc30acbb90b089515761186ceb5aa6d52d
     subdir: proto
     paths:
       - io/angzarr/examples/v1/cards.proto
