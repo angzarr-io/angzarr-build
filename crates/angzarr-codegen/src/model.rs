@@ -27,6 +27,7 @@ const WELL_KNOWN: &str = "google.protobuf";
 const AGGREGATE: i32 = 1;
 const POLICY: i32 = 2;
 const PROCESS_MANAGER: i32 = 3;
+const PROJECTOR: i32 = 4;
 
 /// A component kind a generator emits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -210,6 +211,11 @@ pub(crate) fn components(
             continue;
         };
         let number = enum_field(&declared, "kind");
+        // The markup is the write side: a projector beside it is skipped,
+        // not refused.
+        if number == PROJECTOR && kinds.contains(&ComponentKind::Policy) {
+            continue;
+        }
         let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
             return Err(CodegenError::UnsupportedKind {
                 component: message.full_name().to_string(),

@@ -1,0 +1,382 @@
+syntax = "proto3";
+package io.angzarr.examples.v1;
+
+import "io/angzarr/v1/options.proto";
+
+option csharp_namespace = "Angzarr.Examples";
+option go_package = "github.com/benjaminabbitt/angzarr/examples/go/proto/io/angzarr/examples/v1;examples";
+option java_multiple_files = true;
+option java_package = "io.angzarr.examples";
+option ruby_package = "Angzarr::Examples";
+
+// =============================================================================
+// Wallet domain ("wallet") — identity, funds, holds and captures, loyalty
+// =============================================================================
+//
+// The wallet aggregate (Rust) owns every chip that is not on a table. It was
+// the "player" aggregate until the owner's ruling of 2026-10-28 (decision
+// 14.38): "player" is now the bot that plays a seat (player.proto). A
+// person's wallet and their player share one root, the player_root the
+// table and the buy-in carry. A hold earmarks
+// part of the bankroll for one pending transfer to a table; it never moves
+// money by itself. Money leaves the wallet only when a buy-in hold is
+// captured. Top-ups and cash-out credits, the other two transfers of the
+// earlier spec, wait on rulings (docs/design/blackjack-latest-proto-rulings.md).
+//
+// Invariant L1 (after every event):
+//   bankroll >= sum(open holds) >= 0, every open hold > 0, and
+//   bankroll = total_deposited - total_withdrawn - total_to_tables + total_from_tables.
+//
+// Rejections (gRPC status, ErrorInfo.reason code):
+//   FAILED_PRECONDITION: WALLET_ALREADY_EXISTS, WALLET_NOT_FOUND,
+//     INSUFFICIENT_AVAILABLE_FUNDS, HOLD_NOT_FOUND, HOLD_CONFLICT.
+//   INVALID_ARGUMENT: AMOUNT_NOT_POSITIVE, DISPLAY_NAME_REQUIRED, EMAIL_REQUIRED.
+//
+// Repeating a hold-lifecycle command (HoldFunds / CaptureFunds / ReleaseHold)
+// whose effect is already recorded with an identical payload succeeds with
+// no events: redelivery is harmless.
+//
+// Conflict resolution: WalletState lists no COMMUTATIVE, so it supports the
+// base STRICT and AGGREGATE_HANDLES, and STRICT is its default. The earlier
+// spec's commutative deposit and manually reviewed withdrawal wait on the
+// merge-strategy ruling.
+// Policy commands (HoldFunds, CaptureFunds, ReleaseHold, RecordRoundResult,
+// AwardLoyaltyPoints) are reaction commands: they carry
+// no Handling, the wallet stamps its own head, and redelivery is
+// deduplicated on their derived command id.
+
+// -----------------------------------------------------------------------------
+// Commands — client
+// -----------------------------------------------------------------------------
+
+// Open a wallet. Field tags 1 and 2 are stable: core's acceptance harness
+// sends this command by tag (its type URL changed with the rename to
+// RegisterWallet, decision 14.38).
+message RegisterWallet {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.WalletRegistered"
+  };
+  string display_name = 1;
+  string email = 2;
+}
+
+// Admin migration of a wallet from a legacy system: identity only, no
+// balance.
+message ImportWallet {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.WalletImported"
+  };
+  string display_name = 1;
+  string email = 2;
+  string legacy_id = 3; // Identifier in the system being migrated from
+}
+
+// Rename the wallet's owner. Touches only display_name, so it commutes with money
+// movements.
+message UpdateProfile {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.ProfileUpdated"
+  };
+  string display_name = 1;
+}
+
+message DepositFunds {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.FundsDeposited"
+  };
+  int64 amount = 1;
+}
+
+// Withdraw from the available balance (bankroll minus open holds).
+message WithdrawFunds {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.FundsWithdrawn"
+  };
+  int64 amount = 1;
+}
+
+message EnrollLoyalty {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.LoyaltyEnrolled"
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Commands — the buy-in (reaction commands from policy-buy-in-wallet)
+// -----------------------------------------------------------------------------
+
+// Earmark funds for a buy-in. hold_id is the buy_in_id. How a hold the
+// wallet cannot fund (INSUFFICIENT_AVAILABLE_FUNDS) or that reuses a hold
+// id for another amount (HOLD_CONFLICT) is answered: the wallet refuses it
+// (FAILED_PRECONDITION) and records nothing, and policy-buy-in-wallet
+// passes the refusal, with its typed InsufficientFunds, through as the
+// standard CommandRefused fact to the buy-in instance, whose
+// on_refused_HoldFunds records BuyInFailed (decision 14.31; the refusal
+// flows in buy_in.proto).
+// Whether HOLD_CONFLICT is a refusal or a bug is still the buy-in refusal
+// ruling (R2).
+message HoldFunds {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.FundsHeld"
+    refuses: "io.angzarr.examples.v1.InsufficientFunds"
+  };
+  bytes hold_id = 1;
+  bytes table_root = 2;
+  int64 amount = 3;
+}
+
+// The wallet's typed refusal of HoldFunds when available funds fall short
+// (INSUFFICIENT_AVAILABLE_FUNDS; HoldFunds' refuses): a refusal object,
+// never an event; packed as an Any into the rejection and on into
+// CommandRefused.refusal.
+message InsufficientFunds {
+  int64 available = 1; // Funds available to hold
+  int64 requested = 2; // The amount asked for
+}
+
+// Spend an open buy-in hold: bankroll and the hold both drop by its amount.
+message CaptureFunds {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.FundsCaptured"
+  };
+  bytes hold_id = 1;
+}
+
+// Close an open hold without spending it. policy-buy-in-wallet sends it on
+// BuyInSeatLost (the table refused ConfirmSeat; see buy_in.proto).
+message ReleaseHold {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.HoldReleased"
+  };
+  bytes hold_id = 1;
+  string reason = 2;
+}
+
+// -----------------------------------------------------------------------------
+// Commands — round reactions from the table (reaction commands)
+// -----------------------------------------------------------------------------
+
+// From policy-table-wallet, one per settled seat. Recording the same
+// (table_root, round) twice succeeds with no events.
+message RecordRoundResult {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.RoundResultRecorded"
+  };
+  bytes table_root = 1;
+  uint32 round = 2;
+  int64 wager = 3;
+  int64 net = 4; // returned - wager; negative on a loss
+}
+
+// From policy-table-wallet, one per settled seat. Awarding the same
+// (table_root, round) twice succeeds with no events. What an award for a
+// wallet that never enrolled does waits on a ruling (it was refused with
+// LOYALTY_NOT_ENROLLED, which under the latest contract dead-letters the
+// policy's command).
+message AwardLoyaltyPoints {
+  option (io.angzarr.v1.command) = {
+    component: "io.angzarr.examples.v1.WalletState"
+    emits: "io.angzarr.examples.v1.LoyaltyPointsAwarded"
+  };
+  bytes table_root = 1;
+  uint32 round = 2;
+  int64 points = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Events
+// -----------------------------------------------------------------------------
+
+message WalletRegistered {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  string display_name = 1;
+  string email = 2;
+}
+
+// Identity migrated from a legacy system; the wallet starts empty.
+message WalletImported {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  string display_name = 1;
+  string email = 2;
+  string legacy_id = 3;
+}
+
+message ProfileUpdated {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  string display_name = 1;
+}
+
+message FundsDeposited {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  int64 amount = 1;
+}
+
+// Legacy shape of FundsDeposited. Never emitted by current code; it exists
+// only in stored history. The wallet upcaster (served by the agg-wallet
+// binary through UpcasterService) rewrites it to
+// FundsDeposited{amount = amount_chips} before any handler sees it, so no
+// component consumes it directly.
+message FundsDepositedV1 {
+  int64 amount_chips = 1;
+}
+
+message FundsWithdrawn {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  int64 amount = 1;
+}
+
+// A buy-in hold was opened.
+message FundsHeld {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.WalletBuyInPolicy"
+    domain: "wallet"
+  };
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  bytes hold_id = 1;
+  bytes table_root = 2;
+  int64 amount = 3;
+}
+
+// A buy-in hold was spent: the chips now belong to the table.
+message FundsCaptured {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.WalletBuyInPolicy"
+    domain: "wallet"
+  };
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  bytes hold_id = 1;
+  bytes table_root = 2;
+  int64 amount = 3;
+}
+
+// A hold was closed without spending it.
+message HoldReleased {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  bytes hold_id = 1;
+  int64 amount = 2;
+  string reason = 3;
+}
+
+message LoyaltyEnrolled {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+}
+
+message RoundResultRecorded {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  bytes table_root = 1;
+  uint32 round = 2;
+  int64 wager = 3;
+  int64 net = 4;
+}
+
+message LoyaltyPointsAwarded {
+  option (io.angzarr.v1.event) = {component: "io.angzarr.examples.v1.WalletState"};
+  option (io.angzarr.v1.event) = {
+    component: "io.angzarr.examples.v1.LedgerProjection"
+    domain: "wallet"
+  };
+  bytes table_root = 1;
+  uint32 round = 2;
+  int64 points = 3;
+}
+
+// -----------------------------------------------------------------------------
+// State
+// -----------------------------------------------------------------------------
+
+message Hold {
+  enum Purpose {
+    PURPOSE_UNSPECIFIED = 0;
+    PURPOSE_BUY_IN = 1;
+  }
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_OPEN = 1; // Counts against the available balance
+    STATUS_CAPTURED = 2; // Buy-in spent
+    STATUS_RELEASED = 4; // Closed unspent (ReleaseHold)
+  }
+  bytes table_root = 1;
+  int64 amount = 2;
+  Purpose purpose = 3;
+  Status status = 4;
+}
+
+message RoundResult {
+  bytes table_root = 1;
+  uint32 round = 2;
+  int64 wager = 3;
+  int64 net = 4;
+}
+
+// The WalletAggregate.
+message WalletState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "wallet"
+    name: "WalletAggregate"
+  };
+  string display_name = 1;
+  string email = 2;
+  bool registered = 3; // True after WalletRegistered or WalletImported
+  string legacy_id = 4;
+  int64 bankroll = 5; // Includes open holds
+  map<string, Hold> holds = 6; // key = lowercase hex(hold_id); every hold ever opened
+  int64 total_deposited = 7;
+  int64 total_withdrawn = 8;
+  int64 total_to_tables = 9;
+  int64 total_from_tables = 10; // Cash-out credits; nothing credits it until the cash-out ruling
+  bool loyalty_enrolled = 11;
+  int64 loyalty_points = 12;
+  map<string, RoundResult> round_results = 13; // key = hex(table_root) + "/" + round
+  map<string, int64> loyalty_awards = 14; // key = hex(table_root) + "/" + round -> points
+}

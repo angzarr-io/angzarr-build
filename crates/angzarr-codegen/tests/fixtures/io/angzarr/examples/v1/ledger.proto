@@ -1,0 +1,109 @@
+syntax = "proto3";
+package io.angzarr.examples.v1;
+
+import "io/angzarr/v1/options.proto";
+
+option csharp_namespace = "Angzarr.Examples";
+option go_package = "github.com/benjaminabbitt/angzarr/examples/go/proto/io/angzarr/examples/v1;examples";
+option java_multiple_files = true;
+option java_package = "io.angzarr.examples";
+option ruby_package = "Angzarr::Examples";
+
+// =============================================================================
+// projector-wallet-table-ledger — the money read model over both domains
+// =============================================================================
+//
+// Subscribes to "wallet" and "table" (the wallet was the "player" domain
+// until decision 14.38) (the domain of each consumed event is on
+// its (event) entry). Every applied event is remembered by (domain, root,
+// sequence), so replaying or redelivering an event leaves the read model
+// unchanged.
+//
+// Transfers between the two domains are seen twice, once per side, and the
+// sides can arrive in either order. A transfer is "in flight" until both
+// sides are seen:
+//   buy-in   PlayerSeated(buy_in_id)  <-> FundsCaptured(hold_id = buy_in_id)
+// The top-up and cash-out pairs of the earlier spec (ChipsAdded <->
+// TopUpSettled, PlayerCashedOut <-> CashOutCredited) wait on the top-up and
+// cash-out rulings; until then nothing on the wallet side pairs with a
+// PlayerCashedOut.
+//
+// Invariant L4 (checked only when nothing is in flight):
+//   sum(bankroll) + sum(stacks + wagers) + sum(house_result)
+//     = total deposits - total withdrawals.
+
+message LedgerRoundResult {
+  bytes table_root = 1;
+  uint32 round = 2;
+  int64 net = 3;
+}
+
+message WalletLedgerRow {
+  bytes player_root = 1; // The wallet's root (the person's, shared with their player)
+  string display_name = 2;
+  int64 bankroll = 3;
+  int64 held = 4; // Sum of open holds
+  int64 loyalty_points = 5;
+  repeated LedgerRoundResult recent_results = 6; // Newest last, at most 10
+}
+
+message TableLedgerRow {
+  bytes table_root = 1;
+  string name = 2;
+  int64 stacks = 3;
+  int64 wagers = 4;
+  int64 house_result = 5;
+  int64 chips_in = 6;
+  int64 chips_out = 7;
+}
+
+message LedgerTotals {
+  int64 deposits = 1;
+  int64 withdrawals = 2;
+  int64 bankrolls = 3;
+  int64 stacks = 4;
+  int64 wagers = 5;
+  int64 house_result = 6;
+  int64 in_flight = 7; // Sum of amounts of transfers seen on one side only
+  uint32 in_flight_transfers = 8; // Number of such transfers
+}
+
+// Anchor of the LedgerProjector.
+message LedgerProjection {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROJECTOR
+    name: "LedgerProjector"
+  };
+  map<string, WalletLedgerRow> wallets = 1; // key = hex(player_root)
+  map<string, TableLedgerRow> tables = 2; // key = hex(table_root)
+  LedgerTotals totals = 3;
+}
+
+// Example read API over the ledger read model, served by the projector
+// process next to the framework ProjectorService.
+service LedgerQueryService {
+  // The wallet as the ledger sees it; found = false until the ledger has
+  // applied an event for that wallet.
+  rpc GetWalletBalance(GetWalletBalanceRequest) returns (WalletBalanceView);
+  // Global totals, every table row and whether money balances.
+  rpc GetLedger(GetLedgerRequest) returns (LedgerView);
+}
+
+message GetWalletBalanceRequest {
+  bytes player_root = 1;
+}
+
+message WalletBalanceView {
+  WalletLedgerRow wallet = 1;
+  int64 available = 2; // bankroll - held
+  bool found = 3;
+}
+
+message GetLedgerRequest {}
+
+message LedgerView {
+  LedgerTotals totals = 1;
+  repeated TableLedgerRow tables = 2;
+  // True when nothing is in flight and invariant L4 holds.
+  bool balanced = 3;
+}

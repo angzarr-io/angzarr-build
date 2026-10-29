@@ -3,3 +3,5 @@ angzarr-build-io = { $path }: { $detail }
 angzarr-build-protoc = protoc failed: { $detail }
 angzarr-build-prost = prost-build failed: { $detail }
 angzarr-build-codegen = { $error }
+angzarr-build-buf = buf generate failed: { $detail }
+angzarr-build-uv = uv failed: { $detail }

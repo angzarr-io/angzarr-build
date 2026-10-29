@@ -1,0 +1,85 @@
+syntax = "proto3";
+package io.angzarr.examples.v1;
+
+option csharp_namespace = "Angzarr.Examples";
+option go_package = "github.com/benjaminabbitt/angzarr/examples/go/proto/io/angzarr/examples/v1;examples";
+option java_multiple_files = true;
+option java_package = "io.angzarr.examples";
+option ruby_package = "Angzarr::Examples";
+
+// =============================================================================
+// Cards and the deterministic shoe (house rules AHR-2, AHR-3)
+// =============================================================================
+//
+// CARD VALUES (AHR-2)
+//   rank 1..13: 1 = Ace, 2..10 = pips, 11 = Jack, 12 = Queen, 13 = King.
+//   Points: Ace = 1 or 11, 2..10 = face value, Jack/Queen/King = 10.
+//   A hand's hard total counts every Ace as 1. Its total is hard + 10 when it
+//   holds at least one Ace and hard + 10 <= 21 (the hand is then "soft");
+//   otherwise the total is the hard total.
+//   Blackjack = exactly two cards totalling 21 (an Ace and a 10-point card).
+//
+// CANONICAL CARD INDEX
+//   index = 13 * s + (rank - 1), where s = 0 for CLUBS, 1 DIAMONDS,
+//   2 HEARTS, 3 SPADES (i.e. s = Suit enum value - 1). Index 0 = A♣,
+//   12 = K♣, 13 = A♦, 51 = K♠.
+//
+// FRESH SHOE
+//   For `decks` decks the fresh (unshuffled) shoe is the canonical deck
+//   (indices 0..51 in ascending order) repeated `decks` times, deck after
+//   deck: position p holds canonical index p mod 52. Length N = 52 * decks.
+//
+// SPLITMIX64 (all arithmetic on unsigned 64-bit integers, wrapping mod 2^64)
+//   state := seed
+//   next():
+//     state := state + 0x9E3779B97F4A7C15
+//     z := state
+//     z := (z XOR (z >> 30)) * 0xBF58476D1CE4E5B9
+//     z := (z XOR (z >> 27)) * 0x94D049BB133111EB
+//     return z XOR (z >> 31)
+//   (">>" is a logical, zero-filling shift. Check vector: seed 1234567
+//   yields 6457827717110365317 on the first next(); seed 1 yields
+//   10451216379200822465, 13757245211066428519, 17911839290282890590.)
+//
+// UNBIASED BOUNDED DRAW below(n), 1 <= n < 2^64
+//   threshold := (2^64 - n) mod n          (equals 2^64 mod n)
+//   loop:
+//     r := next()
+//     if r >= threshold (unsigned compare): return r mod n
+//   Values below `threshold` are discarded and redrawn, so every result in
+//   [0, n) is equally likely. Languages without unsigned 64-bit types must
+//   use unsigned compare / remainder helpers (e.g. Java
+//   Long.compareUnsigned / Long.remainderUnsigned).
+//
+// SHUFFLE (Fisher–Yates, descending)
+//   cards := fresh shoe of N cards; rng := SplitMix64(seed)
+//   for i from N-1 down to 1:
+//     j := rng.below(i + 1)
+//     swap cards[i] and cards[j]
+//   The result is the deal order: cards[0] is dealt first.
+//
+// NEXT SHOE SEED
+//   The shoe that replaces shoe k is shuffled with seed
+//   next_seed(seed_k) := the first next() of a fresh SplitMix64(seed_k).
+//   The table's first shoe uses CreateTable.shoe_seed unchanged.
+//
+// Every ShoeShuffled event records the full resulting order, so replay never
+// re-runs the algorithm. Golden vectors for seeds 1, 42 and 7 (1 and 6 decks)
+// live in features/example/blackjack/shoe.feature and must match byte for
+// byte in every language.
+
+// Suit of a card. Values are proto enum numbers; the canonical index uses
+// (value - 1).
+enum Suit {
+  SUIT_UNSPECIFIED = 0;
+  CLUBS = 1;
+  DIAMONDS = 2;
+  HEARTS = 3;
+  SPADES = 4;
+}
+
+// One playing card.
+message Card {
+  uint32 rank = 1; // 1..13 (Ace = 1, Jack = 11, Queen = 12, King = 13)
+  Suit suit = 2;
+}

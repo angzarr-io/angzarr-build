@@ -114,3 +114,16 @@ pub fn s(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect()
 }
+
+/// The blackjack example of spec decision 14.38 (`tests/fixtures/io`, the
+/// spec's protos as they are).
+pub const BLACKJACK: &[&str] = &[
+    "io/angzarr/examples/v1/buy_in.proto",
+    "io/angzarr/examples/v1/cards.proto",
+    "io/angzarr/examples/v1/ledger.proto",
+    "io/angzarr/examples/v1/player.proto",
+    "io/angzarr/examples/v1/policies.proto",
+    "io/angzarr/examples/v1/table.proto",
+    "io/angzarr/examples/v1/wallet.proto",
+];
+pub const PLAYER: &str = "io/angzarr/examples/v1/player.proto";

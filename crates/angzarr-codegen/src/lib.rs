@@ -8,6 +8,7 @@
 
 mod error;
 mod model;
+mod python;
 mod rust;
 mod scaffold;
 
@@ -15,7 +16,11 @@ pub use error::{CodegenError, diagnostic_samples};
 
 /// This crate's en-US messages.
 pub const EN_US: &str = include_str!("../locales/en-US/angzarr-codegen.ftl");
-pub use scaffold::{ScaffoldFile, Translate, complete, markup_domain, register, scaffold};
+pub use python::{
+    CLIENT_PYTHON_GIT, CLIENT_PYTHON_REV, ProtoInput, PythonApp, python_reroots, reroot_python,
+    scaffold_python,
+};
+pub use scaffold::{Owner, ScaffoldFile, Translate, complete, markup_domain, register, scaffold};
 
 /// The Rust source generated for one proto package.
 #[derive(Clone, PartialEq, Eq, Debug)]

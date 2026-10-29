@@ -470,3 +470,20 @@ fn derives(item: &syn::ItemStruct) -> Vec<String> {
         .map(text)
         .collect()
 }
+
+#[test]
+fn test_scaffold_skips_a_projector_beside_the_markup() {
+    let files = scaffold(&descriptors(BLACKJACK), BLACKJACK, &[]).expect("a projector is skipped");
+    assert!(
+        !files
+            .iter()
+            .any(|f| f.component == "io.angzarr.examples.v1.LedgerProjection"),
+        "{:?}",
+        files.iter().map(|f| &f.component).collect::<Vec<_>>()
+    );
+    assert!(
+        files
+            .iter()
+            .any(|f| f.component == "io.angzarr.examples.v1.TableState")
+    );
+}

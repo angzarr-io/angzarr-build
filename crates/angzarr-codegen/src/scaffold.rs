@@ -26,6 +26,17 @@ pub struct ScaffoldFile {
     /// Where it goes, relative to the crate's `src`: `wallet.rs`.
     pub path: String,
     pub source: String,
+    pub owner: Owner,
+}
+
+/// Who owns a scaffolded file.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Owner {
+    /// The user's: written once when absent, then only ever completed with
+    /// `--missing`.
+    User,
+    /// The CLI's: rewritten on every run, never edited by hand.
+    Generated,
 }
 
 /// angzarr-cli's refusal switch (backlog OB-7), set to translate for one
@@ -70,6 +81,7 @@ pub fn scaffold(
                 component: component.anchor.full_name().to_string(),
                 path: format!("{}.rs", snake(&component.name)),
                 source,
+                owner: Owner::User,
             })
         })
         .collect()
@@ -365,6 +377,11 @@ fn file(tokens: TokenStream) -> String {
 /// stub needing a marker or a type the file does not import yet compiles
 /// once the user adds the import.
 pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, CodegenError> {
+    // A Python project's files (and its pyproject.toml, which has no stubs
+    // to complete).
+    if !fresh.path.ends_with(".rs") {
+        return crate::python::complete(fresh, existing);
+    }
     let not_found = || CodegenError::ScaffoldImplNotFound {
         path: fresh.path.clone(),
         component: fresh.component.clone(),

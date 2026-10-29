@@ -17,7 +17,7 @@ angzarr-fmt-clap = { path = "crates/angzarr-fmt-clap" }
 angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
 angzarr-embedded-yaml = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
-angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr-project", rev = "1c2fd0e142af8d8367d9e7dc59478ff87698adbc" }
+angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr-project", rev = "a91b88262921786c246e63e2e694509fe8060a86" }
 clap = { version = "4.5", features = ["derive"] }
 fluent-bundle = "0.15"
 fluent-syntax = "0.11"

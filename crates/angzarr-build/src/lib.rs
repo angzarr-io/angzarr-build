@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
-pub use angzarr_codegen::Translate;
+pub use angzarr_codegen::{ProtoInput, PythonApp, Translate};
 
 /// This crate's en-US messages.
 pub const EN_US: &str = include_str!("../locales/en-US/angzarr-build.ftl");
@@ -97,6 +97,9 @@ pub enum Scaffolded {
     Completed(PathBuf),
     /// It existed and is unchanged.
     Kept(PathBuf),
+    /// A generated file (the CLI's, never the user's) that existed with
+    /// other content, rewritten.
+    Regenerated(PathBuf),
 }
 
 /// The markup scaffold of every component in `protos`, one file each
@@ -111,25 +114,93 @@ pub fn scaffold_into(
     translate: &[Translate],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
-    let work = scratch_dir()?;
-    let bytes = descriptors(&work, protos, includes);
-    let _ = std::fs::remove_dir_all(&work);
+    let bytes = scaffold_descriptors(protos, includes)?;
     let files =
-        angzarr_codegen::scaffold(&bytes?, protos, translate).map_err(BuildError::Codegen)?;
+        angzarr_codegen::scaffold(&bytes, protos, translate).map_err(BuildError::Codegen)?;
+    write_scaffold(src, files, existing)
+}
+
+/// The uv project of one Python domain (see
+/// `angzarr_codegen::scaffold_python`) under `root`, as [`scaffold_into`]
+/// writes a Rust scaffold: a user's file once, a generated file every time.
+pub fn scaffold_python_into(
+    root: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    app: &PythonApp,
+    existing: Existing,
+) -> Result<Vec<Scaffolded>, BuildError> {
+    let bytes = scaffold_descriptors(protos, includes)?;
+    let files =
+        angzarr_codegen::scaffold_python(&bytes, protos, app).map_err(BuildError::Codegen)?;
+    write_scaffold(root, files, existing)
+}
+
+/// protoc's descriptor set for a scaffold: `protos`, and every other proto
+/// in their directories, so a component a scaffolded message names (a
+/// policy, a projector) is found without being scaffolded.
+fn scaffold_descriptors(protos: &[&str], includes: &[&str]) -> Result<Vec<u8>, BuildError> {
+    let work = scratch_dir()?;
+    let mut inputs: Vec<String> = protos.iter().map(|p| p.to_string()).collect();
+    for proto in protos {
+        let Some(include) = includes.iter().find(|i| Path::new(i).join(proto).exists()) else {
+            continue;
+        };
+        let dir = Path::new(proto).parent().unwrap_or(Path::new(""));
+        let Ok(entries) = std::fs::read_dir(Path::new(include).join(dir)) else {
+            continue;
+        };
+        let mut siblings: Vec<String> = entries
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|name| name.ends_with(".proto"))
+            .map(|name| dir.join(name).to_string_lossy().replace('\\', "/"))
+            .collect();
+        siblings.sort();
+        for sibling in siblings {
+            if !inputs.contains(&sibling) {
+                inputs.push(sibling);
+            }
+        }
+    }
+    let inputs: Vec<&str> = inputs.iter().map(String::as_str).collect();
+    let bytes = descriptors(&work, &inputs, includes);
+    let _ = std::fs::remove_dir_all(&work);
+    bytes
+}
+
+/// Writes `files` under `root`: an absent file is created; an existing
+/// user's file is kept, or completed with `Existing::Complete`; an existing
+/// generated file is rewritten when it differs. Every file is decided
+/// before any is written, so a refusal writes none.
+fn write_scaffold(
+    root: &Path,
+    files: Vec<angzarr_codegen::ScaffoldFile>,
+    existing: Existing,
+) -> Result<Vec<Scaffolded>, BuildError> {
     let mut writes = Vec::new();
     let mut done = Vec::new();
     for file in files {
-        let path = src.join(&file.path);
+        let path = root.join(&file.path);
         if !path.exists() {
             writes.push((path.clone(), file.source));
             done.push(Scaffolded::Created(path));
+            continue;
+        }
+        let mine = std::fs::read_to_string(&path).map_err(|e| io(&path, &e))?;
+        if file.owner == angzarr_codegen::Owner::Generated {
+            if mine == file.source {
+                done.push(Scaffolded::Kept(path));
+            } else {
+                writes.push((path.clone(), file.source));
+                done.push(Scaffolded::Regenerated(path));
+            }
             continue;
         }
         if existing == Existing::Keep {
             done.push(Scaffolded::Kept(path));
             continue;
         }
-        let mine = std::fs::read_to_string(&path).map_err(|e| io(&path, &e))?;
         match angzarr_codegen::complete(&file, &mine).map_err(BuildError::Codegen)? {
             Some(completed) => {
                 writes.push((path.clone(), completed));
@@ -138,13 +209,87 @@ pub fn scaffold_into(
             None => done.push(Scaffolded::Kept(path)),
         }
     }
-    if !writes.is_empty() {
-        std::fs::create_dir_all(src).map_err(|e| io(src, &e))?;
-    }
     for (path, source) in writes {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| io(parent, &e))?;
+        }
         std::fs::write(&path, source).map_err(|e| io(&path, &e))?;
     }
     Ok(done)
+}
+
+/// The message types of a scaffolded Python project: `buf generate` run in
+/// `root` (its `buf.gen.yaml`), then every generated module's imports
+/// rerooted (`angzarr_codegen::reroot_python`): angzarr's own under
+/// `angzarr_client.proto`, the project's under its `_gen`.
+pub fn proto_gen_python(root: &Path, app: &PythonApp) -> Result<(), BuildError> {
+    run(root, "buf", &["generate"], |detail| BuildError::Buf {
+        detail,
+    })?;
+    let gen_dir = root
+        .join("src")
+        .join(format!("angzarr_{}", app.domain.replace('-', "_")))
+        .join("_gen");
+    let mut modules = Vec::new();
+    collect_python(&gen_dir, &mut modules)?;
+    let mut packages: Vec<String> = modules
+        .iter()
+        .filter_map(|m| m.parent()?.strip_prefix(&gen_dir).ok())
+        .map(|dir| dir.to_string_lossy().replace(['/', '\\'], "."))
+        .filter(|p| !p.is_empty())
+        .collect();
+    packages.sort();
+    packages.dedup();
+    let packages: Vec<&str> = packages.iter().map(String::as_str).collect();
+    let rules = angzarr_codegen::python_reroots(app, &packages);
+    for module in modules {
+        let source = std::fs::read_to_string(&module).map_err(|e| io(&module, &e))?;
+        let rerooted = angzarr_codegen::reroot_python(&source, &rules);
+        if rerooted != source {
+            std::fs::write(&module, rerooted).map_err(|e| io(&module, &e))?;
+        }
+    }
+    Ok(())
+}
+
+/// `uv lock` in `root`: the `uv.lock` angzarr-embedded's `uv run --locked`
+/// needs.
+pub fn lock_python(root: &Path) -> Result<(), BuildError> {
+    run(root, "uv", &["lock"], |detail| BuildError::Uv { detail })
+}
+
+/// Every `.py` and `.pyi` file under `dir`.
+fn collect_python(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), BuildError> {
+    let entries = std::fs::read_dir(dir).map_err(|e| io(dir, &e))?;
+    for entry in entries {
+        let path = entry.map_err(|e| io(dir, &e))?.path();
+        if path.is_dir() {
+            collect_python(&path, out)?;
+        } else if path.extension().is_some_and(|e| e == "py" || e == "pyi") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// `program args` in `dir`, its stderr the failure's detail.
+fn run(
+    dir: &Path,
+    program: &str,
+    args: &[&str],
+    fail: impl Fn(String) -> BuildError,
+) -> Result<(), BuildError> {
+    let output = Command::new(program)
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .map_err(|e| fail(e.to_string()))?;
+    if !output.status.success() {
+        return Err(fail(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// A fresh directory for protoc's output when there is no `OUT_DIR`.
@@ -280,6 +425,10 @@ pub enum BuildError {
     Protoc { detail: String },
     /// prost-build failed.
     Prost { detail: String },
+    /// `buf generate` could not run, or failed.
+    Buf { detail: String },
+    /// `uv` could not run, or failed.
+    Uv { detail: String },
     /// The generator refused the protos.
     Codegen(angzarr_codegen::CodegenError),
 }
@@ -291,6 +440,8 @@ impl fmt::Display for BuildError {
             BuildError::Io { path, detail } => write!(f, "{path}: {detail}"),
             BuildError::Protoc { detail } => write!(f, "protoc failed: {detail}"),
             BuildError::Prost { detail } => write!(f, "prost-build failed: {detail}"),
+            BuildError::Buf { detail } => write!(f, "buf generate failed: {detail}"),
+            BuildError::Uv { detail } => write!(f, "uv failed: {detail}"),
             BuildError::Codegen(error) => error.fmt(f),
         }
     }
@@ -313,6 +464,8 @@ impl Diagnostic for BuildError {
             BuildError::Io { .. } => "angzarr-build-io",
             BuildError::Protoc { .. } => "angzarr-build-protoc",
             BuildError::Prost { .. } => "angzarr-build-prost",
+            BuildError::Buf { .. } => "angzarr-build-buf",
+            BuildError::Uv { .. } => "angzarr-build-uv",
             BuildError::Codegen(_) => "angzarr-build-codegen",
         }
     }
@@ -324,7 +477,10 @@ impl Diagnostic for BuildError {
                 ("path", path.as_str().into()),
                 ("detail", detail.as_str().into()),
             ],
-            BuildError::Protoc { detail } | BuildError::Prost { detail } => {
+            BuildError::Protoc { detail }
+            | BuildError::Prost { detail }
+            | BuildError::Buf { detail }
+            | BuildError::Uv { detail } => {
                 vec![("detail", detail.as_str().into())]
             }
             BuildError::Codegen(error) => vec![("error", Arg::nested(error))],
@@ -343,6 +499,8 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         }),
         Box::new(BuildError::Protoc { detail: s() }),
         Box::new(BuildError::Prost { detail: s() }),
+        Box::new(BuildError::Buf { detail: s() }),
+        Box::new(BuildError::Uv { detail: s() }),
         Box::new(BuildError::Codegen(
             angzarr_codegen::CodegenError::NoWirePath { package: s() },
         )),
