@@ -152,6 +152,42 @@ fn test_the_users_files_name_nothing_of_the_harness() {
     }
 }
 
+/// A decision refuses its command by raising the domain module's
+/// `Rejection`: the harness's coded error as a business refusal
+/// (FAILED_PRECONDITION), a diagnostic key and its args, never text.
+#[test]
+fn test_domain_py_gives_the_logic_its_rejection() {
+    let files = player();
+    let domain = &file(&files, "src/angzarr_player/domain.py").source;
+    for expected in [
+        "from angzarr_client.router import CodedError as _CodedError\n",
+        "from angzarr_client.router import GrpcCode as _GrpcCode\n",
+        "class Rejection(_CodedError):\n",
+        "    def __init__(self, key: str, **args: object) -> None:\n",
+        "grpc=_GrpcCode.FAILED_PRECONDITION",
+        "extras={name: str(value) for name, value in args.items()}",
+    ] {
+        assert!(domain.contains(expected), "{expected}:\n{domain}");
+    }
+}
+
+/// A message named as one of the names `domain.py` gives the harness's
+/// types (`CommandContext`, `Rejection`) is refused, never renamed.
+#[test]
+fn test_scaffold_python_refuses_a_message_named_as_a_reserved_name() {
+    const FILE: &str = "bad/v1/reserved_name.proto";
+    let app = PythonApp {
+        domain: "things".to_string(),
+        ..player_app()
+    };
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app);
+    assert!(
+        matches!(&refused, Err(CodegenError::ReservedName { message, name })
+            if message == "bad.v1.Context" && name == "Context"),
+        "{refused:?}"
+    );
+}
+
 /// The dispatch hands each decision the harness's context of the command.
 #[test]
 fn test_the_dispatch_hands_each_decision_its_context() {

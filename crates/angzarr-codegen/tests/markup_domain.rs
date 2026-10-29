@@ -102,6 +102,25 @@ fn test_markup_domain_refuses_refuses_on_a_fact() {
     );
 }
 
+/// A message named as one of the names the domain layer gives the
+/// runtime's types (`Context`, `PolicyContext`, `CommandContext`, `Error`,
+/// `Rejection`) is refused, naming both, never renamed.
+#[test]
+fn test_markup_domain_refuses_a_message_named_as_a_reserved_name() {
+    const FILE: &str = "bad/v1/reserved_name.proto";
+    assert_eq!(
+        markup_domain(
+            &descriptors(&[FILE]),
+            &[FILE],
+            &[("bad.v1", "::bad_proto::v1")]
+        ),
+        Err(angzarr_codegen::CodegenError::ReservedName {
+            message: "bad.v1.Context".to_string(),
+            name: "Context".to_string(),
+        })
+    );
+}
+
 /// The names of the file's top-level enums and structs.
 fn items(file: &syn::File) -> Vec<String> {
     file.items

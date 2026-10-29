@@ -55,6 +55,11 @@ pub enum CodegenError {
     /// A fact (`(command).fact`) declaring `refuses`: a fact cannot be
     /// refused.
     RefusesOnFact { message: String },
+    /// A message or enum named as one of the names the generated domain
+    /// layer gives the runtime's types (`Context`, `PolicyContext`,
+    /// `CommandContext`, `Error`, `Rejection`): the generated code would
+    /// collide, and nothing is renamed silently.
+    ReservedName { message: String, name: String },
     /// A translate selection's fact is an input of the policy's source, but
     /// a command, not a fact.
     TranslateNotAFact { policy: String, fact: String },
@@ -168,6 +173,10 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} is a fact and declares refuses; a fact cannot be refused"
             ),
+            CodegenError::ReservedName { message, name } => write!(
+                f,
+                "{message} is named {name}, which the generated domain layer gives the runtime's own {name}; rename it"
+            ),
             CodegenError::TranslateNotAFact { policy, fact } => write!(
                 f,
                 "translate names {fact}, a command of {policy}'s source; it must name a fact"
@@ -240,6 +249,7 @@ impl Diagnostic for CodegenError {
             }
             CodegenError::ScaffoldImplNotFound { .. } => "angzarr-codegen-scaffold-impl-not-found",
             CodegenError::RefusesOnFact { .. } => "angzarr-codegen-refuses-on-fact",
+            CodegenError::ReservedName { .. } => "angzarr-codegen-reserved-name",
             CodegenError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
             CodegenError::SeveralRefusals { .. } => "angzarr-codegen-several-refusals",
             CodegenError::InputMismatch { .. } => "angzarr-codegen-input-mismatch",
@@ -303,6 +313,9 @@ impl Diagnostic for CodegenError {
                 vec![("path", s(path)), ("component", s(component))]
             }
             CodegenError::RefusesOnFact { message } => vec![("message", s(message))],
+            CodegenError::ReservedName { message, name } => {
+                vec![("message", s(message)), ("name", s(name))]
+            }
             CodegenError::TranslateNotAFact { policy, fact } => {
                 vec![("policy", s(policy)), ("fact", s(fact))]
             }
@@ -402,6 +415,10 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::PythonNoDomain { domain: s() }),
         Box::new(CodegenError::PythonKind { component: s() }),
         Box::new(CodegenError::PythonFact { message: s() }),
+        Box::new(CodegenError::ReservedName {
+            message: s(),
+            name: s(),
+        }),
         Box::new(CodegenError::PythonRefuses { message: s() }),
         Box::new(CodegenError::StartupPackages { files: s() }),
         Box::new(CodegenError::StartupConfig { detail: s() }),

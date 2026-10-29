@@ -16,6 +16,7 @@ angzarr-codegen-translate-not-a-target-command = translate names { $command }, w
 angzarr-codegen-translate-not-a-source-fact = translate names { $fact }, which is not an input of { $policy }'s source
 angzarr-codegen-scaffold-impl-not-found = { $path } holds no decorated impl of { $component }; it is left as it is
 angzarr-codegen-refuses-on-fact = { $message } is a fact and declares refuses; a fact cannot be refused
+angzarr-codegen-reserved-name = { $message } is named { $name }, which the generated domain layer gives the runtime's own { $name }; rename it
 angzarr-codegen-translate-not-a-fact = translate names { $fact }, a command of { $policy }'s source; it must name a fact
 angzarr-codegen-several-refusals = { $command } declares more than one refusal, which the scaffold does not emit yet
 angzarr-codegen-input-mismatch = { $path } takes { $message } as { $found }, but the proto declares it a { $expected }

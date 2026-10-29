@@ -142,7 +142,7 @@ fn test_scaffold_takes_a_fact_as_fact_and_a_command_as_cmd() {
     let files = buyin(&[]);
     let source = &file_at(&files, "buy_in.rs").source;
     assert!(
-        source.contains("fn hold_lost(&self, fact: &HoldLost) -> BuyInFailed;"),
+        source.contains("fn hold_lost(&self, fact: &HoldLost, ctx: &Context) -> BuyInFailed;"),
         "a fact's decision is infallible:\n{source}"
     );
     assert!(
@@ -378,6 +378,24 @@ fn test_adapters_forward_the_context_to_a_refused_method_with_no_typed_refusal()
     assert_eq!(
         text(&methods(imp)[1].block),
         "{crate::buy_in_wallet::BuyInWallet::hold_refused(&self.0,refusal.command(),ctx)}"
+    );
+}
+
+/// A fact handler's adapter hands the interface its context too, with no
+/// Result: a fact is recorded, never refused.
+#[test]
+fn test_adapters_forward_a_fact_handlers_context() {
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[], &golden_interface).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    let buy_in = inherent_impl(&file, "BuyIn");
+    let fact = methods(buy_in)
+        .into_iter()
+        .find(|m| m.sig.ident == "hold_lost")
+        .expect("the HoldLost handler");
+    assert!(
+        text(&fact.block).contains("crate::buy_in::BuyIn::hold_lost(&self.0,&fact,ctx)"),
+        "{}",
+        text(&fact.block)
     );
 }
 
