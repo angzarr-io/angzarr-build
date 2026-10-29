@@ -9,9 +9,24 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
-# What a decision reads besides its command and state, re-exported so the
-# logic imports only this module.
+# What a decision reads besides its command and state, and what it raises
+# to refuse its command, re-exported so the logic imports only this module.
+from angzarr_client.router import CodedError as _CodedError
 from angzarr_client.router import CommandContext as CommandContext
+from angzarr_client.router import GrpcCode as _GrpcCode
+
+
+class Rejection(_CodedError):
+    """Why a decision refuses its command, raised: a diagnostic key and its
+    args, never text (a business refusal, FAILED_PRECONDITION)."""
+
+    def __init__(self, key: str, **args: object) -> None:
+        super().__init__(
+            code=key,
+            message=key,
+            grpc=_GrpcCode.FAILED_PRECONDITION,
+            extras={name: str(value) for name, value in args.items()},
+        )
 
 
 class MoveAction(enum.IntEnum):

@@ -71,8 +71,8 @@ impl BuyIn {
         crate::buy_in::BuyIn::record_held(&self.0, &cmd, ctx).map(Emit::of)
     }
     #[handles_fact(HoldLost)]
-    fn hold_lost(&self, fact: HoldLost, _ctx: &Context) -> Record<Self> {
-        Record::of(crate::buy_in::BuyIn::hold_lost(&self.0, &fact))
+    fn hold_lost(&self, fact: HoldLost, ctx: &Context) -> Record<Self> {
+        Record::of(crate::buy_in::BuyIn::hold_lost(&self.0, &fact, ctx))
     }
     #[applies(BuyInStarted)]
     fn buy_in_started(&mut self, event: BuyInStarted) {

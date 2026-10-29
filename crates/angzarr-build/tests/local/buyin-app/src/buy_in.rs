@@ -11,7 +11,7 @@ pub trait BuyIn {
 
     fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Rejection>;
 
-    fn hold_lost(&self, fact: &HoldLost) -> BuyInFailed;
+    fn hold_lost(&self, fact: &HoldLost, ctx: &Context) -> BuyInFailed;
 
     fn apply_buy_in_started(&mut self, event: &BuyInStarted);
 

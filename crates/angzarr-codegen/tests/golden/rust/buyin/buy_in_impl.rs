@@ -20,7 +20,7 @@ impl BuyIn for BuyInImpl {
         todo!()
     }
 
-    fn hold_lost(&self, _fact: &HoldLost) -> BuyInFailed {
+    fn hold_lost(&self, _fact: &HoldLost, _ctx: &Context) -> BuyInFailed {
         todo!()
     }
 

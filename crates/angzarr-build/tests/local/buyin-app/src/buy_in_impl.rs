@@ -21,7 +21,7 @@ impl BuyIn for BuyInImpl {
         Ok(BuyInHeld { cents: cmd.cents })
     }
 
-    fn hold_lost(&self, fact: &HoldLost) -> BuyInFailed {
+    fn hold_lost(&self, fact: &HoldLost, _ctx: &Context) -> BuyInFailed {
         BuyInFailed { short: fact.short }
     }
 

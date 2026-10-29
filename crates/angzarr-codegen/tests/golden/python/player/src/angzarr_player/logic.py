@@ -2,8 +2,9 @@
 ``io.angzarr.examples.v1.PlayerState``. Written once by ``angzarr scaffold
 python`` and yours from then on: ``--missing`` adds the methods it lacks. It
 takes and returns the domain's plain types (:mod:`.domain`), each decision its
-``CommandContext`` too, and imports nothing of angzarr directly; the generated
-dispatch (``_gen/.../player_aggregate_angzarr.py``) calls it.
+``CommandContext`` too, raising ``Rejection`` to refuse its command, and
+imports nothing of angzarr directly; the generated dispatch
+(``_gen/.../player_aggregate_angzarr.py``) calls it.
 """
 
 from __future__ import annotations

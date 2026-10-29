@@ -132,14 +132,57 @@ pub(crate) fn build_markup(
         .into_iter()
         .filter(|c| c.kind != ComponentKind::Policy)
         .collect();
-    packages(components, |c| {
+    let packages = packages(components, |c| {
         c.inputs
             .iter()
             .flat_map(|i| std::iter::once(&i.message).chain(&i.refuses))
             .chain(&c.events)
             .cloned()
             .collect()
-    })
+    })?;
+    for package in packages.values() {
+        let names = package
+            .messages
+            .iter()
+            .map(|m| (m.full_name(), m.name().to_string()))
+            .chain(
+                package
+                    .enums
+                    .iter()
+                    .map(|e| (e.full_name(), crate::rust::enum_name(e))),
+            );
+        refuse_reserved(names)?;
+    }
+    Ok(packages)
+}
+
+/// The names the generated domain layer gives the runtime's types, which no
+/// domain type may take: a handler's `Context`, a policy reaction's
+/// `PolicyContext`, a refused command's `CommandContext`, a policy's
+/// `Error` and a decision's `Rejection`.
+pub(crate) const RESERVED: &[&str] = &[
+    "Context",
+    "PolicyContext",
+    "CommandContext",
+    "Error",
+    "Rejection",
+];
+
+/// The first of `names` (each a type's full name and the name the domain
+/// layer gives it) that is [`RESERVED`], refused: the generated code would
+/// collide, and nothing is renamed silently.
+pub(crate) fn refuse_reserved<'a>(
+    names: impl IntoIterator<Item = (&'a str, String)>,
+) -> Result<(), CodegenError> {
+    for (full, local) in names {
+        if RESERVED.contains(&local.as_str()) {
+            return Err(CodegenError::ReservedName {
+                message: full.to_string(),
+                name: local,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Every marked-up component of every file in the descriptor set, so a

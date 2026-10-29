@@ -28,7 +28,7 @@ use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
 /// on, pinned by commit: every project this CLI scaffolds gets this one.
-pub const CLIENT_PYTHON_REV: &str = "49a0c219035aefb54d75bf26185507e88a5fc745";
+pub const CLIENT_PYTHON_REV: &str = "a657da8139db9f0ec8fcef81627944ff361ac166";
 /// Where [`CLIENT_PYTHON_REV`] is fetched from.
 pub const CLIENT_PYTHON_GIT: &str = "https://github.com/angzarr-io/angzarr-client-python";
 
@@ -94,6 +94,17 @@ pub fn scaffold_python(
     }
     for component in &components {
         check(component)?;
+        let (messages, enums) = reached(component);
+        model::refuse_reserved(
+            messages
+                .iter()
+                .map(|m| (m.full_name(), local_name(m.full_name(), m.package_name())))
+                .chain(
+                    enums
+                        .iter()
+                        .map(|e| (e.full_name(), local_name(e.full_name(), e.package_name()))),
+                ),
+        )?;
     }
     let package = app.package();
     let src = format!("src/{package}");
@@ -363,8 +374,9 @@ fn interface(app: &PythonApp, component: &Component) -> String {
         "\"\"\"{name}: the {} domain's logic, for ``{}``. Written once by \
          ``angzarr scaffold python`` and yours from then on: ``--missing`` adds the methods \
          it lacks. It takes and returns the domain's plain types (:mod:`.domain`), each \
-         decision its ``CommandContext`` too, and imports nothing of angzarr directly; the \
-         generated dispatch (``_gen/.../{}_angzarr.py``) calls it.",
+         decision its ``CommandContext`` too, raising ``Rejection`` to refuse its command, \
+         and imports nothing of angzarr directly; the generated dispatch \
+         (``_gen/.../{}_angzarr.py``) calls it.",
         app.domain,
         component.anchor.full_name(),
         snake(&component.name),
@@ -542,9 +554,21 @@ fn domain_py(app: &PythonApp, component: &Component) -> String {
          from __future__ import annotations\n\n\
          import enum\n\
          from dataclasses import dataclass\n\n\
-         # What a decision reads besides its command and state, re-exported so the\n\
-         # logic imports only this module.\n\
-         from angzarr_client.router import CommandContext as CommandContext\n",
+         # What a decision reads besides its command and state, and what it raises\n\
+         # to refuse its command, re-exported so the logic imports only this module.\n\
+         from angzarr_client.router import CodedError as _CodedError\n\
+         from angzarr_client.router import CommandContext as CommandContext\n\
+         from angzarr_client.router import GrpcCode as _GrpcCode\n\n\n\
+         class Rejection(_CodedError):\n    \
+         \"\"\"Why a decision refuses its command, raised: a diagnostic key and its\n    \
+         args, never text (a business refusal, FAILED_PRECONDITION).\"\"\"\n\n    \
+         def __init__(self, key: str, **args: object) -> None:\n        \
+         super().__init__(\n            \
+         code=key,\n            \
+         message=key,\n            \
+         grpc=_GrpcCode.FAILED_PRECONDITION,\n            \
+         extras={{name: str(value) for name, value in args.items()}},\n        \
+         )\n",
         app.domain
     );
     for e in &enums {

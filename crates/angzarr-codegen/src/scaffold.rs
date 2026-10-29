@@ -260,7 +260,10 @@ fn interface_methods(
             methods.push(Method {
                 name: method(ty),
                 receiver: "&self",
-                params: vec![("fact".to_string(), format!("&{ty}"))],
+                params: vec![
+                    ("fact".to_string(), format!("&{ty}")),
+                    ("ctx".to_string(), "&Context".to_string()),
+                ],
                 output: Some(out),
             });
             continue;
@@ -782,13 +785,13 @@ fn domain_adapter(component: &Component) -> TokenStream {
         if input.fact {
             let emit = emitted(component, &input.emits, "Record");
             let body = if is_open(&input.emits) {
-                quote!((#emit)(#interface::#m(&self.0, &fact)))
+                quote!((#emit)(#interface::#m(&self.0, &fact, ctx)))
             } else {
-                quote!(Record::of(#interface::#m(&self.0, &fact)))
+                quote!(Record::of(#interface::#m(&self.0, &fact, ctx)))
             };
             methods.push(quote! {
                 #[handles_fact(#ty)]
-                fn #m(&self, fact: #ty, _ctx: &Context) -> Record<Self> {
+                fn #m(&self, fact: #ty, ctx: &Context) -> Record<Self> {
                     #body
                 }
             });

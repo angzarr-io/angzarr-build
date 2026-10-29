@@ -23,7 +23,7 @@ dev = ["pytest>=8,<9.2", "pytest-timeout>=2.3"]
 
 [tool.uv.sources]
 # The angzarr Python package at the commit this angzarr CLI was built against.
-angzarr-client = { git = "https://github.com/angzarr-io/angzarr-client-python", rev = "49a0c219035aefb54d75bf26185507e88a5fc745" }
+angzarr-client = { git = "https://github.com/angzarr-io/angzarr-client-python", rev = "a657da8139db9f0ec8fcef81627944ff361ac166" }
 
 [build-system]
 requires = ["hatchling"]
