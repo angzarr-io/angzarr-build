@@ -17,10 +17,10 @@ publish = false
 # it names, so the app has one router and one angzarr-proto (55eab0f,
 # angzarr-embedded's).
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "169b79b21cd977cccdc198351a73d2d51531f3e9" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "169b79b21cd977cccdc198351a73d2d51531f3e9" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "169b79b21cd977cccdc198351a73d2d51531f3e9" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "169b79b21cd977cccdc198351a73d2d51531f3e9" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0e4c2dab2db95989bb42a9718cf4445f035cc234" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0e4c2dab2db95989bb42a9718cf4445f035cc234" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0e4c2dab2db95989bb42a9718cf4445f035cc234" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0e4c2dab2db95989bb42a9718cf4445f035cc234" }
 angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "bc870aa2fd2bc3592d4e999d314a0f8cb30ad9c2" }
 prost = "0.14"
 

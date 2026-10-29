@@ -638,7 +638,7 @@ pub fn adapters(
                 let source = interface(&format!("{}.rs", snake(&component.name)));
                 let refused = source.as_deref().map(refused_methods).unwrap_or_default();
                 if !refused.is_empty() {
-                    markup.push("Refusal");
+                    markup.extend(["CommandContext", "Refusal"]);
                     macros.push("on_refused");
                 }
                 policy_adapter(component, &components, &refused)
@@ -1030,8 +1030,13 @@ fn policy_adapter(
         };
         quote! {
             #[on_refused(#command)]
-            fn #m(&self, refusal: &Refusal<#command>) -> #fact {
-                #interface::#m(&self.0, #args)
+            fn #m(
+                &self,
+                refusal: &Refusal<#command>,
+                ctx: &CommandContext,
+            ) -> ::core::result::Result<#fact, ::core::convert::Infallible> {
+                let _ = ctx;
+                ::core::result::Result::Ok(#interface::#m(&self.0, #args))
             }
         }
     });
