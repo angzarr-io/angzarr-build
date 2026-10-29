@@ -128,6 +128,35 @@ fn test_markup_domain_has_the_rejection_and_each_components_command_and_event_en
     }
 }
 
+/// The domain layer gives the user's files the runtime's contexts and a
+/// policy's error under its own names, so a user file imports only
+/// `crate::domain`: a handler's `Context`, a policy reaction's
+/// `PolicyContext`, a refused command's `CommandContext`, and `Error`, a
+/// diagnostic key and its args.
+#[test]
+fn test_markup_domain_gives_the_users_files_the_contexts_and_the_error() {
+    let file = buyin();
+    let reexports: Vec<String> = file
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            syn::Item::Use(u) => Some(quote::ToTokens::to_token_stream(&u.tree).to_string().replace(' ', "")),
+            _ => None,
+        })
+        .collect();
+    for name in ["Context", "PolicyContext", "CommandContext"] {
+        assert!(
+            reexports.contains(&format!("::angzarr_embedded::next::markup::{name}")),
+            "{name}: {reexports:?}"
+        );
+    }
+    assert!(items(&file).contains(&"Error".to_string()), "{:?}", items(&file));
+    assert!(impls(&file).contains(&(
+        "::angzarr_embedded_diagnostic::Diagnostic".to_string(),
+        "Error".to_string()
+    )));
+}
+
 #[test]
 fn test_markup_domain_gives_a_typed_refusal_its_diagnostic() {
     assert!(impls(&buyin()).contains(&(

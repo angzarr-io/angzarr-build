@@ -79,24 +79,28 @@ fn test_scaffold_matches_the_golden_files() {
     }
 }
 
+/// A user file imports nothing from the runtime directly: its context and
+/// error types come through `crate::domain`, and no code line names the
+/// runtime's crates, nor its markup.
 #[test]
-fn test_the_users_files_name_nothing_of_the_runtime() {
+fn test_the_users_files_import_nothing_from_the_runtime_directly() {
     for f in buyin(&[translate_hold()]) {
-        for runtime in [
-            "angzarr_embedded",
-            "Context",
-            "Emit",
-            "Refuses",
-            "Commands",
-            "#[",
-        ] {
-            let source = f.source.replace("#[derive(", "");
-            assert!(
-                !source.contains(runtime),
-                "{} names {runtime}:\n{}",
-                f.path,
-                f.source
-            );
+        let code: Vec<&str> = f
+            .source
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect();
+        for line in &code {
+            for runtime in ["angzarr_embedded", "angzarr_", "#[on_", "#[handles", "#[policy"] {
+                assert!(
+                    !line.contains(runtime),
+                    "{} names {runtime}: {line}",
+                    f.path
+                );
+            }
+            if let Some(path) = line.trim_start().strip_prefix("use ") {
+                assert!(path.starts_with("crate::"), "{} imports {path}", f.path);
+            }
         }
     }
 }
@@ -136,7 +140,9 @@ fn test_scaffold_takes_a_fact_as_fact_and_a_command_as_cmd() {
         "a fact's decision is infallible:\n{source}"
     );
     assert!(
-        source.contains("fn record_held(&self, cmd: &RecordHeld) -> Result<BuyInHeld, Rejection>;"),
+        source.contains(
+            "fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Rejection>;"
+        ),
         "{source}"
     );
 }
@@ -147,7 +153,7 @@ fn test_scaffold_adds_a_refused_method_for_each_command_the_switch_translates() 
     let source = &file_at(&files, "buy_in_wallet.rs").source;
     assert!(
         source.contains(
-            "    fn hold_refused(&self, command: &Hold, refusal: Option<InsufficientFunds>) -> HoldLost;"
+            "    fn hold_refused(\n        &self,\n        command: &Hold,\n        refusal: Option<InsufficientFunds>,\n        ctx: &CommandContext,\n    ) -> Result<HoldLost, Error>;"
         ),
         "{source}"
     );
@@ -264,13 +270,13 @@ fn test_a_decision_returns_its_one_event_or_any_of_its_events() {
     let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
     let table = &file_at(&files, "table_aggregate.rs").source;
     for expected in [
-        "fn place_bet(&self, cmd: &PlaceBet) -> Result<BetPlaced, Rejection>;",
+        "fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Result<BetPlaced, Rejection>;",
         // Hit emits a variable subset of its four (the card, then a turn or
         // the dealer and the settlement): any of its events, not a tuple.
-        "fn hit(&self, cmd: &Hit) -> Result<Vec<TableAggregateEvent>, Rejection>;",
-        "fn create_table(&self, cmd: &CreateTable) -> Result<Vec<TableAggregateEvent>, Rejection>;",
-        "fn deal_round(&self, cmd: &DealRound) -> Result<Vec<TableAggregateEvent>, Rejection>;",
-        "fn confirm_seat(&self, cmd: &ConfirmSeat) -> Result<PlayerSeated, SeatNotConfirmable>;",
+        "fn hit(&self, cmd: &Hit, ctx: &Context) -> Result<Vec<TableAggregateEvent>, Rejection>;",
+        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Rejection>;",
+        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Rejection>;",
+        "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<PlayerSeated, SeatNotConfirmable>;",
     ] {
         assert!(table.contains(expected), "{expected}:\n{table}");
     }
@@ -322,8 +328,8 @@ fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
         s(&[("on_event", "BuyInStarted"), ("on_refused", "Hold")])
     );
     // The callback takes the refused command's context and answers a
-    // Result, as angzarr-embedded's #[policy] requires; the interface's
-    // method cannot fail, so the answer is Ok.
+    // Result, and forwards both: the interface's method reads the context
+    // and answers the Result, its error the domain's `Error`.
     let callback = methods(imp)[1];
     assert_eq!(
         callback
@@ -340,11 +346,72 @@ fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
     );
     assert_eq!(
         text(&callback.sig.output),
-        "->::core::result::Result<HoldLost,::core::convert::Infallible>"
+        "->::core::result::Result<HoldLost,Error>"
     );
     assert_eq!(
         text(&callback.block),
-        "{let_=ctx;::core::result::Result::Ok(crate::buy_in_wallet::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),),)}"
+        "{crate::buy_in_wallet::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),ctx,)}"
+    );
+}
+
+/// A `<command>_refused` method with no typed refusal takes the context
+/// second: the parser does not take it for the refusal.
+#[test]
+fn test_adapters_forward_the_context_to_a_refused_method_with_no_typed_refusal() {
+    let interface = |path: &str| {
+        (path == "buy_in_wallet.rs").then(|| {
+            "pub trait BuyInWallet {\n\
+             fn hold_refused(&self, command: &Hold, ctx: &CommandContext) \
+             -> Result<HoldLost, Error>;\n}\n"
+                .to_string()
+        })
+    };
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[], &interface).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    let imp = inherent_impl(&file, "BuyInWallet");
+    assert_eq!(
+        text(&methods(imp)[1].block),
+        "{crate::buy_in_wallet::BuyInWallet::hold_refused(&self.0,refusal.command(),ctx)}"
+    );
+}
+
+/// A command handler's adapter hands the interface its context; a policy
+/// reaction's hands it its context and answers its Result.
+#[test]
+fn test_adapters_forward_each_handlers_context() {
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[], &golden_interface).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    let wallet = inherent_impl(&file, "Wallet");
+    assert_eq!(
+        text(&methods(wallet)[0].block),
+        "{crate::wallet::Wallet::deposit(&self.0,&cmd,ctx).map(Emit::of)}"
+    );
+    let policy = inherent_impl(&file, "BuyInWallet");
+    let reaction = methods(policy)[0];
+    assert_eq!(
+        text(&reaction.sig.output),
+        "->::core::result::Result<Commands<Wallet>,Error>"
+    );
+    assert!(
+        text(&reaction.block).starts_with(
+            "{letorders=crate::buy_in_wallet::BuyInWallet::buy_in_started(&self.0,&source_root(ctx),event,ctx,)?;"
+        ),
+        "{}",
+        text(&reaction.block)
+    );
+}
+
+/// A policy reaction takes the source root, the event and its context, and
+/// answers its commands or its error, a bug.
+#[test]
+fn test_scaffold_gives_a_policy_reaction_its_context_and_a_result() {
+    let files = buyin(&[]);
+    let source = &file_at(&files, "buy_in_wallet.rs").source;
+    assert!(
+        source.contains(
+            "    fn buy_in_started(\n        &self,\n        source: &[u8],\n        event: &BuyInStarted,\n        ctx: &PolicyContext,\n    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Error>;"
+        ),
+        "{source}"
     );
 }
 
