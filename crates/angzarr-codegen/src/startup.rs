@@ -117,7 +117,13 @@ fn config(app: &StartupApp, domains: &[String]) -> String {
         "\n[store]\n\
          # SQLite, created when absent, relative to the working directory;\n\
          # `in_memory = true` keeps nothing on disk.\n\
-         path = \"angzarr.db\"\n",
+         path = \"angzarr.db\"\n\n\
+         [policy]\n\
+         # What a policy step that hits a bug (the policy's own error, or a handler's\n\
+         # bug in its step) does with the policy's position once the step is\n\
+         # dead-lettered: \"move_past\" the trigger (the dead letter is the record to\n\
+         # replay) or \"stay\" at it, so a resume runs the step again.\n\
+         on_bug = \"move_past\"\n",
     );
     out
 }
@@ -276,6 +282,11 @@ struct HostConfig {
     #[serde(default)]
     #[allow(dead_code)]
     store: Option<toml::Table>,
+    /// `[policy]`: what a policy step's bug does with its position; the
+    /// host checks its values.
+    #[serde(default)]
+    #[allow(dead_code)]
+    policy: Option<toml::Table>,
 }
 
 #[derive(Deserialize)]
