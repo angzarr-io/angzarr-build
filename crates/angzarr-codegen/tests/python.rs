@@ -389,6 +389,20 @@ fn test_scaffold_python_converts_a_repeated_scalar_as_a_sequence() {
     }
 }
 
+/// An `optional` scalar keeps its absence: unset on the wire is None in
+/// the plain type, not the scalar's zero. Back to the wire, None goes to the
+/// pb2 constructor as is, which leaves the field unset.
+#[test]
+fn test_scaffold_python_converts_an_optional_scalar_absent_as_none() {
+    let dispatch = basket_file(DISPATCH);
+    for expected in [
+        "discount=pb.discount if pb.HasField(\"discount\") else None,",
+        "discount=value.discount,",
+    ] {
+        assert!(dispatch.contains(expected), "{expected}:\n{dispatch}");
+    }
+}
+
 #[test]
 fn test_scaffold_python_generates_every_domain_file_its_messages_reach() {
     let buf = basket_file("buf.gen.yaml");
