@@ -366,6 +366,7 @@ fn test_scaffold_python_types_each_field_shape_with_its_default() {
         "    last: Item | None = None\n",
         "    items: tuple[Item, ...] = ()\n",
         "    mood: Mood = Mood.UNSPECIFIED\n",
+        "    feeling: Mood | None = None\n",
     ] {
         assert!(domain.contains(expected), "{expected}:\n{domain}");
     }
@@ -398,6 +399,20 @@ fn test_scaffold_python_converts_an_optional_scalar_absent_as_none() {
     for expected in [
         "discount=pb.discount if pb.HasField(\"discount\") else None,",
         "discount=value.discount,",
+    ] {
+        assert!(dispatch.contains(expected), "{expected}:\n{dispatch}");
+    }
+}
+
+/// An `optional` enum keeps its absence the same way: unset on the wire
+/// is None, not the zero member, and None back to the wire stays None
+/// rather than raising in `int()`.
+#[test]
+fn test_scaffold_python_converts_an_optional_enum_absent_as_none() {
+    let dispatch = basket_file(DISPATCH);
+    for expected in [
+        "feeling=_d.Mood(pb.feeling) if pb.HasField(\"feeling\") else None,",
+        "feeling=None if value.feeling is None else int(value.feeling),",
     ] {
         assert!(dispatch.contains(expected), "{expected}:\n{dispatch}");
     }

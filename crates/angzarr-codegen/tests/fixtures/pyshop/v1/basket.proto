@@ -21,6 +21,7 @@ message BasketState {
   Item last = 6;
   repeated Item items = 7;
   Mood mood = 8;
+  optional Mood feeling = 9;
 }
 
 message Item {
