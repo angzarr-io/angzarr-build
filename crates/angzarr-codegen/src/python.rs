@@ -616,6 +616,12 @@ fn converter_pair(m: &MessageDescriptor) -> String {
                 }
             }
             _ if f.is_list() => (format!("tuple({wire})"), format!("list({value})")),
+            // An `optional` scalar: absent on the wire is None, and None
+            // back to the pb2 constructor leaves the field unset.
+            _ if f.supports_presence() => (
+                format!("{wire} if pb.HasField({:?}) else None", f.name()),
+                value.clone(),
+            ),
             _ => (wire.clone(), value.clone()),
         };
         to_args.push(format!("        {name}={into},\n"));
