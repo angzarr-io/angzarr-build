@@ -11,15 +11,15 @@ publish = false
 
 [workspace]
 
-# angzarr-embedded and angzarr-router at the revs the POC lands on. Both are
-# placeholders until angzarr-embedded step 2 (angzarr-ports) and angzarr-embedded dispatching
-# through the router land: re-pin here then (the test that builds this is
-# ignored until it can pass).
+# angzarr-embedded at the rev that dispatches through angzarr-router, and the
+# router at the rev it names, so the app has one router and one angzarr-proto
+# (55eab0f, angzarr-embedded's). The run test is ignored until
+# angzarr-embedded has a local entry point.
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
-angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "70528f0b2de4a2de812886ea90aebb483ed47f75" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "dfe1cf19a253b6aafd8ea57e564622002dc410b7" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "dfe1cf19a253b6aafd8ea57e564622002dc410b7" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "dfe1cf19a253b6aafd8ea57e564622002dc410b7" }
+angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "6be9159962b4d3beffa3936855a55b6469ca0cc7" }
 prost = "0.14"
 
 [build-dependencies]
