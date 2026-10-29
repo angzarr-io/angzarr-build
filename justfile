@@ -14,9 +14,16 @@ test:
     cargo test --workspace
 
 # `just test` runs every package's; this is the quick loop on one crate.
+# Arguments after a `--` go to the test binaries, as with cargo test: `just
+# test-pkg angzarr-build -- --ignored local`.
 # Run the named packages' tests only.
-test-pkg +packages:
-    cargo test {{prepend("-p ", packages)}}
+test-pkg +args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -- {{args}}
+    packages=()
+    while [ "$#" -gt 0 ] && [ "$1" != -- ]; do packages+=(-p "$1"); shift; done
+    exec cargo test "${packages[@]}" "$@"
 
 # cargo-mutants over the mutants the staged Rust diff touches, each judged
 # by the workspace's tests. A generated-code test builds and runs a project,
