@@ -1094,7 +1094,11 @@ pub fn register(
                 }
                 ComponentKind::Policy => quote!(registry.policy(#ty::default());),
             }
-        });
+        })
+        .collect::<Vec<_>>();
+    // Every domain remote leaves the body empty: the registry is still
+    // taken, for one signature, and bound so the build warns of nothing.
+    let unused = registrations.is_empty().then(|| quote!(let _ = registry;));
     let next = next();
     let doc = [
         format!(" Registers every component of the project with {RUNTIME}, which dispatches"),
@@ -1103,6 +1107,7 @@ pub fn register(
     let source = file(quote! {
         #(#[doc = #doc])*
         pub fn register(registry: &mut #next::Registry) {
+            #unused
             #(#registrations)*
         }
     });
