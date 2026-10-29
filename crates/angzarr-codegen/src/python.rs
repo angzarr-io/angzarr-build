@@ -259,7 +259,9 @@ fn logic_name(app: &PythonApp) -> String {
     format!("{camel}Logic")
 }
 
-/// A decision decides a command from the state and returns what it emits;
+/// A decision decides a command from the state and its context (the
+/// harness's `CommandContext`, re-exported by `domain.py`) and returns what
+/// it emits;
 /// a fold takes the state and an event and returns the next state. All of
 /// it in the domain's plain types (`domain.py`).
 fn methods(component: &Component) -> Vec<Method> {
@@ -284,6 +286,7 @@ fn methods(component: &Component) -> Vec<Method> {
             params: vec![
                 ("cmd".to_string(), ty.clone()),
                 ("state".to_string(), state.clone()),
+                ("ctx".to_string(), "CommandContext".to_string()),
             ],
             returns,
             todo: format!("decide {ty}"),
@@ -308,6 +311,9 @@ fn methods(component: &Component) -> Vec<Method> {
 fn interface_imports(app: &PythonApp, component: &Component) -> String {
     let mut names = BTreeSet::new();
     names.insert(component.anchor.name().to_string());
+    if !component.inputs.is_empty() {
+        names.insert("CommandContext".to_string());
+    }
     for input in &component.inputs {
         names.insert(input.message.name().to_string());
         names.extend(input.emits.iter().map(|e| e.name().to_string()));
@@ -356,9 +362,9 @@ fn interface(app: &PythonApp, component: &Component) -> String {
     let doc = wrap(&format!(
         "\"\"\"{name}: the {} domain's logic, for ``{}``. Written once by \
          ``angzarr scaffold python`` and yours from then on: ``--missing`` adds the methods \
-         it lacks. It takes and returns the domain's plain types (:mod:`.domain`) and \
-         names nothing of angzarr; the generated dispatch (``_gen/.../{}_angzarr.py``) \
-         calls it.",
+         it lacks. It takes and returns the domain's plain types (:mod:`.domain`), each \
+         decision its ``CommandContext`` too, and imports nothing of angzarr directly; the \
+         generated dispatch (``_gen/.../{}_angzarr.py``) calls it.",
         app.domain,
         component.anchor.full_name(),
         snake(&component.name),
@@ -535,7 +541,10 @@ fn domain_py(app: &PythonApp, component: &Component) -> String {
          messages to these and back.\n\"\"\"\n\n\
          from __future__ import annotations\n\n\
          import enum\n\
-         from dataclasses import dataclass\n",
+         from dataclasses import dataclass\n\n\
+         # What a decision reads besides its command and state, re-exported so the\n\
+         # logic imports only this module.\n\
+         from angzarr_client.router import CommandContext as CommandContext\n",
         app.domain
     );
     for e in &enums {
@@ -724,7 +733,7 @@ fn dispatch(app: &PythonApp, component: &Component) -> String {
         out.push_str(&format!(
             "\n    def _on_{method}(payload, state, cctx):\n        \
              cmd = {cmd_to}(_decode({}(), payload))\n        \
-             return _book(logic.{method}(cmd, {state_to}(state)))\n\n",
+             return _book(logic.{method}(cmd, {state_to}(state), cctx))\n\n",
             pb2_class(&input.message),
         ));
         out.push_str(&call(

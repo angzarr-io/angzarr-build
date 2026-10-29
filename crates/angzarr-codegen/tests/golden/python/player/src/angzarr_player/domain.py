@@ -9,6 +9,10 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 
+# What a decision reads besides its command and state, re-exported so the
+# logic imports only this module.
+from angzarr_client.router import CommandContext as CommandContext
+
 
 class MoveAction(enum.IntEnum):
     UNSPECIFIED = 0

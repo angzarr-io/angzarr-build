@@ -86,11 +86,19 @@ fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
     assert_eq!(placed, expected);
 }
 
+/// Each file of the player's project against its golden file;
+/// `ANGZARR_BLESS=1` rewrites the golden files instead, as for the Rust
+/// scaffold's.
 #[test]
 fn test_scaffold_python_matches_the_golden_project() {
     for f in player() {
-        let golden = std::fs::read_to_string(format!("{GOLDEN}/{}", f.path))
-            .unwrap_or_else(|_| panic!("no golden {}", f.path));
+        let path = format!("{GOLDEN}/{}", f.path);
+        if std::env::var_os("ANGZARR_BLESS").is_some() {
+            std::fs::write(&path, &f.source).unwrap();
+            continue;
+        }
+        let golden =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("no golden {}", f.path));
         assert_eq!(f.source, golden, "{}", f.path);
     }
 }

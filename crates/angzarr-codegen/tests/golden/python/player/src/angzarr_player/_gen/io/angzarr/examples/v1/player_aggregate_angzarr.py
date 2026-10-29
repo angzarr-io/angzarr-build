@@ -147,7 +147,7 @@ def new_player_aggregate_dispatch(logic: PlayerLogic) -> _az.AggregateDispatch:
 
     def _on_decide_move(payload, state, cctx):
         cmd = _to_decide_move(_decode(_player.DecideMove(), payload))
-        return _book(logic.decide_move(cmd, _to_player_state(state)))
+        return _book(logic.decide_move(cmd, _to_player_state(state), cctx))
 
     dispatch.on_command("io.angzarr.examples.v1.DecideMove", _on_decide_move)
     return dispatch
