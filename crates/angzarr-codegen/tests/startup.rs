@@ -23,6 +23,8 @@ fn blackjack() -> StartupApp {
         name: "blackjack".to_string(),
         python: vec!["player".to_string()],
         includes: vec!["proto".to_string()],
+        angzarr_build: r#"{ git = "https://github.com/angzarr-io/angzarr-cli", rev = "c1898ae" }"#
+            .to_string(),
     }
 }
 
@@ -31,7 +33,16 @@ fn test_startup_matches_the_golden_files_all_the_users() {
     let files = startup(&descriptors(BLACKJACK), FILES, &blackjack()).unwrap();
     let mut paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
     paths.sort();
-    assert_eq!(paths, ["angzarr.toml", "build.rs", "src/main.rs"]);
+    assert_eq!(
+        paths,
+        [
+            "Cargo.toml",
+            "angzarr.toml",
+            "build.rs",
+            "src/driver.rs",
+            "src/main.rs"
+        ]
+    );
     for f in &files {
         assert_eq!(f.owner, Owner::User, "{}", f.path);
         let golden = std::fs::read_to_string(format!("{GOLDEN}/{}", f.path)).unwrap();
@@ -123,4 +134,28 @@ fn test_lint_startup_refuses_a_config_that_is_not_a_host_config() {
         lint_startup(misspelt, &descriptors(BLACKJACK), FILES),
         Err(CodegenError::StartupConfig { .. })
     ));
+}
+
+#[test]
+fn test_startup_pins_angzarr_embedded_by_the_one_constant() {
+    let files = startup(&descriptors(BLACKJACK), FILES, &blackjack()).unwrap();
+    let manifest = &files
+        .iter()
+        .find(|f| f.path == "Cargo.toml")
+        .unwrap()
+        .source;
+    for krate in [
+        "angzarr-embedded",
+        "angzarr-embedded-diagnostic",
+        "angzarr-embedded-host",
+        "angzarr-embedded-macros",
+    ] {
+        assert!(
+            manifest.contains(&format!(
+                "{krate} = {{ git = \"https://github.com/angzarr-io/angzarr-embedded\", rev = \"{}\" }}",
+                angzarr_codegen::ANGZARR_EMBEDDED_REV
+            )),
+            "{krate}:\n{manifest}"
+        );
+    }
 }

@@ -13,3 +13,8 @@ name = "player"
 language = "python"
 dir = "player"
 entry = ["angzarr-player"]
+
+[store]
+# SQLite, created when absent, relative to the working directory;
+# `in_memory = true` keeps nothing on disk.
+path = "angzarr.db"

@@ -14,6 +14,7 @@ pub mod adapters {
 }
 include!(concat!(env!("OUT_DIR"), "/angzarr-register.rs"));
 
+pub mod driver;
 pub mod player_table_policy;
 pub mod player_table_policy_impl;
 pub mod table_aggregate;
@@ -21,6 +22,10 @@ pub mod table_aggregate_impl;
 pub mod table_player_policy;
 pub mod table_player_policy_impl;
 
-fn main() -> std::process::ExitCode {
-    angzarr_embedded_host::run("angzarr.toml", register)
+/// Runs the application: its remote domains launched and every domain
+/// registered (`angzarr_embedded_host::run`), then its driver. Dropping the
+/// application stops the children.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let app = angzarr_embedded_host::run("angzarr.toml", register)?;
+    driver::drive(&app)
 }

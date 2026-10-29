@@ -1,7 +1,9 @@
 //! The startup of an angzarr-embedded application: the host config
-//! (`angzarr.toml`, data: every domain, its language and how a remote one
-//! is launched), the thin `src/main.rs` that runs it, and the `build.rs`
-//! generating the rest. All three are written once and are the user's.
+//! (`angzarr.toml`, data: every domain, its language, how a remote one is
+//! launched, and the store), the thin `src/main.rs` that runs it with
+//! angzarr-embedded-host's `run`, the driver it hands the running
+//! application to (`src/driver.rs`), the `build.rs` generating the rest, and
+//! the `Cargo.toml`. All are written once and are the user's.
 //!
 //! The config is angzarr-embedded-host's `HostConfig` in its TOML form;
 //! [`lint_startup`] checks one against the protos.
@@ -23,6 +25,12 @@ pub const IN_PROCESS_LANGUAGE: &str = "rust";
 /// `default_launch`); any other needs a `launch`.
 pub const LAUNCHED_LANGUAGES: &[&str] = &["python"];
 
+/// The angzarr-embedded commit a generated application depends on: its
+/// runtime, markup, diagnostics and host.
+pub const ANGZARR_EMBEDDED_REV: &str = "3fa53265d5f2812c6057e4931b75dbfdadf65909";
+/// Where [`ANGZARR_EMBEDDED_REV`] is fetched from.
+pub const ANGZARR_EMBEDDED_GIT: &str = "https://github.com/angzarr-io/angzarr-embedded";
+
 /// One application's startup.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StartupApp {
@@ -33,6 +41,9 @@ pub struct StartupApp {
     pub python: Vec<String>,
     /// The protos' include directories, as the build script names them.
     pub includes: Vec<String>,
+    /// The build dependency on angzarr-build, as a TOML value: `{ git =
+    /// "...", rev = "..." }` or `{ path = "..." }`.
+    pub angzarr_build: String,
 }
 
 /// The startup of every domain declared in `files`: `angzarr.toml`,
@@ -62,8 +73,10 @@ pub fn startup(
         owner: Owner::User,
     };
     Ok(vec![
+        file("Cargo.toml", manifest(app)),
         file("angzarr.toml", config(app, &domains)),
         file("build.rs", build_rs(files, app)),
+        file("src/driver.rs", driver_rs(app)),
         file("src/main.rs", main_rs(app, &components, &domains, files)?),
     ])
 }
@@ -100,7 +113,61 @@ fn config(app: &StartupApp, domains: &[String]) -> String {
             out.push_str(&format!("language = {IN_PROCESS_LANGUAGE:?}\n"));
         }
     }
+    out.push_str(
+        "\n[store]\n\
+         # SQLite, created when absent, relative to the working directory;\n\
+         # `in_memory = true` keeps nothing on disk.\n\
+         path = \"angzarr.db\"\n",
+    );
     out
+}
+
+fn manifest(app: &StartupApp) -> String {
+    let dep = format!("{{ git = \"{ANGZARR_EMBEDDED_GIT}\", rev = \"{ANGZARR_EMBEDDED_REV}\" }}");
+    format!(
+        "# {name} on angzarr-embedded. Written once by `angzarr scaffold startup`\n\
+         # and yours from then on.\n\n\
+         [package]\n\
+         name = {package:?}\n\
+         version = \"0.1.0\"\n\
+         edition = \"2024\"\n\
+         publish = false\n\n\
+         # angzarr-embedded, its markup and its host, at the commit this angzarr CLI\n\
+         # generates for; the generated domain layer needs prost.\n\
+         [dependencies]\n\
+         angzarr-embedded = {dep}\n\
+         angzarr-embedded-diagnostic = {dep}\n\
+         angzarr-embedded-host = {dep}\n\
+         angzarr-embedded-macros = {dep}\n\
+         prost = \"0.14\"\n\n\
+         [build-dependencies]\n\
+         angzarr-build = {}\n",
+        app.angzarr_build,
+        name = app.name,
+        package = app
+            .name
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            })
+            .collect::<String>(),
+    )
+}
+
+fn driver_rs(app: &StartupApp) -> String {
+    format!(
+        "//! What {} does once it is up. Written once by `angzarr scaffold\n\
+         //! startup` and yours: send commands with `app.handle(book, &sampled)`, read\n\
+         //! a stream with `app.events(&cover)`. The application is used, and dropped,\n\
+         //! outside an async context.\n\n\
+         use angzarr_embedded_host::App;\n\n\
+         pub fn drive(app: &App) -> Result<(), Box<dyn std::error::Error>> {{\n    \
+         let _ = app;\n    \
+         todo!(\"send the application's commands\")\n}}\n",
+        app.name
+    )
 }
 
 fn build_rs(files: &[&str], app: &StartupApp) -> String {
@@ -169,6 +236,7 @@ fn main_rs(
             let stem = snake(&c.name);
             [format!("pub mod {stem};"), format!("pub mod {stem}_impl;")]
         })
+        .chain(std::iter::once("pub mod driver;".to_string()))
         .collect();
     modules.sort();
     let include = |name: &str| format!("    include!(concat!(env!(\"OUT_DIR\"), \"/{name}\"));\n");
@@ -182,8 +250,12 @@ fn main_rs(
          pub mod adapters {{\n{}}}\n\
          include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-register.rs\"));\n\n\
          {}\n\n\
-         fn main() -> std::process::ExitCode {{\n    \
-         angzarr_embedded_host::run(\"angzarr.toml\", register)\n}}\n",
+         /// Runs the application: its remote domains launched and every domain\n\
+         /// registered (`angzarr_embedded_host::run`), then its driver. Dropping the\n\
+         /// application stops the children.\n\
+         fn main() -> Result<(), Box<dyn std::error::Error>> {{\n    \
+         let app = angzarr_embedded_host::run(\"angzarr.toml\", register)?;\n    \
+         driver::drive(&app)\n}}\n",
         app.name,
         include(&format!("{package}.rs")),
         include(&format!("{package}.domain.rs")),
@@ -201,6 +273,9 @@ struct HostConfig {
     #[serde(default)]
     #[allow(dead_code)]
     supervision: Option<toml::Table>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    store: Option<toml::Table>,
 }
 
 #[derive(Deserialize)]
