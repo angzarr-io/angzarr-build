@@ -57,12 +57,12 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-diagnostic"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=dfe1cf19a253b6aafd8ea57e564622002dc410b7#dfe1cf19a253b6aafd8ea57e564622002dc410b7"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=3fa53265d5f2812c6057e4931b75dbfdadf65909#3fa53265d5f2812c6057e4931b75dbfdadf65909"
 
 [[package]]
 name = "angzarr-embedded-yaml"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=dfe1cf19a253b6aafd8ea57e564622002dc410b7#dfe1cf19a253b6aafd8ea57e564622002dc410b7"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=3fa53265d5f2812c6057e4931b75dbfdadf65909#3fa53265d5f2812c6057e4931b75dbfdadf65909"
 dependencies = [
  "angzarr-embedded-diagnostic",
 ]
