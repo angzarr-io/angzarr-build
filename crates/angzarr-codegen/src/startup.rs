@@ -1,0 +1,354 @@
+//! The startup of an angzarr-embedded application: the host config
+//! (`angzarr.toml`, data: every domain, its language and how a remote one
+//! is launched), the thin `src/main.rs` that runs it, and the `build.rs`
+//! generating the rest. All three are written once and are the user's.
+//!
+//! The config is angzarr-embedded-host's `HostConfig` in its TOML form;
+//! [`lint_startup`] checks one against the protos.
+
+use std::collections::BTreeSet;
+use std::fmt;
+
+use angzarr_embedded_diagnostic::{Arg, Diagnostic};
+use serde::Deserialize;
+
+use crate::error::CodegenError;
+use crate::model::{self, Component, ComponentKind, MARKUP_KINDS};
+use crate::rust::snake;
+use crate::scaffold::{Owner, ScaffoldFile};
+
+/// The language whose domains run in the application's own process.
+pub const IN_PROCESS_LANGUAGE: &str = "rust";
+/// The languages the host launches with a default command (its
+/// `default_launch`); any other needs a `launch`.
+pub const LAUNCHED_LANGUAGES: &[&str] = &["python"];
+
+/// One application's startup.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct StartupApp {
+    /// The application's name, for the prose.
+    pub name: String,
+    /// The domains served by a Python child process; every other domain is
+    /// Rust, in process.
+    pub python: Vec<String>,
+    /// The protos' include directories, as the build script names them.
+    pub includes: Vec<String>,
+}
+
+/// The startup of every domain declared in `files`: `angzarr.toml`,
+/// `build.rs` and `src/main.rs`, paths relative to the crate root.
+pub fn startup(
+    descriptor_set: &[u8],
+    files: &[&str],
+    app: &StartupApp,
+) -> Result<Vec<ScaffoldFile>, CodegenError> {
+    let components = model::components(descriptor_set, files, MARKUP_KINDS)?;
+    let domains = domains(&components);
+    for python in &app.python {
+        if !domains.contains(python) {
+            return Err(CodegenError::PythonNoDomain {
+                domain: python.clone(),
+            });
+        }
+    }
+    let anchor = components
+        .first()
+        .map(|c| c.anchor.full_name().to_string())
+        .unwrap_or_default();
+    let file = |path: &str, source: String| ScaffoldFile {
+        component: anchor.clone(),
+        path: path.to_string(),
+        source,
+        owner: Owner::User,
+    };
+    Ok(vec![
+        file("angzarr.toml", config(app, &domains)),
+        file("build.rs", build_rs(files, app)),
+        file("src/main.rs", main_rs(app, &components, &domains, files)?),
+    ])
+}
+
+/// The domains of the aggregates and process managers, in declaration
+/// order.
+fn domains(components: &[Component]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for c in components {
+        if c.kind != ComponentKind::Policy && !out.contains(&c.domain) {
+            out.push(c.domain.clone());
+        }
+    }
+    out
+}
+
+fn config(app: &StartupApp, domains: &[String]) -> String {
+    let mut out = format!(
+        "# angzarr-embedded's host configuration for {}: every domain, the\n\
+         # language it is written in and, for one served by a child process, how it\n\
+         # is launched (its language's default launch, then its entry; `launch`\n\
+         # replaces both). Written once by `angzarr scaffold startup` and yours from\n\
+         # then on; `angzarr lint startup` checks it against the protos.\n",
+        app.name
+    );
+    for domain in domains {
+        out.push_str(&format!("\n[[domain]]\nname = {domain:?}\n"));
+        if app.python.contains(domain) {
+            out.push_str(&format!(
+                "language = \"python\"\ndir = {domain:?}\nentry = [\"angzarr-{}\"]\n",
+                domain.replace('_', "-")
+            ));
+        } else {
+            out.push_str(&format!("language = {IN_PROCESS_LANGUAGE:?}\n"));
+        }
+    }
+    out
+}
+
+fn build_rs(files: &[&str], app: &StartupApp) -> String {
+    let list = |items: Vec<String>| -> String {
+        let one = format!("&[{}]", items.join(", "));
+        if one.len() + 26 <= 100 {
+            return one;
+        }
+        let lines: String = items.iter().map(|i| format!("    {i},\n")).collect();
+        format!("&[\n{lines}]")
+    };
+    let protos = list(files.iter().map(|f| format!("{f:?}")).collect());
+    let includes = list(app.includes.iter().map(|i| format!("{i:?}")).collect());
+    format!(
+        "//! Generates the wire types, the domain layer, the adapters and\n\
+         //! `register()` into OUT_DIR from the protos; a domain angzarr.toml serves\n\
+         //! from a child process gets a contract, not an adapter. Written once by\n\
+         //! `angzarr scaffold startup`.\n\n\
+         const PROTOS: &[&str] = {protos};\n\
+         const INCLUDES: &[&str] = {includes};\n\n\
+         fn main() -> Result<(), angzarr_build::BuildError> {{\n    \
+         angzarr_build::app(\"angzarr.toml\", PROTOS, INCLUDES)\n}}\n"
+    )
+}
+
+/// The Rust components of the application: every aggregate and process
+/// manager of a domain not served by a child, and every policy between two
+/// of its domains.
+pub(crate) fn rust_components<'a>(
+    components: &'a [Component],
+    domains: &[String],
+    remote: &[String],
+) -> Vec<&'a Component> {
+    components
+        .iter()
+        .filter(|c| match c.kind {
+            ComponentKind::Policy => {
+                domains.contains(&c.input_domain) && domains.contains(&c.output_domain)
+            }
+            _ => !remote.contains(&c.domain),
+        })
+        .collect()
+}
+
+fn main_rs(
+    app: &StartupApp,
+    components: &[Component],
+    domains: &[String],
+    files: &[&str],
+) -> Result<String, CodegenError> {
+    let mut packages = BTreeSet::new();
+    for c in components {
+        packages.insert(c.anchor.package_name().to_string());
+    }
+    let package = match packages.len() {
+        1 => packages.into_iter().next().unwrap_or_default(),
+        _ => {
+            return Err(CodegenError::StartupPackages {
+                files: files.join(", "),
+            });
+        }
+    };
+    let mut modules: Vec<String> = rust_components(components, domains, &app.python)
+        .iter()
+        .flat_map(|c| {
+            let stem = snake(&c.name);
+            [format!("pub mod {stem};"), format!("pub mod {stem}_impl;")]
+        })
+        .collect();
+    modules.sort();
+    let include = |name: &str| format!("    include!(concat!(env!(\"OUT_DIR\"), \"/{name}\"));\n");
+    Ok(format!(
+        "//! {} on angzarr-embedded: the Rust domains in process, and each\n\
+         //! domain angzarr.toml lists in another language launched as a child\n\
+         //! process. Written once by `angzarr scaffold startup`; `angzarr scaffold\n\
+         //! rust` writes the modules.\n\n\
+         pub mod wire {{\n{}}}\n\
+         pub mod domain {{\n{}}}\n\
+         pub mod adapters {{\n{}}}\n\
+         include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-register.rs\"));\n\n\
+         {}\n\n\
+         fn main() -> std::process::ExitCode {{\n    \
+         angzarr_embedded_host::run(\"angzarr.toml\", register)\n}}\n",
+        app.name,
+        include(&format!("{package}.rs")),
+        include(&format!("{package}.domain.rs")),
+        include("angzarr-adapters.rs"),
+        modules.join("\n"),
+    ))
+}
+
+/// angzarr-embedded-host's `HostConfig`, as far as the lints read it.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HostConfig {
+    #[serde(rename = "domain", default)]
+    domains: Vec<DomainConfig>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    supervision: Option<toml::Table>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DomainConfig {
+    name: String,
+    language: String,
+    #[serde(default)]
+    launch: Option<Vec<String>>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    entry: Vec<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    dir: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    env: std::collections::BTreeMap<String, String>,
+}
+
+/// What [`lint_startup`] finds wrong with a host config.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum StartupLint {
+    /// A domain in a language the host has no launch for, and no `launch`.
+    UnknownLanguage { domain: String, language: String },
+    /// A `launch` with no program.
+    EmptyLaunch { domain: String },
+    /// A domain no aggregate or process manager of the protos owns.
+    UnknownDomain { domain: String },
+    /// A domain listed twice.
+    DuplicateDomain { domain: String },
+    /// A domain of the protos the config does not list.
+    UnlistedDomain { domain: String },
+}
+
+impl fmt::Display for StartupLint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StartupLint::UnknownLanguage { domain, language } => write!(
+                f,
+                "the domain {domain} is in {language}, which has no default launch; give it a launch"
+            ),
+            StartupLint::EmptyLaunch { domain } => {
+                write!(f, "the domain {domain}'s launch names no program")
+            }
+            StartupLint::UnknownDomain { domain } => write!(
+                f,
+                "the domain {domain} is owned by no aggregate or process manager of the protos"
+            ),
+            StartupLint::DuplicateDomain { domain } => {
+                write!(f, "the domain {domain} is listed more than once")
+            }
+            StartupLint::UnlistedDomain { domain } => write!(
+                f,
+                "the protos declare the domain {domain}, which the config does not list"
+            ),
+        }
+    }
+}
+
+impl Diagnostic for StartupLint {
+    fn code(&self) -> &'static str {
+        match self {
+            StartupLint::UnknownLanguage { .. } => "angzarr-codegen-startup-unknown-language",
+            StartupLint::EmptyLaunch { .. } => "angzarr-codegen-startup-empty-launch",
+            StartupLint::UnknownDomain { .. } => "angzarr-codegen-startup-unknown-domain",
+            StartupLint::DuplicateDomain { .. } => "angzarr-codegen-startup-duplicate-domain",
+            StartupLint::UnlistedDomain { .. } => "angzarr-codegen-startup-unlisted-domain",
+        }
+    }
+
+    fn args(&self) -> Vec<(&'static str, Arg)> {
+        match self {
+            StartupLint::UnknownLanguage { domain, language } => vec![
+                ("domain", domain.as_str().into()),
+                ("language", language.as_str().into()),
+            ],
+            StartupLint::EmptyLaunch { domain }
+            | StartupLint::UnknownDomain { domain }
+            | StartupLint::DuplicateDomain { domain }
+            | StartupLint::UnlistedDomain { domain } => vec![("domain", domain.as_str().into())],
+        }
+    }
+}
+
+/// One value of every lint, for the catalog test.
+pub fn startup_lint_samples() -> Vec<Box<dyn Diagnostic>> {
+    let s = || "x".to_string();
+    vec![
+        Box::new(StartupLint::UnknownLanguage {
+            domain: s(),
+            language: s(),
+        }),
+        Box::new(StartupLint::EmptyLaunch { domain: s() }),
+        Box::new(StartupLint::UnknownDomain { domain: s() }),
+        Box::new(StartupLint::DuplicateDomain { domain: s() }),
+        Box::new(StartupLint::UnlistedDomain { domain: s() }),
+    ]
+}
+
+/// The lints of `config`, a host config's TOML, against the domains the
+/// protos declare in `files`, in the config's order and then the protos'.
+/// A config that does not read as a host config is refused.
+pub fn lint_startup(
+    config: &str,
+    descriptor_set: &[u8],
+    files: &[&str],
+) -> Result<Vec<StartupLint>, CodegenError> {
+    let parsed: HostConfig = toml::from_str(config).map_err(|e| CodegenError::StartupConfig {
+        detail: e.message().to_string(),
+    })?;
+    let components = model::components(descriptor_set, files, MARKUP_KINDS)?;
+    let declared = domains(&components);
+    let mut lints = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+    for domain in &parsed.domains {
+        let name = domain.name.clone();
+        if seen.contains(&domain.name.as_str()) {
+            lints.push(StartupLint::DuplicateDomain {
+                domain: name.clone(),
+            });
+        }
+        seen.push(&domain.name);
+        if !declared.contains(&domain.name) {
+            lints.push(StartupLint::UnknownDomain {
+                domain: name.clone(),
+            });
+        }
+        match &domain.launch {
+            Some(launch) if launch.first().is_none_or(|p| p.trim().is_empty()) => {
+                lints.push(StartupLint::EmptyLaunch { domain: name });
+            }
+            Some(_) => {}
+            None => {
+                let language = domain.language.as_str();
+                if language != IN_PROCESS_LANGUAGE && !LAUNCHED_LANGUAGES.contains(&language) {
+                    lints.push(StartupLint::UnknownLanguage {
+                        domain: name,
+                        language: domain.language.clone(),
+                    });
+                }
+            }
+        }
+    }
+    for domain in declared {
+        if !seen.contains(&domain.as_str()) {
+            lints.push(StartupLint::UnlistedDomain { domain });
+        }
+    }
+    Ok(lints)
+}

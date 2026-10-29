@@ -11,6 +11,7 @@ mod model;
 mod python;
 mod rust;
 mod scaffold;
+mod startup;
 
 pub use error::{CodegenError, diagnostic_samples};
 
@@ -21,6 +22,10 @@ pub use python::{
     scaffold_python,
 };
 pub use scaffold::{Owner, ScaffoldFile, Translate, complete, markup_domain, register, scaffold};
+pub use startup::{
+    IN_PROCESS_LANGUAGE, LAUNCHED_LANGUAGES, StartupApp, StartupLint, lint_startup, startup,
+    startup_lint_samples,
+};
 
 /// The Rust source generated for one proto package.
 #[derive(Clone, PartialEq, Eq, Debug)]

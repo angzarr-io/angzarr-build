@@ -387,7 +387,11 @@ pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, 
         component: fresh.component.clone(),
     };
     let fresh_file = syn::parse_file(&fresh.source).expect("a scaffold parses");
-    let fresh_impl = decorated_impl(&fresh_file, None).expect("a scaffold holds its impl");
+    // A file with no markup (the startup's build.rs and main.rs) has no
+    // stubs to complete.
+    let Some(fresh_impl) = decorated_impl(&fresh_file, None) else {
+        return Ok(None);
+    };
     let user_file = syn::parse_file(existing).map_err(|_| not_found())?;
     let user_impl = decorated_impl(&user_file, Some(fresh_impl)).ok_or_else(not_found)?;
 

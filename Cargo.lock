@@ -49,7 +49,9 @@ dependencies = [
  "prost",
  "prost-reflect",
  "quote",
+ "serde",
  "syn 3.0.9",
+ "toml",
 ]
 
 [[package]]
