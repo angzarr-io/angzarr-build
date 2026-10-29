@@ -1,13 +1,15 @@
-//! The file side of the scaffold and of `register`: the scaffold goes into
-//! the user's `src` once and is never overwritten, `Existing::Complete`
-//! (`--missing`) adds only absent stubs, and `register` goes into the
+//! The file side of the scaffold and of the generated layer: the scaffold
+//! (each component's interface and implementation) goes into the user's
+//! `src` once and is never overwritten, `Existing::Complete` (`--missing`)
+//! adds only absent methods, and the adapters and `register` go into the
 //! output directory, regenerated every build.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use angzarr_build::{
-    BuildError, Existing, Scaffolded, Translate, markup_domain_into, register_into, scaffold_into,
+    BuildError, Existing, Scaffolded, Translate, adapters_into, markup_domain_into, register_into,
+    scaffold_into,
 };
 use angzarr_codegen::CodegenError;
 
@@ -15,6 +17,16 @@ const BUYIN: &[&str] = &[
     "buyin/v1/wallet.proto",
     "buyin/v1/buy_in.proto",
     "buyin/v1/policies.proto",
+];
+const FILES: &[&str] = &[
+    "buy_in.rs",
+    "buy_in_impl.rs",
+    "buy_in_wallet.rs",
+    "buy_in_wallet_impl.rs",
+    "wallet.rs",
+    "wallet_buy_in.rs",
+    "wallet_buy_in_impl.rs",
+    "wallet_impl.rs",
 ];
 
 fn fixtures() -> String {
@@ -45,21 +57,12 @@ fn scaffold(src: &Path, existing: Existing) -> Vec<Scaffolded> {
 #[test]
 fn test_scaffold_into_writes_each_absent_file() {
     let src = empty_dir();
-    assert_eq!(
-        scaffold(&src, Existing::Keep),
-        [
-            Scaffolded::Created(src.join("buy_in.rs")),
-            Scaffolded::Created(src.join("buy_in_wallet.rs")),
-            Scaffolded::Created(src.join("wallet.rs")),
-            Scaffolded::Created(src.join("wallet_buy_in.rs")),
-        ]
-    );
-    for file in [
-        "buy_in.rs",
-        "buy_in_wallet.rs",
-        "wallet.rs",
-        "wallet_buy_in.rs",
-    ] {
+    let created: Vec<Scaffolded> = FILES
+        .iter()
+        .map(|f| Scaffolded::Created(src.join(f)))
+        .collect();
+    assert_eq!(scaffold(&src, Existing::Keep), created);
+    for file in FILES {
         let source = std::fs::read_to_string(src.join(file)).expect(file);
         syn::parse_file(&source).expect("the scaffold parses");
     }
@@ -90,8 +93,8 @@ fn test_scaffold_into_with_complete_adds_only_absent_stubs() {
     scaffold(&src, Existing::Keep);
     let path = src.join("buy_in_wallet.rs");
     let before = std::fs::read_to_string(&path).unwrap();
-    // The switch now translates Hold for BuyInWallet: its callback stub is
-    // the one stub absent.
+    // The switch now translates Hold for BuyInWallet: its refused method is
+    // the one method absent, from the interface and the implementation.
     let translate = [Translate {
         policy: "buyin.v1.BuyInWalletPolicy".to_string(),
         command: "buyin.v1.Hold".to_string(),
@@ -100,37 +103,37 @@ fn test_scaffold_into_with_complete_adds_only_absent_stubs() {
     let mut done =
         scaffold_into(&src, BUYIN, &[&fixtures()], &translate, Existing::Complete).unwrap();
     done.sort_by_key(|d| format!("{d:?}"));
-    assert_eq!(
-        done,
-        [
-            Scaffolded::Completed(src.join("buy_in_wallet.rs")),
-            Scaffolded::Kept(src.join("buy_in.rs")),
-            Scaffolded::Kept(src.join("wallet.rs")),
-            Scaffolded::Kept(src.join("wallet_buy_in.rs")),
-        ]
-    );
+    let mut expected: Vec<Scaffolded> = FILES
+        .iter()
+        .map(|f| match *f {
+            "buy_in_wallet.rs" | "buy_in_wallet_impl.rs" => Scaffolded::Completed(src.join(f)),
+            _ => Scaffolded::Kept(src.join(f)),
+        })
+        .collect();
+    expected.sort_by_key(|d| format!("{d:?}"));
+    assert_eq!(done, expected);
     let after = std::fs::read_to_string(&path).unwrap();
-    assert!(after.contains("on_refused(Hold)"), "{after}");
+    assert!(after.contains("fn hold_refused("), "{after}");
     assert!(after.len() > before.len());
     std::fs::remove_dir_all(&src).unwrap();
 }
 
 #[test]
-fn test_scaffold_into_with_complete_refuses_a_marker_the_proto_contradicts() {
+fn test_scaffold_into_with_complete_refuses_an_input_the_proto_contradicts() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
     let path = src.join("buy_in.rs");
-    // The user marked HoldLost, a fact, as a command.
+    // The user took HoldLost, a fact, as a command.
     let mine = std::fs::read_to_string(&path)
         .unwrap()
-        .replace("handles_fact(HoldLost)", "handles_cmd(HoldLost)");
+        .replace("fact: &HoldLost", "cmd: &HoldLost");
     std::fs::write(&path, &mine).unwrap();
     let error = scaffold_into(&src, BUYIN, &[&fixtures()], &[], Existing::Complete)
         .expect_err("a mismatched marker");
     assert!(
         matches!(
             &error,
-            BuildError::Codegen(CodegenError::MarkerMismatch { message, .. })
+            BuildError::Codegen(CodegenError::InputMismatch { message, .. })
                 if message == "buyin.v1.HoldLost"
         ),
         "{error:?}"
@@ -142,7 +145,7 @@ fn test_scaffold_into_with_complete_refuses_a_marker_the_proto_contradicts() {
 #[test]
 fn test_register_into_writes_the_generated_register() {
     let out = empty_dir();
-    register_into(&out, BUYIN, &[&fixtures()]).unwrap();
+    register_into(&out, BUYIN, &[&fixtures()], &[]).unwrap();
     let source = std::fs::read_to_string(out.join("angzarr-register.rs")).expect("register");
     assert_eq!(
         source,
@@ -167,4 +170,50 @@ fn test_markup_domain_into_writes_the_markup_domain_layer_by_package() {
         "{source}"
     );
     std::fs::remove_dir_all(&out).unwrap();
+}
+
+#[test]
+fn test_adapters_into_writes_the_generated_adapters() {
+    let out = empty_dir();
+    adapters_into(&out, BUYIN, &[&fixtures()], &[]).unwrap();
+    let source = std::fs::read_to_string(out.join("angzarr-adapters.rs")).expect("adapters");
+    assert!(
+        source.starts_with("// @generated by angzarr-codegen"),
+        "{source}"
+    );
+    assert!(
+        source.contains("pub struct Wallet(pub crate::wallet_impl::WalletImpl);"),
+        "{source}"
+    );
+    std::fs::remove_dir_all(&out).unwrap();
+}
+
+#[test]
+fn test_scaffold_into_rescaffolded_leaves_every_users_file_byte_identical() {
+    // A scaffold run after the first, with --missing, over files a user has
+    // written in: none changes, because nothing is absent.
+    let src = empty_dir();
+    scaffold(&src, Existing::Keep);
+    for file in FILES {
+        let path = src.join(file);
+        let mine = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("todo!()", "todo!(\"mine\")");
+        std::fs::write(&path, mine).unwrap();
+    }
+    let before: Vec<String> = FILES
+        .iter()
+        .map(|f| std::fs::read_to_string(src.join(f)).unwrap())
+        .collect();
+    let done = scaffold(&src, Existing::Complete);
+    assert!(
+        done.iter().all(|d| matches!(d, Scaffolded::Kept(_))),
+        "{done:?}"
+    );
+    let after: Vec<String> = FILES
+        .iter()
+        .map(|f| std::fs::read_to_string(src.join(f)).unwrap())
+        .collect();
+    assert_eq!(before, after);
+    std::fs::remove_dir_all(&src).unwrap();
 }

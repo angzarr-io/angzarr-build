@@ -33,6 +33,9 @@ message Hold {
   };
 
   int64 cents = 1;
+  // The buy-in holding: a policy names its target root from a field of
+  // the source event (decision 14.36).
+  bytes buy_in = 2;
 }
 
 // Hold's typed refusal: a message of the wallet's domain, never an event.
@@ -55,4 +58,5 @@ message Held {
   };
 
   int64 cents = 1;
+  bytes buy_in = 2;
 }

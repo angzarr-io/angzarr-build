@@ -221,6 +221,35 @@ struct DomainConfig {
     env: std::collections::BTreeMap<String, String>,
 }
 
+/// The domains a host config serves from a child process: every domain
+/// not in the in-process language, or given a `launch`.
+pub fn remote_domains(config: &str) -> Result<Vec<String>, CodegenError> {
+    let parsed: HostConfig = toml::from_str(config).map_err(|e| CodegenError::StartupConfig {
+        detail: e.message().to_string(),
+    })?;
+    Ok(parsed
+        .domains
+        .into_iter()
+        .filter(|d| d.language != IN_PROCESS_LANGUAGE || d.launch.is_some())
+        .map(|d| d.name)
+        .collect())
+}
+
+/// The proto packages declaring the components of `files`, in order.
+pub fn component_packages(
+    descriptor_set: &[u8],
+    files: &[&str],
+) -> Result<Vec<String>, CodegenError> {
+    let mut packages: Vec<String> = Vec::new();
+    for c in model::components(descriptor_set, files, MARKUP_KINDS)? {
+        let package = c.anchor.package_name().to_string();
+        if !packages.contains(&package) {
+            packages.push(package);
+        }
+    }
+    Ok(packages)
+}
+
 /// What [`lint_startup`] finds wrong with a host config.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum StartupLint {

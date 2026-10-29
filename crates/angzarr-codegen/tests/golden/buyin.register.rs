@@ -3,8 +3,8 @@
 /// Registers every component of the project with angzarr_embedded, which dispatches
 /// each through angzarr-router: an application calls this once, at startup.
 pub fn register(registry: &mut ::angzarr_embedded::next::Registry) {
-    registry.aggregate::<crate::wallet::Wallet>(crate::wallet::Wallet::default);
-    registry.process_manager::<crate::buy_in::BuyIn>(crate::buy_in::BuyIn::default);
-    registry.policy(crate::buy_in_wallet::BuyInWallet);
-    registry.policy(crate::wallet_buy_in::WalletBuyIn);
+    registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default);
+    registry.process_manager::<crate::adapters::BuyIn>(crate::adapters::BuyIn::default);
+    registry.policy(crate::adapters::BuyInWallet::default());
+    registry.policy(crate::adapters::WalletBuyIn::default());
 }

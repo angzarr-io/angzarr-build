@@ -58,15 +58,9 @@ pub enum CodegenError {
     /// A translate selection's fact is an input of the policy's source, but
     /// a command, not a fact.
     TranslateNotAFact { policy: String, fact: String },
-    /// The user's file marks an input with the other marker than the proto
-    /// declares: `#[handles_cmd]` on a fact, or `#[handles_fact]` on a
-    /// command. `expected` and `found` are the markers' names.
-    MarkerMismatch {
-        path: String,
-        message: String,
-        expected: String,
-        found: String,
-    },
+    /// A command declaring more than one typed refusal, which the scaffold
+    /// does not emit yet.
+    SeveralRefusals { command: String },
     /// The user's file takes an input as a command (`cmd`) where the proto
     /// declares a fact (`fact`), or the reverse. `expected` and `found` are
     /// the parameters' names.
@@ -178,14 +172,9 @@ impl fmt::Display for CodegenError {
                 f,
                 "translate names {fact}, a command of {policy}'s source; it must name a fact"
             ),
-            CodegenError::MarkerMismatch {
-                path,
-                message,
-                expected,
-                found,
-            } => write!(
+            CodegenError::SeveralRefusals { command } => write!(
                 f,
-                "{path} marks {message} #[{found}], but the proto declares it for #[{expected}]"
+                "{command} declares more than one refusal, which the scaffold does not emit yet"
             ),
             CodegenError::InputMismatch {
                 path,
@@ -252,7 +241,7 @@ impl Diagnostic for CodegenError {
             CodegenError::ScaffoldImplNotFound { .. } => "angzarr-codegen-scaffold-impl-not-found",
             CodegenError::RefusesOnFact { .. } => "angzarr-codegen-refuses-on-fact",
             CodegenError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
-            CodegenError::MarkerMismatch { .. } => "angzarr-codegen-marker-mismatch",
+            CodegenError::SeveralRefusals { .. } => "angzarr-codegen-several-refusals",
             CodegenError::InputMismatch { .. } => "angzarr-codegen-input-mismatch",
             CodegenError::PythonNoDomain { .. } => "angzarr-codegen-python-no-domain",
             CodegenError::PythonKind { .. } => "angzarr-codegen-python-kind",
@@ -317,13 +306,8 @@ impl Diagnostic for CodegenError {
             CodegenError::TranslateNotAFact { policy, fact } => {
                 vec![("policy", s(policy)), ("fact", s(fact))]
             }
-            CodegenError::MarkerMismatch {
-                path,
-                message,
-                expected,
-                found,
-            }
-            | CodegenError::InputMismatch {
+            CodegenError::SeveralRefusals { command } => vec![("command", s(command))],
+            CodegenError::InputMismatch {
                 path,
                 message,
                 expected,
@@ -408,12 +392,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             policy: s(),
             fact: s(),
         }),
-        Box::new(CodegenError::MarkerMismatch {
-            path: s(),
-            message: s(),
-            expected: s(),
-            found: s(),
-        }),
+        Box::new(CodegenError::SeveralRefusals { command: s() }),
         Box::new(CodegenError::InputMismatch {
             path: s(),
             message: s(),

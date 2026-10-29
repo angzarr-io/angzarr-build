@@ -1,6 +1,7 @@
 //! The generated `register(&mut Registry)`: every component the protos
-//! declare, registered with angzarr-embedded at the path its scaffold gives it, so an
-//! application calls one function. Pinned by a golden file; the
+//! declare, its adapter registered with angzarr-embedded, so an application
+//! calls one function; a domain served by a child process is left to the
+//! host. Pinned by a golden file; the
 //! end-to-end test (angzarr-build's `tests/local.rs`) runs it.
 
 mod common;
@@ -11,7 +12,7 @@ use common::*;
 const GOLDEN: &str = include_str!("golden/buyin.register.rs");
 
 fn buyin_register() -> String {
-    register(&descriptors(BUYIN), BUYIN).unwrap()
+    register(&descriptors(BUYIN), BUYIN, &[]).unwrap()
 }
 
 #[test]
@@ -43,10 +44,10 @@ fn test_register_registers_every_component_once_by_its_kind() {
     assert_eq!(
         registrations(&buyin_register()),
         [
-            "registry.aggregate::<crate::wallet::Wallet>(crate::wallet::Wallet::default);",
-            "registry.process_manager::<crate::buy_in::BuyIn>(crate::buy_in::BuyIn::default);",
-            "registry.policy(crate::buy_in_wallet::BuyInWallet);",
-            "registry.policy(crate::wallet_buy_in::WalletBuyIn);",
+            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default);",
+            "registry.process_manager::<crate::adapters::BuyIn>(crate::adapters::BuyIn::default);",
+            "registry.policy(crate::adapters::BuyInWallet::default());",
+            "registry.policy(crate::adapters::WalletBuyIn::default());",
         ]
     );
 }
@@ -54,9 +55,43 @@ fn test_register_registers_every_component_once_by_its_kind() {
 #[test]
 fn test_register_of_one_aggregate_registers_it_alone() {
     const SHOP: &str = "shop/v1/shop.proto";
-    let source = register(&descriptors(&[SHOP]), &[SHOP]).unwrap();
+    let source = register(&descriptors(&[SHOP]), &[SHOP], &[]).unwrap();
     assert_eq!(
         registrations(&source),
-        ["registry.aggregate::<crate::cart::Cart>(crate::cart::Cart::default);"]
+        ["registry.aggregate::<crate::adapters::Cart>(crate::adapters::Cart::default);"]
+    );
+}
+
+#[test]
+fn test_register_leaves_a_remote_domain_to_the_host_and_keeps_its_policies() {
+    let source = register(&descriptors(BUYIN), BUYIN, &["buyin"]).unwrap();
+    assert_eq!(
+        registrations(&source),
+        [
+            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default);",
+            "registry.policy(crate::adapters::BuyInWallet::default());",
+            "registry.policy(crate::adapters::WalletBuyIn::default());",
+        ]
+    );
+}
+
+#[test]
+fn test_register_leaves_out_a_policy_whose_domain_is_not_in_the_files() {
+    // The blackjack table and its policies, without the wallet:
+    // TableWalletPolicy has no target here, TablePlayerPolicy and
+    // PlayerTablePolicy have the remote player.
+    const FILES: &[&str] = &[
+        "io/angzarr/examples/v1/table.proto",
+        "io/angzarr/examples/v1/player.proto",
+        "io/angzarr/examples/v1/policies.proto",
+    ];
+    let source = register(&descriptors(BLACKJACK), FILES, &["player"]).unwrap();
+    assert_eq!(
+        registrations(&source),
+        [
+            "registry.aggregate::<crate::adapters::TableAggregate,>(crate::adapters::TableAggregate::default);",
+            "registry.policy(crate::adapters::TablePlayerPolicy::default());",
+            "registry.policy(crate::adapters::PlayerTablePolicy::default());",
+        ]
     );
 }

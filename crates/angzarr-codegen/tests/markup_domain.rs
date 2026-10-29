@@ -101,3 +101,57 @@ fn test_markup_domain_refuses_refuses_on_a_fact() {
         })
     );
 }
+
+/// The names of the file's top-level enums and structs.
+fn items(file: &syn::File) -> Vec<String> {
+    file.items
+        .iter()
+        .filter_map(|i| match i {
+            syn::Item::Enum(e) => Some(e.ident.to_string()),
+            syn::Item::Struct(s) => Some(s.ident.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn test_markup_domain_has_the_rejection_and_each_components_command_and_event_enums() {
+    let names = items(&buyin());
+    for name in [
+        "Rejection",
+        "WalletCommand",
+        "WalletEvent",
+        "BuyInCommand",
+        "BuyInEvent",
+    ] {
+        assert!(names.contains(&name.to_string()), "{name}: {names:?}");
+    }
+}
+
+#[test]
+fn test_markup_domain_gives_a_typed_refusal_its_diagnostic() {
+    assert!(impls(&buyin()).contains(&(
+        "::angzarr_embedded_diagnostic::Diagnostic".to_string(),
+        "InsufficientFunds".to_string()
+    )));
+}
+
+#[test]
+fn test_markup_domain_maps_a_nested_enum_after_its_message() {
+    const FILES: &[&str] = &[
+        "io/angzarr/examples/v1/table.proto",
+        "io/angzarr/examples/v1/player.proto",
+    ];
+    let generated = markup_domain(
+        &descriptors(BLACKJACK),
+        FILES,
+        &[("io.angzarr.examples.v1", "crate::wire")],
+    )
+    .expect("SeatOutcome.Outcome is mapped");
+    let file = syn::parse_file(&generated[0].source).unwrap();
+    assert!(
+        items(&file).contains(&"SeatOutcomeOutcome".to_string()),
+        "{:?}",
+        items(&file)
+    );
+}

@@ -21,10 +21,12 @@ pub use python::{
     CLIENT_PYTHON_GIT, CLIENT_PYTHON_REV, ProtoInput, PythonApp, python_reroots, reroot_python,
     scaffold_python,
 };
-pub use scaffold::{Owner, ScaffoldFile, Translate, complete, markup_domain, register, scaffold};
+pub use scaffold::{
+    Owner, ScaffoldFile, Translate, adapters, complete, markup_domain, register, scaffold,
+};
 pub use startup::{
-    IN_PROCESS_LANGUAGE, LAUNCHED_LANGUAGES, StartupApp, StartupLint, lint_startup, startup,
-    startup_lint_samples,
+    IN_PROCESS_LANGUAGE, LAUNCHED_LANGUAGES, StartupApp, StartupLint, component_packages,
+    lint_startup, remote_domains, startup, startup_lint_samples,
 };
 
 /// The Rust source generated for one proto package.

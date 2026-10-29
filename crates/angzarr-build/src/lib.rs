@@ -67,16 +67,87 @@ pub fn markup_domain_into(
 /// The generated `register(&mut Registry)` for every component in
 /// `protos` (`angzarr-register.rs` in `OUT_DIR`), for the crate root to
 /// `include!`.
-pub fn register(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
-    register_into(&out_dir()?, protos, includes)
+pub fn register(protos: &[&str], includes: &[&str], remote: &[&str]) -> Result<(), BuildError> {
+    register_into(&out_dir()?, protos, includes, remote)
 }
 
-/// [`register`], into `out`.
-pub fn register_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+/// [`register`], into `out`, the `remote` domains (served by a child
+/// process) left to the host.
+pub fn register_into(
+    out: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    remote: &[&str],
+) -> Result<(), BuildError> {
     let bytes = build_descriptors(out, protos, includes)?;
-    let source = angzarr_codegen::register(&bytes, protos).map_err(BuildError::Codegen)?;
+    let source = angzarr_codegen::register(&bytes, protos, remote).map_err(BuildError::Codegen)?;
     let path = out.join("angzarr-register.rs");
     std::fs::write(&path, source).map_err(|e| io(&path, &e))
+}
+
+/// The generated adapters of every component in `protos`
+/// (`angzarr-adapters.rs` in `OUT_DIR`), for the crate root to `include!`
+/// as `pub mod adapters` (see `angzarr_codegen::adapters`).
+pub fn adapters(protos: &[&str], includes: &[&str], remote: &[&str]) -> Result<(), BuildError> {
+    adapters_into(&out_dir()?, protos, includes, remote)
+}
+
+/// [`adapters`], into `out`.
+pub fn adapters_into(
+    out: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    remote: &[&str],
+) -> Result<(), BuildError> {
+    let bytes = build_descriptors(out, protos, includes)?;
+    // The user's interfaces, under the crate's `src`: a policy's declares
+    // the commands it translates the refusals of.
+    let src = std::env::var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join("src");
+    let read = |path: &str| {
+        let path = src.join(path);
+        println!("cargo:rerun-if-changed={}", path.display());
+        std::fs::read_to_string(path).ok()
+    };
+    let source =
+        angzarr_codegen::adapters(&bytes, protos, remote, &read).map_err(BuildError::Codegen)?;
+    let path = out.join("angzarr-adapters.rs");
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))
+}
+
+/// An angzarr-embedded application's whole generated layer, from its host
+/// config (`config`, relative to the crate) and its protos: the wire types,
+/// the markup domain layer (its package's prost types at `crate::wire`),
+/// the adapters and `register()`, the domains the config serves from a
+/// child process as contracts.
+pub fn app(config: &str, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+    app_into(&out_dir()?, Path::new(config), protos, includes)
+}
+
+/// [`app`], into `out`.
+pub fn app_into(
+    out: &Path,
+    config: &Path,
+    protos: &[&str],
+    includes: &[&str],
+) -> Result<(), BuildError> {
+    println!("cargo:rerun-if-changed={}", config.display());
+    let text = std::fs::read_to_string(config).map_err(|e| io(config, &e))?;
+    let remote = angzarr_codegen::remote_domains(&text).map_err(BuildError::Codegen)?;
+    let remote: Vec<&str> = remote.iter().map(String::as_str).collect();
+    let bytes = build_descriptors(out, protos, includes)?;
+    let packages =
+        angzarr_codegen::component_packages(&bytes, protos).map_err(BuildError::Codegen)?;
+    let wire: Vec<(&str, &str)> = packages
+        .iter()
+        .map(|p| (p.as_str(), "crate::wire"))
+        .collect();
+    wire_into(out, protos, includes)?;
+    markup_domain_into(out, protos, includes, &wire)?;
+    adapters_into(out, protos, includes, &remote)?;
+    register_into(out, protos, includes, &remote)
 }
 
 /// What [`scaffold_into`] does with a component's file that exists.
@@ -167,13 +238,28 @@ pub fn lint_startup(
 /// policy, a projector) is found without being scaffolded.
 fn scaffold_descriptors(protos: &[&str], includes: &[&str]) -> Result<Vec<u8>, BuildError> {
     let work = scratch_dir()?;
+    let inputs = with_siblings(protos, includes);
+    let inputs: Vec<&str> = inputs.iter().map(String::as_str).collect();
+    let bytes = descriptors(&work, &inputs, includes);
+    let _ = std::fs::remove_dir_all(&work);
+    bytes
+}
+
+/// `protos`, then every other proto of their directories (under the first
+/// include holding each), as import names: what protoc reads so a
+/// component a message of `protos` names is declared.
+fn with_siblings(protos: &[&str], includes: &[impl AsRef<Path>]) -> Vec<String> {
     let mut inputs: Vec<String> = protos.iter().map(|p| p.to_string()).collect();
     for proto in protos {
-        let Some(include) = includes.iter().find(|i| Path::new(i).join(proto).exists()) else {
+        let Some(include) = includes
+            .iter()
+            .map(AsRef::as_ref)
+            .find(|i| i.join(proto).exists())
+        else {
             continue;
         };
         let dir = Path::new(proto).parent().unwrap_or(Path::new(""));
-        let Ok(entries) = std::fs::read_dir(Path::new(include).join(dir)) else {
+        let Ok(entries) = std::fs::read_dir(include.join(dir)) else {
             continue;
         };
         let mut siblings: Vec<String> = entries
@@ -189,10 +275,7 @@ fn scaffold_descriptors(protos: &[&str], includes: &[&str]) -> Result<Vec<u8>, B
             }
         }
     }
-    let inputs: Vec<&str> = inputs.iter().map(String::as_str).collect();
-    let bytes = descriptors(&work, &inputs, includes);
-    let _ = std::fs::remove_dir_all(&work);
-    bytes
+    inputs
 }
 
 /// Writes `files` under `root`: an absent file is created; an existing
@@ -375,7 +458,9 @@ fn build_descriptors(
 ) -> Result<Vec<u8>, BuildError> {
     let includes = with_angzarr(out, includes)?;
     rerun_if_changed(protos, &includes);
-    protoc(out, protos, &includes)
+    let inputs = with_siblings(protos, &includes);
+    let inputs: Vec<&str> = inputs.iter().map(String::as_str).collect();
+    protoc(out, &inputs, &includes)
 }
 
 /// protoc's descriptor set for `protos`, written under `work`.

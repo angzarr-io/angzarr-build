@@ -1,34 +1,13 @@
-//! BuyInWallet: the scaffold of `buyin.v1.BuyInWalletPolicy`, with Hold
-//! translated (the refusal switch), bodies written.
+//! BuyInWallet: the interface of `buyin.v1.BuyInWalletPolicy`, written once by
+//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
+//! methods it lacks. Each reaction takes the source stream's root and the
+//! event, and returns the commands to send, each with its target root; the
+//! generated adapter (`crate::adapters::BuyInWallet`) carries the markup.
 
-use angzarr_embedded::next::markup::{Commands, PolicyContext, Refusal};
-use angzarr_embedded::next::v1::Uuid;
-use angzarr_embedded_macros::{on_event, on_refused, policy};
-
-use crate::buy_in::BuyIn;
 use crate::domain::*;
-use crate::wallet::Wallet;
 
-pub struct BuyInWallet;
+pub trait BuyInWallet {
+    fn buy_in_started(&self, source: &[u8], event: &BuyInStarted) -> Vec<(Vec<u8>, WalletCommand)>;
 
-#[policy(name = "buy-in-wallet", source = BuyIn, target = Wallet)]
-impl BuyInWallet {
-    #[on_event(BuyInStarted)]
-    fn buy_in_started(&self, event: &BuyInStarted, ctx: &PolicyContext) -> Commands<Wallet> {
-        let _ = ctx;
-        let wallet = Uuid {
-            value: event.wallet.clone().into(),
-        };
-        Commands::none().to(wallet, Hold { cents: event.cents })
-    }
-
-    #[on_refused(Hold)]
-    fn hold_refused(&self, refusal: &Refusal<Hold>) -> HoldLost {
-        HoldLost {
-            short: refusal
-                .refusal::<InsufficientFunds>()
-                .map(|object| object.short)
-                .unwrap_or(refusal.command().cents),
-        }
-    }
+    fn hold_refused(&self, command: &Hold, refusal: Option<InsufficientFunds>) -> HoldLost;
 }

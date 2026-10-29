@@ -1,8 +1,9 @@
-//! End to end on angzarr-local: `tests/local/buyin-app`, an application
-//! whose domain layer and `register()` are generated from the buy-in
-//! fixture protos and whose components are the scaffold with its bodies
-//! written, is built against angzarr-embedded and angzarr-router and run: one
-//! command, a policy step each way, and a refusal translated by a policy.
+//! End to end on angzarr-embedded: `tests/local/buyin-app`, an application
+//! whose domain layer, adapters and `register()` are generated from the
+//! buy-in fixture protos and whose components are the scaffold's interfaces
+//! and implementations with their bodies written, is type-checked against
+//! angzarr-embedded, and run: one command, a policy step each way, and a
+//! refusal translated by a policy.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -17,9 +18,13 @@ const BUYIN: &[&str] = &[
 ];
 const COMPONENTS: &[&str] = &[
     "buy_in.rs",
+    "buy_in_impl.rs",
     "buy_in_wallet.rs",
+    "buy_in_wallet_impl.rs",
     "wallet.rs",
     "wallet_buy_in.rs",
+    "wallet_buy_in_impl.rs",
+    "wallet_impl.rs",
 ];
 
 fn app() -> PathBuf {
@@ -43,7 +48,7 @@ fn translate() -> Vec<Translate> {
 }
 
 /// The app's components are the scaffold of today's protos: completing a
-/// copy of them adds nothing. (So the app below runs the scaffold's shape,
+/// copy of them adds nothing. (So the app below is the scaffold's shape,
 /// not a hand-made one.)
 #[test]
 fn test_the_apps_components_are_the_complete_scaffold() {
@@ -74,9 +79,28 @@ fn test_the_apps_components_are_the_complete_scaffold() {
     std::fs::remove_dir_all(&src).unwrap();
 }
 
+/// The generated adapters and register() compile against angzarr-embedded
+/// with the app's interfaces and implementations.
 #[test]
-#[ignore = "runs once angzarr-embedded step 2 (angzarr-ports) and angzarr-embedded's dispatch through \
-            angzarr-router land: re-pin tests/local/buyin-app/Cargo.toml then"]
+#[ignore = "builds angzarr-embedded and its dependencies: slow; run with --ignored"]
+fn test_the_app_type_checks_against_angzarr_embedded() {
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/buyin-app");
+    let out = Command::new(env!("CARGO"))
+        .args(["check", "--quiet", "--lib", "--manifest-path"])
+        .arg(app().join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", target)
+        .output()
+        .expect("cargo runs");
+    assert!(
+        out.status.success(),
+        "the app type-checks:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+#[ignore = "runs once angzarr-embedded has a local entry point (main.rs's `Local`) and dispatches \
+            through angzarr-router: re-pin tests/local/buyin-app/Cargo.toml then"]
 fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/buyin-app");
     let out = Command::new(env!("CARGO"))

@@ -1,28 +1,30 @@
-//! The scaffold: from a project's protos, each component's markup impl for
-//! angzarr-embedded-macros, written once into the user's source tree (`angzarr
-//! scaffold rust`), and completed, never overwritten (`--missing`). Read
-//! back as Rust items; that the scaffold compiles against angzarr-embedded is the
-//! end-to-end test's (angzarr-build's `tests/local.rs`).
+//! The scaffold, split so the user's logic never names the runtime: per
+//! component an interface (a trait over the domain types) and its
+//! implementation, the user's, written once (`angzarr scaffold rust`) and
+//! completed, never overwritten (`--missing`); and the adapters, the
+//! CLI's, regenerated every build, carrying angzarr-embedded's markup and
+//! delegating to the interface. Pinned by golden files
+//! (`tests/golden/rust/buyin`, `tests/golden/buyin.adapters.rs`); that the
+//! adapters compile against angzarr-embedded is angzarr-build's
+//! `tests/local.rs`.
 
 mod common;
 
-use angzarr_codegen::{CodegenError, ScaffoldFile, Translate, complete, scaffold};
+use angzarr_codegen::{CodegenError, Owner, ScaffoldFile, Translate, adapters, complete, scaffold};
 use common::*;
+
+const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden");
 
 /// The buy-in project's scaffold, with `translate`.
 fn buyin(translate: &[Translate]) -> Vec<ScaffoldFile> {
     scaffold(&descriptors(BUYIN), BUYIN, translate).unwrap()
 }
 
-/// The scaffold file for `component`, read back.
-fn file_of(files: &[ScaffoldFile], component: &str) -> (ScaffoldFile, syn::File) {
-    let file = files
+fn file_at<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
+    files
         .iter()
-        .find(|f| f.component == component)
-        .unwrap_or_else(|| panic!("no scaffold for {component}: {files:#?}"))
-        .clone();
-    let parsed = syn::parse_file(&file.source).expect("the scaffold parses");
-    (file, parsed)
+        .find(|f| f.path == path)
+        .unwrap_or_else(|| panic!("no {path}: {files:#?}"))
 }
 
 /// The refusal switch set to translate for BuyInWallet's Hold, handing the
@@ -35,162 +37,122 @@ fn translate_hold() -> Translate {
     }
 }
 
-/// Whether every method body is `todo!()`, and nothing else.
-fn bodies_are_todo(imp: &syn::ItemImpl) -> bool {
-    methods(imp).iter().all(|f| text(&f.block) == "{todo!()}")
+/// `actual`, against the golden file at `path` under `tests/golden`;
+/// `ANGZARR_BLESS=1` rewrites the golden file instead.
+fn golden(path: &str, actual: &str) {
+    let path = format!("{GOLDEN}/{path}");
+    if std::env::var_os("ANGZARR_BLESS").is_some() {
+        std::fs::write(&path, actual).unwrap();
+        return;
+    }
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("no {path}"));
+    assert_eq!(actual, expected, "{path}");
 }
 
 #[test]
-fn test_scaffold_writes_one_file_per_component_named_for_it() {
-    let files = buyin(&[]);
-    let mut placed: Vec<(String, String)> = files
-        .iter()
-        .map(|f| (f.component.clone(), f.path.clone()))
+fn test_scaffold_writes_an_interface_and_an_implementation_per_component() {
+    let mut placed: Vec<(String, String, Owner)> = buyin(&[])
+        .into_iter()
+        .map(|f| (f.component, f.path, f.owner))
         .collect();
-    placed.sort();
+    placed.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    let user = |c: &str, p: &str| (c.to_string(), p.to_string(), Owner::User);
     assert_eq!(
         placed,
-        s(&[
-            ("buyin.v1.BuyInState", "buy_in.rs"),
-            ("buyin.v1.BuyInWalletPolicy", "buy_in_wallet.rs"),
-            ("buyin.v1.WalletBuyInPolicy", "wallet_buy_in.rs"),
-            ("buyin.v1.WalletState", "wallet.rs"),
-        ])
-    );
-}
-
-#[test]
-fn test_scaffold_writes_an_aggregate_with_a_stub_per_command_and_event() {
-    let (_, file) = file_of(&buyin(&[]), "buyin.v1.WalletState");
-    let wallet = item_struct_named(&file, "Wallet");
-    assert!(
-        derives(wallet).contains(&"Default".to_string()),
-        "the registry builds every fresh instance from Default"
-    );
-    let imp = inherent_impl(&file, "Wallet");
-    assert_eq!(
-        impl_markup(imp),
-        ("aggregate".to_string(), "domain=\"wallet\"".to_string())
-    );
-    assert_eq!(
-        markers(imp),
-        s(&[
-            ("handles_cmd", "Deposit"),
-            ("handles_cmd", "Hold,refuses(InsufficientFunds)"),
-            ("applies", "Deposited"),
-            ("applies", "Held"),
-        ])
-    );
-    assert_eq!(
-        signatures(imp),
         [
-            "fndeposit(&self,cmd:Deposit,ctx:&Context)->Result<Deposited,Infallible>",
-            "fnhold(&self,cmd:Hold,ctx:&Context)->Result<Held,Refuses<Self,Hold>>",
-            "fndeposited(&mutself,event:Deposited)",
-            "fnheld(&mutself,event:Held)",
+            user("buyin.v1.BuyInState", "buy_in.rs"),
+            user("buyin.v1.BuyInState", "buy_in_impl.rs"),
+            user("buyin.v1.BuyInWalletPolicy", "buy_in_wallet.rs"),
+            user("buyin.v1.BuyInWalletPolicy", "buy_in_wallet_impl.rs"),
+            user("buyin.v1.WalletBuyInPolicy", "wallet_buy_in.rs"),
+            user("buyin.v1.WalletBuyInPolicy", "wallet_buy_in_impl.rs"),
+            user("buyin.v1.WalletState", "wallet.rs"),
+            user("buyin.v1.WalletState", "wallet_impl.rs"),
         ]
     );
-    assert!(bodies_are_todo(imp), "every body is todo!()");
 }
 
 #[test]
-fn test_scaffold_marks_a_process_managers_starting_command() {
-    let (_, file) = file_of(&buyin(&[]), "buyin.v1.BuyInState");
-    let imp = inherent_impl(&file, "BuyIn");
-    assert_eq!(
-        impl_markup(imp),
-        (
-            "process_manager".to_string(),
-            "domain=\"buyin\"".to_string()
-        )
-    );
-    assert_eq!(
-        markers(imp),
-        s(&[
-            ("handles_cmd", "StartBuyIn,starts"),
-            ("handles_cmd", "RecordHeld"),
-            ("handles_fact", "HoldLost"),
-            ("applies", "BuyInStarted"),
-            ("applies", "BuyInHeld"),
-            ("applies", "BuyInFailed"),
-        ])
-    );
-    assert_eq!(
-        signatures(imp)[..3],
-        [
-            "fnstart_buy_in(&self,cmd:StartBuyIn,ctx:&Context)->Result<BuyInStarted,Infallible>",
-            "fnrecord_held(&self,cmd:RecordHeld,ctx:&Context)->Result<BuyInHeld,Infallible>",
-            "fnhold_lost(&self,fact:HoldLost,ctx:&Context)->BuyInFailed",
-        ]
-    );
-    assert!(bodies_are_todo(imp), "every body is todo!()");
-}
-
-#[test]
-fn test_scaffold_writes_a_policy_with_a_stub_per_event_it_consumes() {
-    let (_, file) = file_of(&buyin(&[]), "buyin.v1.BuyInWalletPolicy");
-    let policy = item_struct_named(&file, "BuyInWallet");
-    assert!(
-        matches!(policy.fields, syn::Fields::Unit),
-        "a policy is stateless: a unit struct"
-    );
-    let imp = inherent_impl(&file, "BuyInWallet");
-    assert_eq!(
-        impl_markup(imp),
-        (
-            "policy".to_string(),
-            "name=\"buy-in-wallet\",source=BuyIn,target=Wallet".to_string()
-        )
-    );
-    assert_eq!(markers(imp), s(&[("on_event", "BuyInStarted")]));
-    assert_eq!(
-        signatures(imp),
-        ["fnbuy_in_started(&self,event:&BuyInStarted,ctx:&PolicyContext)->Commands<Wallet>"]
-    );
-    assert!(bodies_are_todo(imp), "every body is todo!()");
-}
-
-#[test]
-fn test_scaffold_passes_refusals_through_by_default() {
-    let files = buyin(&[]);
-    for policy in ["buyin.v1.BuyInWalletPolicy", "buyin.v1.WalletBuyInPolicy"] {
-        let (scaffolded, file) = file_of(&files, policy);
-        let imp = file
-            .items
-            .iter()
-            .find_map(|i| match i {
-                syn::Item::Impl(imp) if imp.trait_.is_none() => Some(imp),
-                _ => None,
-            })
-            .unwrap();
-        assert!(
-            !markers(imp).iter().any(|(name, _)| name == "on_refused"),
-            "{}: no on_refused callback without the switch",
-            scaffolded.path
-        );
+fn test_scaffold_matches_the_golden_files() {
+    for f in buyin(&[]) {
+        golden(&format!("rust/buyin/{}", f.path), &f.source);
     }
 }
 
 #[test]
-fn test_scaffold_writes_an_on_refused_callback_stub_for_each_command_the_switch_translates() {
-    let (_, file) = file_of(&buyin(&[translate_hold()]), "buyin.v1.BuyInWalletPolicy");
-    let imp = inherent_impl(&file, "BuyInWallet");
-    assert_eq!(
-        markers(imp),
-        s(&[("on_event", "BuyInStarted"), ("on_refused", "Hold")])
-    );
-    assert_eq!(
-        signatures(imp)[1],
-        "fnhold_refused(&self,refusal:&Refusal<Hold>)->HoldLost"
-    );
-    assert!(bodies_are_todo(imp), "every body is todo!()");
+fn test_the_users_files_name_nothing_of_the_runtime() {
+    for f in buyin(&[translate_hold()]) {
+        for runtime in [
+            "angzarr_embedded",
+            "Context",
+            "Emit",
+            "Refuses",
+            "Commands",
+            "#[",
+        ] {
+            let source = f.source.replace("#[derive(", "");
+            assert!(
+                !source.contains(runtime),
+                "{} names {runtime}:\n{}",
+                f.path,
+                f.source
+            );
+        }
+    }
 }
 
 #[test]
-fn test_scaffold_translate_touches_only_the_policy_it_names() {
-    let (_, file) = file_of(&buyin(&[translate_hold()]), "buyin.v1.WalletBuyInPolicy");
-    let imp = inherent_impl(&file, "WalletBuyIn");
-    assert_eq!(markers(imp), s(&[("on_event", "Held")]));
+fn test_every_implementation_body_is_todo_and_every_parameter_unused() {
+    for f in buyin(&[translate_hold()])
+        .iter()
+        .filter(|f| f.path.ends_with("_impl.rs"))
+    {
+        let file = syn::parse_file(&f.source).unwrap();
+        let imp = file
+            .items
+            .iter()
+            .find_map(|i| match i {
+                syn::Item::Impl(imp) if imp.trait_.is_some() => Some(imp),
+                _ => None,
+            })
+            .expect("the trait impl");
+        for f in methods(imp) {
+            assert_eq!(text(&f.block), "{todo!()}");
+            for input in &f.sig.inputs {
+                if let syn::FnArg::Typed(t) = input {
+                    assert!(text(&t.pat).starts_with('_'), "{}", text(&f.sig));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_scaffold_takes_a_fact_as_fact_and_a_command_as_cmd() {
+    let files = buyin(&[]);
+    let source = &file_at(&files, "buy_in.rs").source;
+    assert!(
+        source.contains("fn hold_lost(&self, fact: &HoldLost) -> BuyInFailed;"),
+        "a fact's decision is infallible:\n{source}"
+    );
+    assert!(
+        source.contains("fn record_held(&self, cmd: &RecordHeld) -> Result<BuyInHeld, Rejection>;"),
+        "{source}"
+    );
+}
+
+#[test]
+fn test_scaffold_adds_a_refused_method_for_each_command_the_switch_translates() {
+    let files = buyin(&[translate_hold()]);
+    let source = &file_at(&files, "buy_in_wallet.rs").source;
+    assert!(
+        source.contains(
+            "    fn hold_refused(&self, command: &Hold, refusal: Option<InsufficientFunds>) -> HoldLost;"
+        ),
+        "{source}"
+    );
+    let other = &file_at(&files, "wallet_buy_in.rs").source;
+    assert!(!other.contains("_refused"), "{other}");
 }
 
 #[test]
@@ -237,171 +199,6 @@ fn test_scaffold_refuses_translate_to_a_fact_its_source_does_not_take() {
     );
 }
 
-// ------------------------------------------------------------- --missing
-
-/// The wallet's scaffold as a user has it: Deposit's body written, Hold's
-/// handler and Held's applier not there yet (the proto gained them later).
-const USER_WALLET: &str = r#"//! The wallet.
-
-use std::convert::Infallible;
-
-use angzarr_embedded::next::markup::{Context, Refuses};
-use angzarr_embedded_macros::{aggregate, applies, handles_cmd};
-
-use crate::domain::*;
-
-#[derive(Clone, Debug, Default)]
-pub struct Wallet {
-    balance: i64,
-}
-
-#[aggregate(domain = "wallet")]
-impl Wallet {
-    /// The user's own body, which `--missing` must keep byte for byte.
-    #[handles_cmd(Deposit)]
-    fn deposit(&self, cmd: Deposit, _ctx: &Context) -> Result<Deposited, Infallible> {
-        Ok(Deposited { cents: cmd.cents }) // USER-WRITTEN
-    }
-
-    #[applies(Deposited)]
-    fn deposited(&mut self, event: Deposited) {
-        self.balance += event.cents;
-    }
-}
-"#;
-
-fn wallet_scaffold() -> ScaffoldFile {
-    buyin(&[])
-        .into_iter()
-        .find(|f| f.component == "buyin.v1.WalletState")
-        .unwrap()
-}
-
-#[test]
-fn test_complete_adds_only_the_absent_stubs() {
-    let completed = complete(&wallet_scaffold(), USER_WALLET)
-        .unwrap()
-        .expect("Hold and Held are absent");
-    let file = syn::parse_file(&completed).expect("the completed file parses");
-    let imp = inherent_impl(&file, "Wallet");
-    assert_eq!(
-        markers(imp),
-        s(&[
-            ("handles_cmd", "Deposit"),
-            ("applies", "Deposited"),
-            ("handles_cmd", "Hold,refuses(InsufficientFunds)"),
-            ("applies", "Held"),
-        ])
-    );
-}
-
-#[test]
-fn test_complete_never_changes_what_the_user_wrote() {
-    let completed = complete(&wallet_scaffold(), USER_WALLET).unwrap().unwrap();
-    // The user's text is the completed text with one contiguous run of
-    // inserted stubs taken out.
-    let prefix = USER_WALLET
-        .bytes()
-        .zip(completed.bytes())
-        .take_while(|(a, b)| a == b)
-        .count();
-    let rest = &USER_WALLET[prefix..];
-    assert!(
-        completed.len() > USER_WALLET.len() && completed.ends_with(rest),
-        "the user's text survives byte for byte around one insertion:\n{completed}"
-    );
-}
-
-#[test]
-fn test_complete_of_a_complete_file_changes_nothing() {
-    let fresh = wallet_scaffold();
-    assert_eq!(complete(&fresh, &fresh.source), Ok(None));
-}
-
-/// The buy-in's fresh scaffold.
-fn buy_in_scaffold() -> ScaffoldFile {
-    buyin(&[])
-        .into_iter()
-        .find(|f| f.component == "buyin.v1.BuyInState")
-        .unwrap()
-}
-
-#[test]
-fn test_scaffold_writes_handles_fact_for_a_fact_and_handles_cmd_for_a_command() {
-    // HoldLost is declared `fact: true`; the buy-in's other inputs are
-    // commands. A fact's handler returns no Result and refuses nothing.
-    let file = syn::parse_file(&buy_in_scaffold().source).unwrap();
-    let imp = inherent_impl(&file, "BuyIn");
-    let inputs: Vec<(String, String)> = markers(imp)
-        .into_iter()
-        .filter(|(name, _)| name.starts_with("handles_"))
-        .collect();
-    assert_eq!(
-        inputs,
-        s(&[
-            ("handles_cmd", "StartBuyIn,starts"),
-            ("handles_cmd", "RecordHeld"),
-            ("handles_fact", "HoldLost"),
-        ])
-    );
-    let fact = methods(imp)
-        .into_iter()
-        .find(|f| f.sig.ident == "hold_lost")
-        .expect("hold_lost");
-    assert!(
-        !text(&fact.sig.output).contains("Result"),
-        "a fact's handler is infallible: {}",
-        text(&fact.sig.output)
-    );
-}
-
-#[test]
-fn test_complete_refuses_handles_cmd_on_a_fact() {
-    let fresh = buy_in_scaffold();
-    let as_command = fresh
-        .source
-        .replace("handles_fact(HoldLost)", "handles_cmd(HoldLost)");
-    assert_ne!(as_command, fresh.source, "the scaffold handles HoldLost");
-    assert_eq!(
-        complete(&fresh, &as_command),
-        Err(CodegenError::MarkerMismatch {
-            path: "buy_in.rs".to_string(),
-            message: "buyin.v1.HoldLost".to_string(),
-            expected: "handles_fact".to_string(),
-            found: "handles_cmd".to_string(),
-        })
-    );
-}
-
-#[test]
-fn test_complete_refuses_handles_fact_on_a_command() {
-    let fresh = buy_in_scaffold();
-    let as_fact = fresh
-        .source
-        .replace("handles_cmd(RecordHeld)", "handles_fact(RecordHeld)");
-    assert_ne!(as_fact, fresh.source, "the scaffold handles RecordHeld");
-    assert_eq!(
-        complete(&fresh, &as_fact),
-        Err(CodegenError::MarkerMismatch {
-            path: "buy_in.rs".to_string(),
-            message: "buyin.v1.RecordHeld".to_string(),
-            expected: "handles_cmd".to_string(),
-            found: "handles_fact".to_string(),
-        })
-    );
-}
-
-#[test]
-fn test_scaffold_refuses_refuses_on_a_fact() {
-    const FILE: &str = "bad/v1/refusing_fact.proto";
-    assert_eq!(
-        scaffold(&descriptors(&[FILE]), &[FILE], &[]),
-        Err(CodegenError::RefusesOnFact {
-            message: "bad.v1.Happened".to_string(),
-        })
-    );
-}
-
 #[test]
 fn test_scaffold_refuses_translate_to_a_command_of_its_source() {
     let selection = Translate {
@@ -418,58 +215,17 @@ fn test_scaffold_refuses_translate_to_a_command_of_its_source() {
 }
 
 #[test]
-fn test_complete_adds_a_newly_translated_callback_to_a_policy() {
-    let files = buyin(&[]);
-    let (before, _) = file_of(&files, "buyin.v1.BuyInWalletPolicy");
-    let (after, _) = file_of(&buyin(&[translate_hold()]), "buyin.v1.BuyInWalletPolicy");
-    let completed = complete(&after, &before.source)
-        .unwrap()
-        .expect("the callback is absent");
-    let file = syn::parse_file(&completed).unwrap();
+fn test_scaffold_refuses_refuses_on_a_fact() {
+    const FILE: &str = "bad/v1/refusing_fact.proto";
     assert_eq!(
-        markers(inherent_impl(&file, "BuyInWallet")),
-        s(&[("on_event", "BuyInStarted"), ("on_refused", "Hold")])
-    );
-}
-
-#[test]
-fn test_complete_refuses_a_file_without_the_components_impl() {
-    let fresh = wallet_scaffold();
-    assert_eq!(
-        complete(&fresh, "//! Not the wallet any more.\n"),
-        Err(CodegenError::ScaffoldImplNotFound {
-            path: "wallet.rs".to_string(),
-            component: "buyin.v1.WalletState".to_string(),
+        scaffold(&descriptors(&[FILE]), &[FILE], &[]),
+        Err(CodegenError::RefusesOnFact {
+            message: "bad.v1.Happened".to_string(),
         })
     );
 }
 
-// --------------------------------------------------------------- helpers
-
-fn item_struct_named<'a>(file: &'a syn::File, name: &str) -> &'a syn::ItemStruct {
-    file.items
-        .iter()
-        .find_map(|i| match i {
-            syn::Item::Struct(st) if st.ident == name => Some(st),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("no struct {name}"))
-}
-
-/// The traits a struct derives.
-fn derives(item: &syn::ItemStruct) -> Vec<String> {
-    item.attrs
-        .iter()
-        .filter(|a| a.path().is_ident("derive"))
-        .flat_map(|a| {
-            a.parse_args_with(
-                syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
-            )
-            .unwrap()
-        })
-        .map(text)
-        .collect()
-}
+// --------------------------------------------------------------- blackjack
 
 #[test]
 fn test_scaffold_skips_a_projector_beside_the_markup() {
@@ -485,5 +241,245 @@ fn test_scaffold_skips_a_projector_beside_the_markup() {
         files
             .iter()
             .any(|f| f.component == "io.angzarr.examples.v1.TableState")
+    );
+}
+
+#[test]
+fn test_scaffold_of_one_file_finds_its_policies_owners_and_events_elsewhere() {
+    // policies.proto alone: the table and the player owning the policies'
+    // domains, and the events they react to, are declared in other files.
+    const POLICIES: &str = "io/angzarr/examples/v1/policies.proto";
+    let files = scaffold(&descriptors(BLACKJACK), &[POLICIES], &[]).unwrap();
+    let player_table = &file_at(&files, "player_table_policy.rs").source;
+    assert!(player_table.contains("fn move_decided("), "{player_table}");
+    assert!(
+        player_table.contains("TableAggregateCommand"),
+        "{player_table}"
+    );
+}
+
+#[test]
+fn test_a_decision_returns_one_event_a_tuple_or_the_event_enum() {
+    const TABLE: &str = "io/angzarr/examples/v1/table.proto";
+    let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
+    let table = &file_at(&files, "table_aggregate.rs").source;
+    for expected in [
+        "fn place_bet(&self, cmd: &PlaceBet) -> Result<BetPlaced, Rejection>;",
+        "fn create_table(&self, cmd: &CreateTable) -> Result<(TableCreated, ShoeShuffled), Rejection>;",
+        "fn deal_round(&self, cmd: &DealRound) -> Result<Vec<TableAggregateEvent>, Rejection>;",
+        "fn confirm_seat(&self, cmd: &ConfirmSeat) -> Result<PlayerSeated, SeatNotConfirmable>;",
+    ] {
+        assert!(table.contains(expected), "{expected}:\n{table}");
+    }
+    let state = &file_at(&files, "table_aggregate_impl.rs").source;
+    assert!(
+        state.contains("pub state: crate::wire::TableState,"),
+        "{state}"
+    );
+}
+
+// ------------------------------------------------------------- adapters
+
+/// The user's buy-in files as the golden scaffold has them.
+fn golden_interface(path: &str) -> Option<String> {
+    std::fs::read_to_string(format!("{GOLDEN}/rust/buyin/{path}")).ok()
+}
+
+#[test]
+fn test_adapters_match_the_golden_file() {
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[], &golden_interface).unwrap();
+    golden("buyin.adapters.rs", &source);
+}
+
+#[test]
+fn test_adapters_name_each_policy_by_its_domains() {
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[], &golden_interface).unwrap();
+    for name in [
+        "#[policy(name = \"policy-buyin-wallet\", source = BuyIn, target = Wallet)]",
+        "#[policy(name = \"policy-wallet-buyin\", source = Wallet, target = BuyIn)]",
+    ] {
+        assert!(source.contains(name), "{name}:\n{source}");
+    }
+}
+
+#[test]
+fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
+    let translated = buyin(&[translate_hold()]);
+    let interface = |path: &str| {
+        translated
+            .iter()
+            .find(|f| f.path == path)
+            .map(|f| f.source.clone())
+    };
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[], &interface).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    let imp = inherent_impl(&file, "BuyInWallet");
+    assert_eq!(
+        markers(imp),
+        s(&[("on_event", "BuyInStarted"), ("on_refused", "Hold")])
+    );
+    assert_eq!(
+        text(&methods(imp)[1].block),
+        "{crate::buy_in_wallet::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),)}"
+    );
+}
+
+#[test]
+fn test_adapters_give_a_remote_domain_a_contract() {
+    let source = adapters(&descriptors(BUYIN), BUYIN, &["buyin"], &golden_interface).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    let contract = inherent_impl(&file, "BuyIn");
+    assert_eq!(
+        impl_markup(contract),
+        (
+            "process_manager".to_string(),
+            "domain=\"buyin\"".to_string()
+        )
+    );
+    for f in methods(contract) {
+        let body = text(&f.block);
+        assert!(
+            body == "{}" || body.starts_with("{unreachable!("),
+            "{}: {body}",
+            f.sig.ident
+        );
+    }
+    assert!(!source.contains("crate::buy_in_impl::"), "{source}");
+}
+
+// ------------------------------------------------------------- --missing
+
+/// The wallet's interface as a user has it: Hold and Held absent (the proto
+/// gained them later), a method and a doc comment of the user's own.
+const USER_WALLET: &str = r#"//! The wallet.
+
+use crate::domain::*;
+
+/// What a wallet decides.
+pub trait Wallet {
+    /// The user's own doc, which `--missing` must keep byte for byte.
+    fn deposit(&self, cmd: &Deposit) -> Result<Deposited, Rejection>;
+
+    fn apply_deposited(&mut self, event: &Deposited); // USER-WRITTEN
+}
+"#;
+
+const USER_WALLET_IMPL: &str = r#"//! The wallet, mine.
+
+use crate::domain::*;
+use crate::wallet::Wallet;
+
+#[derive(Clone, Debug, Default)]
+pub struct WalletImpl {
+    pub state: crate::wire::WalletState,
+}
+
+impl Wallet for WalletImpl {
+    fn deposit(&self, cmd: &Deposit) -> Result<Deposited, Rejection> {
+        Ok(Deposited { cents: cmd.cents }) // USER-WRITTEN
+    }
+
+    fn apply_deposited(&mut self, event: &Deposited) {
+        self.state.balance += event.cents;
+    }
+}
+"#;
+
+#[test]
+fn test_complete_adds_only_the_absent_methods_to_the_interface() {
+    let files = buyin(&[]);
+    let completed = complete(file_at(&files, "wallet.rs"), USER_WALLET)
+        .unwrap()
+        .expect("hold and apply_held are absent");
+    let expected = USER_WALLET.replace(
+        "// USER-WRITTEN\n}",
+        "// USER-WRITTEN\n\n    fn hold(&self, cmd: &Hold) -> Result<Held, InsufficientFunds>;\n\n    \
+         fn apply_held(&mut self, event: &Held);\n}",
+    );
+    assert_eq!(completed, expected);
+}
+
+#[test]
+fn test_complete_adds_only_the_absent_methods_to_the_implementation() {
+    let files = buyin(&[]);
+    let completed = complete(file_at(&files, "wallet_impl.rs"), USER_WALLET_IMPL)
+        .unwrap()
+        .expect("hold and apply_held are absent");
+    let expected = USER_WALLET_IMPL.replace(
+        "        self.state.balance += event.cents;\n    }\n}",
+        "        self.state.balance += event.cents;\n    }\n\n    \
+         fn hold(&self, _cmd: &Hold) -> Result<Held, InsufficientFunds> {\n        todo!()\n    }\n\n    \
+         fn apply_held(&mut self, _event: &Held) {\n        todo!()\n    }\n}",
+    );
+    assert_eq!(completed, expected);
+}
+
+#[test]
+fn test_complete_of_a_complete_file_changes_nothing() {
+    for f in buyin(&[translate_hold()]) {
+        assert_eq!(complete(&f, &f.source), Ok(None), "{}", f.path);
+    }
+}
+
+#[test]
+fn test_complete_adds_a_newly_translated_refused_method_to_a_policy() {
+    let before = buyin(&[]);
+    let after = buyin(&[translate_hold()]);
+    for path in ["buy_in_wallet.rs", "buy_in_wallet_impl.rs"] {
+        let completed = complete(file_at(&after, path), &file_at(&before, path).source)
+            .unwrap()
+            .unwrap_or_else(|| panic!("{path}: the refused method is absent"));
+        assert!(completed.contains("fn hold_refused("), "{completed}");
+    }
+}
+
+#[test]
+fn test_complete_refuses_a_fact_taken_as_a_command() {
+    let files = buyin(&[]);
+    let fresh = file_at(&files, "buy_in.rs");
+    let as_command = fresh.source.replace("fact: &HoldLost", "cmd: &HoldLost");
+    assert_ne!(as_command, fresh.source);
+    assert_eq!(
+        complete(fresh, &as_command),
+        Err(CodegenError::InputMismatch {
+            path: "buy_in.rs".to_string(),
+            message: "buyin.v1.HoldLost".to_string(),
+            expected: "fact".to_string(),
+            found: "cmd".to_string(),
+        })
+    );
+}
+
+#[test]
+fn test_complete_refuses_a_command_taken_as_a_fact() {
+    let files = buyin(&[]);
+    let fresh = file_at(&files, "buy_in_impl.rs");
+    let as_fact = fresh
+        .source
+        .replace("_cmd: &RecordHeld", "_fact: &RecordHeld");
+    assert_ne!(as_fact, fresh.source);
+    assert_eq!(
+        complete(fresh, &as_fact),
+        Err(CodegenError::InputMismatch {
+            path: "buy_in_impl.rs".to_string(),
+            message: "buyin.v1.RecordHeld".to_string(),
+            expected: "cmd".to_string(),
+            found: "fact".to_string(),
+        })
+    );
+}
+
+#[test]
+fn test_complete_refuses_a_file_without_the_components_trait() {
+    let files = buyin(&[]);
+    assert_eq!(
+        complete(
+            file_at(&files, "wallet.rs"),
+            "//! Not the wallet any more.\n"
+        ),
+        Err(CodegenError::ScaffoldImplNotFound {
+            path: "wallet.rs".to_string(),
+            component: "buyin.v1.WalletState".to_string(),
+        })
     );
 }

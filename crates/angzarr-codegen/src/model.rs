@@ -122,7 +122,8 @@ pub(crate) fn build(
 
 /// The markup domain layer's packages by name: every type the inputs,
 /// events and refusals of each aggregate and process manager reach. The
-/// state is the markup's, and a policy holds no domain type.
+/// state is the implementation's (its wire type), and a policy holds no
+/// domain type.
 pub(crate) fn build_markup(
     descriptor_set: &[u8],
     files: &[&str],
@@ -139,6 +140,18 @@ pub(crate) fn build_markup(
             .cloned()
             .collect()
     })
+}
+
+/// Every marked-up component of every file in the descriptor set, so a
+/// scaffold finds the owners of a policy's domains declared outside the
+/// files it scaffolds.
+pub(crate) fn pool_components(descriptor_set: &[u8]) -> Result<Vec<Component>, CodegenError> {
+    let pool = DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
+        detail: e.to_string(),
+    })?;
+    let names: Vec<String> = pool.files().map(|f| f.name().to_string()).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    components(descriptor_set, &names, MARKUP_KINDS)
 }
 
 /// `components` grouped by their anchor's package, with every type `roots`
@@ -189,6 +202,16 @@ pub(crate) fn components(
                 file: file.to_string(),
             })?;
         messages.extend(found.messages());
+    }
+    // A component's inputs and events are wherever the set declares them:
+    // the files' messages first, then every other file's.
+    let mut declaring = messages.clone();
+    for file in pool.files() {
+        for message in file.messages() {
+            if !declaring.contains(&message) {
+                declaring.push(message);
+            }
+        }
     }
     // A set that never imported options.proto declares no component.
     let Some(component_ext) = pool.get_extension_by_name(COMPONENT) else {
@@ -251,7 +274,7 @@ pub(crate) fn components(
 
     // Events first, so a command's `emits` can be checked against them.
     if let Some(event_ext) = &event_ext {
-        for message in &messages {
+        for message in &declaring {
             let options = message.options();
             if !options.has_extension(event_ext) {
                 continue;
@@ -271,7 +294,7 @@ pub(crate) fn components(
         }
     }
     if let Some(command_ext) = &command_ext {
-        for message in &messages {
+        for message in &declaring {
             let options = message.options();
             if !options.has_extension(command_ext) {
                 continue;
@@ -367,11 +390,12 @@ impl Reach {
         if !self.seen.insert(message.full_name().to_string()) {
             return Ok(());
         }
+        // A nested enum is mapped (as `<Message><Enum>`); a nested message
+        // is not yet.
         let nested = message
             .child_messages()
             .filter(|m| !m.is_map_entry())
             .map(|m| m.full_name().to_string())
-            .chain(message.child_enums().map(|e| e.full_name().to_string()))
             .next();
         if let Some(nested) = nested {
             return Err(CodegenError::NestedType {

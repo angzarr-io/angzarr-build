@@ -16,9 +16,9 @@ publish = false
 # through the router land: re-pin here then (the test that builds this is
 # ignored until it can pass).
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "02b876dd525c5d78c7395fb40631b9e7f21193b1" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "b3e3f2062fa066d1cb62d25cee8db19a3d9ef6bd" }
 angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "70528f0b2de4a2de812886ea90aebb483ed47f75" }
 prost = "0.14"
 

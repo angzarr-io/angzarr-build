@@ -65,7 +65,39 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         items.extend(enumeration(e));
     }
     for message in &package.messages {
-        items.extend(structure(message, wire, false));
+        let anchor = package.components.iter().any(|c| &c.anchor == message);
+        items.extend(structure(message, wire, anchor));
+    }
+    items.extend(rejection());
+    let mut refusals: Vec<&MessageDescriptor> = Vec::new();
+    for component in &package.components {
+        for refusal in component.inputs.iter().flat_map(|i| &i.refuses) {
+            if !refusals.contains(&refusal) {
+                refusals.push(refusal);
+            }
+        }
+        let commands: Vec<MessageDescriptor> = component
+            .inputs
+            .iter()
+            .filter(|i| !i.fact)
+            .map(|i| i.message.clone())
+            .collect();
+        items.extend(plain_enum(
+            &format_ident!("{}Command", component.name),
+            &commands,
+            &format!(" A command of {}, as a policy sends it.", component.name),
+        ));
+        items.extend(plain_enum(
+            &format_ident!("{}Event", component.name),
+            &component.events,
+            &format!(
+                " An event of {}, for a decision recording any number of them.",
+                component.name
+            ),
+        ));
+    }
+    for refusal in refusals {
+        items.extend(refusal_diagnostic(refusal));
     }
     let mut messages: Vec<&MessageDescriptor> = Vec::new();
     for component in &package.components {
@@ -101,8 +133,111 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
     prettyplease::unparse(&file)
 }
 
+/// An enum's domain name: its name, after its enclosing messages' names
+/// when it is nested (`SeatOutcome.Outcome` as `SeatOutcomeOutcome`).
+pub(crate) fn enum_name(e: &EnumDescriptor) -> String {
+    let full = e.full_name();
+    let package = e.package_name();
+    let local = full
+        .strip_prefix(package)
+        .map_or(full, |rest| rest.trim_start_matches('.'));
+    local.replace('.', "")
+}
+
+/// The domain's untyped rejection: a diagnostic key and its args, never
+/// text (decision 14.37). A command with no typed refusal rejects with it.
+fn rejection() -> TokenStream {
+    quote! {
+        /// Why a command is rejected: a diagnostic key and its args, never
+        /// text.
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct Rejection {
+            pub key: &'static str,
+            pub args: Vec<(&'static str, String)>,
+        }
+
+        impl Rejection {
+            /// A rejection keyed `key`, with no args yet.
+            pub fn new(key: &'static str) -> Rejection {
+                Rejection { key, args: Vec::new() }
+            }
+
+            /// This rejection with the arg `name` set to `value`.
+            pub fn arg(mut self, name: &'static str, value: impl ToString) -> Rejection {
+                self.args.push((name, value.to_string()));
+                self
+            }
+        }
+
+        impl ::std::fmt::Display for Rejection {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.write_str(self.key)
+            }
+        }
+
+        impl ::std::error::Error for Rejection {}
+
+        impl ::angzarr_embedded_diagnostic::Diagnostic for Rejection {
+            fn code(&self) -> &'static str {
+                self.key
+            }
+
+            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+                self.args
+                    .iter()
+                    .map(|(name, value)| (*name, value.as_str().into()))
+                    .collect()
+            }
+        }
+    }
+}
+
+/// A typed refusal as a diagnostic, its code the message's full name.
+fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
+    let name = ident(message.name());
+    let code = message.full_name().replace('.', "-").to_lowercase();
+    quote! {
+        impl ::std::fmt::Display for #name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.write_str(#code)
+            }
+        }
+
+        impl ::angzarr_embedded_diagnostic::Diagnostic for #name {
+            fn code(&self) -> &'static str {
+                #code
+            }
+
+            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+                Vec::new()
+            }
+        }
+    }
+}
+
+/// An enum of `messages`, one variant each, with no wire form.
+fn plain_enum(name: &syn::Ident, messages: &[MessageDescriptor], doc: &str) -> TokenStream {
+    let variants: Vec<syn::Ident> = messages.iter().map(|m| ident(m.name())).collect();
+    let froms = variants.iter().map(|v| {
+        quote! {
+            impl From<#v> for #name {
+                fn from(value: #v) -> Self {
+                    #name::#v(value)
+                }
+            }
+        }
+    });
+    quote! {
+        #[doc = #doc]
+        #[derive(Clone, Debug, PartialEq)]
+        pub enum #name { #(#variants(#variants)),* }
+
+        #(#froms)*
+    }
+}
+
 fn enumeration(e: &EnumDescriptor) -> TokenStream {
-    let name = ident(e.name());
+    let name = ident(&enum_name(e));
     let prefix = format!("{}_", screaming(e.name()));
     let values: Vec<(syn::Ident, i32)> = e
         .values()
@@ -340,7 +475,7 @@ impl Elem {
                 let name = ident(m.name());
                 Elem::Message(name.clone(), quote!(#wire::#name))
             }
-            Kind::Enum(e) => Elem::Enum(ident(e.name())),
+            Kind::Enum(e) => Elem::Enum(ident(&enum_name(&e))),
             Kind::Double => Elem::Scalar(quote!(f64)),
             Kind::Float => Elem::Scalar(quote!(f32)),
             Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => Elem::Scalar(quote!(i32)),

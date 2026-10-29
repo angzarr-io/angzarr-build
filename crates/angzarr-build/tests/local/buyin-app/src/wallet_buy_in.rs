@@ -1,22 +1,11 @@
-//! WalletBuyIn: the scaffold of `buyin.v1.WalletBuyInPolicy`, bodies
-//! written. The buy-in's root is the correlation.
+//! WalletBuyIn: the interface of `buyin.v1.WalletBuyInPolicy`, written once by
+//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
+//! methods it lacks. Each reaction takes the source stream's root and the
+//! event, and returns the commands to send, each with its target root; the
+//! generated adapter (`crate::adapters::WalletBuyIn`) carries the markup.
 
-use angzarr_embedded::next::markup::{Commands, PolicyContext};
-use angzarr_embedded_macros::{on_event, policy};
-
-use crate::buy_in::BuyIn;
 use crate::domain::*;
-use crate::wallet::Wallet;
 
-pub struct WalletBuyIn;
-
-#[policy(name = "wallet-buy-in", source = Wallet, target = BuyIn)]
-impl WalletBuyIn {
-    #[on_event(Held)]
-    fn held(&self, event: &Held, ctx: &PolicyContext) -> Commands<BuyIn> {
-        Commands::none().to(
-            ctx.correlation_id().clone(),
-            RecordHeld { cents: event.cents },
-        )
-    }
+pub trait WalletBuyIn {
+    fn held(&self, source: &[u8], event: &Held) -> Vec<(Vec<u8>, BuyInCommand)>;
 }
