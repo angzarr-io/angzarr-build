@@ -18,3 +18,10 @@ entry = ["angzarr-player"]
 # SQLite, created when absent, relative to the working directory;
 # `in_memory = true` keeps nothing on disk.
 path = "angzarr.db"
+
+[policy]
+# What a policy step that hits a bug (the policy's own error, or a handler's
+# bug in its step) does with the policy's position once the step is
+# dead-lettered: "move_past" the trigger (the dead letter is the record to
+# replay) or "stay" at it, so a resume runs the step again.
+on_bug = "move_past"
