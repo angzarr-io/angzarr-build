@@ -321,9 +321,30 @@ fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
         markers(imp),
         s(&[("on_event", "BuyInStarted"), ("on_refused", "Hold")])
     );
+    // The callback takes the refused command's context and answers a
+    // Result, as angzarr-embedded's #[policy] requires; the interface's
+    // method cannot fail, so the answer is Ok.
+    let callback = methods(imp)[1];
     assert_eq!(
-        text(&methods(imp)[1].block),
-        "{crate::buy_in_wallet::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),)}"
+        callback
+            .sig
+            .inputs
+            .iter()
+            .skip(1)
+            .map(|input| match input {
+                syn::FnArg::Typed(t) => text(&t.ty),
+                syn::FnArg::Receiver(_) => String::new(),
+            })
+            .collect::<Vec<_>>(),
+        ["&Refusal<Hold>", "&CommandContext"]
+    );
+    assert_eq!(
+        text(&callback.sig.output),
+        "->::core::result::Result<HoldLost,::core::convert::Infallible>"
+    );
+    assert_eq!(
+        text(&callback.block),
+        "{let_=ctx;::core::result::Result::Ok(crate::buy_in_wallet::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),),)}"
     );
 }
 
