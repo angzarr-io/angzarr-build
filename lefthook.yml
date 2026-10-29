@@ -1,0 +1,35 @@
+# Git hooks, managed by lefthook (`just hooks-install`, once per clone).
+# https://github.com/evilmartians/lefthook
+#
+# Bypass: none — fix the finding instead.
+
+pre-commit:
+  # One at a time, stopping at the first failure.
+  piped: true
+  commands:
+    fmt:
+      priority: 1
+      glob: "*.rs"
+      run: just fmt
+      stage_fixed: true
+    lint:
+      # clippy -D warnings and the rustfmt check.
+      priority: 2
+      run: just lint
+    tests:
+      priority: 3
+      run: just test
+
+# Mutation testing runs here, not at pre-commit: it is too slow for every
+# commit. `just push-check` runs each pushed commit's tests in a tree of its
+# own, then mutates what the push adds (the justfile says how). git's pushed
+# refs are on stdin, and {1} is the remote's name. lefthook skips a pre-push
+# command when it finds no files changed between HEAD and the remote, which
+# says nothing of the refs pushed; a `{files}` in `run` turns that off, so
+# `files` names one that is always there, and push-check ignores it.
+pre-push:
+  commands:
+    push-check:
+      use_stdin: true
+      files: echo justfile
+      run: just push-check {1} {files}
