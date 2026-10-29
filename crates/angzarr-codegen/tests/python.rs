@@ -144,6 +144,23 @@ fn test_the_users_files_name_nothing_of_the_harness() {
     }
 }
 
+/// The dispatch hands each decision the harness's context of the command.
+#[test]
+fn test_the_dispatch_hands_each_decision_its_context() {
+    let files = player();
+    let dispatch = files
+        .iter()
+        .find(|f| f.path.ends_with("_angzarr.py"))
+        .expect("the dispatch");
+    assert!(
+        dispatch
+            .source
+            .contains("return _book(logic.decide_move(cmd, _to_player_state(state), cctx))"),
+        "{}",
+        dispatch.source
+    );
+}
+
 #[test]
 fn test_scaffold_python_refuses_a_domain_the_protos_do_not_declare() {
     let app = PythonApp {
@@ -266,15 +283,23 @@ fn test_the_logic_takes_and_returns_the_domains_plain_types() {
     assert!(logic.contains("class PlayerLogic(Protocol):"), "{logic}");
     assert!(
         logic.contains(
-            "    def decide_move(self, cmd: DecideMove, state: PlayerState) -> MoveDecided: ..."
+            "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) -> MoveDecided: ..."
         ),
-        "a decision: the command and the state in, the event out:\n{logic}"
+        "a decision: the command, the state and its context in, the event out:\n{logic}"
+    );
+    assert!(
+        logic.contains("from angzarr_player.domain import (\n    CommandContext,\n"),
+        "the context comes through the generated domain module:\n{logic}"
     );
     assert!(
         logic.contains("self, state: PlayerState, event: MoveDecided\n    ) -> PlayerState: ..."),
         "a fold: the state and the event in, the next state out:\n{logic}"
     );
     let domain = &file(&files, "src/angzarr_player/domain.py").source;
+    assert!(
+        domain.contains("from angzarr_client.router import CommandContext as CommandContext\n"),
+        "domain.py re-exports the harness's context:\n{domain}"
+    );
     for plain in [
         "class MoveAction(enum.IntEnum):",
         "    DOUBLE_DOWN = 3",
@@ -305,8 +330,8 @@ fn test_reroot_python_takes_the_longest_package_a_line_names() {
 #[test]
 fn test_complete_adds_an_absent_method_that_is_not_the_classes_last() {
     let fresh = file(&player(), IMPL).clone();
-    let decide = "    def decide_move(self, cmd: DecideMove, state: PlayerState) -> MoveDecided:\n        \
-                  raise NotImplementedError  # TODO: decide DecideMove\n";
+    let decide = "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) \
+                  -> MoveDecided:\n        raise NotImplementedError  # TODO: decide DecideMove\n";
     let user = fresh.source.replace(&format!("{decide}\n"), "");
     assert_ne!(user, fresh.source);
     let completed = complete(&fresh, &user)
