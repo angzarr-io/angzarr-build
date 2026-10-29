@@ -91,7 +91,13 @@ fn test_the_users_files_import_nothing_from_the_runtime_directly() {
             .filter(|l| !l.trim_start().starts_with("//"))
             .collect();
         for line in &code {
-            for runtime in ["angzarr_embedded", "angzarr_", "#[on_", "#[handles", "#[policy"] {
+            for runtime in [
+                "angzarr_embedded",
+                "angzarr_",
+                "#[on_",
+                "#[handles",
+                "#[policy",
+            ] {
                 assert!(
                     !line.contains(runtime),
                     "{} names {runtime}: {line}",
@@ -484,7 +490,7 @@ fn test_complete_adds_only_the_absent_methods_to_the_interface() {
         .expect("hold and apply_held are absent");
     let expected = USER_WALLET.replace(
         "// USER-WRITTEN\n}",
-        "// USER-WRITTEN\n\n    fn hold(&self, cmd: &Hold) -> Result<Held, InsufficientFunds>;\n\n    \
+        "// USER-WRITTEN\n\n    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, InsufficientFunds>;\n\n    \
          fn apply_held(&mut self, event: &Held);\n}",
     );
     assert_eq!(completed, expected);
@@ -499,7 +505,7 @@ fn test_complete_adds_only_the_absent_methods_to_the_implementation() {
     let expected = USER_WALLET_IMPL.replace(
         "        self.state.balance += event.cents;\n    }\n}",
         "        self.state.balance += event.cents;\n    }\n\n    \
-         fn hold(&self, _cmd: &Hold) -> Result<Held, InsufficientFunds> {\n        todo!()\n    }\n\n    \
+         fn hold(&self, _cmd: &Hold, _ctx: &Context) -> Result<Held, InsufficientFunds> {\n        todo!()\n    }\n\n    \
          fn apply_held(&mut self, _event: &Held) {\n        todo!()\n    }\n}",
     );
     assert_eq!(completed, expected);
@@ -588,7 +594,7 @@ fn test_complete_inserts_before_a_closing_brace_that_ends_a_line() {
         .expect("hold and apply_held are absent");
     let expected = user.replace(
         "event: &Deposited); }\n",
-        "event: &Deposited); \n\n    fn hold(&self, cmd: &Hold) -> Result<Held, InsufficientFunds>;\n\n    \
+        "event: &Deposited); \n\n    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, InsufficientFunds>;\n\n    \
          fn apply_held(&mut self, event: &Held);\n}\n",
     );
     assert_eq!(completed, expected);

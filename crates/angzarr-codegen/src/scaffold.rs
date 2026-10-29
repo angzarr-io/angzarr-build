@@ -4,7 +4,9 @@
 //! - the user's, written once into the source tree by `angzarr scaffold
 //!   rust` and completed with `--missing`: per component an interface (a
 //!   trait over the domain types) and its implementation (every body
-//!   `todo!()`), neither naming angzarr-embedded or its markup;
+//!   `todo!()`), neither importing anything of angzarr-embedded directly:
+//!   their context types and `Error` are the generated domain layer's
+//!   re-exports;
 //! - the CLI's, regenerated into `OUT_DIR` every build: the adapters
 //!   ([`adapters`]), each component's angzarr-embedded markup delegating to
 //!   its interface, and [`register`], which registers every adapter with
@@ -219,8 +221,12 @@ fn interface_methods(
                 params: vec![
                     ("source".to_string(), "&[u8]".to_string()),
                     ("event".to_string(), format!("&{}", event.name())),
+                    ("ctx".to_string(), "&PolicyContext".to_string()),
                 ],
-                output: Some(format!("Vec<(Vec<u8>, {}Command)>", target.name)),
+                output: Some(format!(
+                    "Result<Vec<(Vec<u8>, {}Command)>, Error>",
+                    target.name
+                )),
             });
         }
         for selection in translate {
@@ -237,11 +243,12 @@ fn interface_methods(
             {
                 params.push(("refusal".to_string(), format!("Option<{refusal}>")));
             }
+            params.push(("ctx".to_string(), "&CommandContext".to_string()));
             methods.push(Method {
                 name: format!("{}_refused", snake(&command)),
                 receiver: "&self",
                 params,
-                output: Some(fact),
+                output: Some(format!("Result<{fact}, Error>")),
             });
         }
         return Ok(methods);
@@ -270,7 +277,10 @@ fn interface_methods(
         methods.push(Method {
             name: method(ty),
             receiver: "&self",
-            params: vec![("cmd".to_string(), format!("&{ty}"))],
+            params: vec![
+                ("cmd".to_string(), format!("&{ty}")),
+                ("ctx".to_string(), "&Context".to_string()),
+            ],
             output: Some(format!("Result<{out}, {error}>")),
         });
     }
@@ -292,16 +302,19 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
         format!(
             "//! {name}: the interface of `{anchor}`, written once by\n\
              //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
-             //! methods it lacks. Each reaction takes the source stream's root and the\n\
-             //! event, and returns the commands to send, each with its target root; the\n\
-             //! generated adapter (`crate::adapters::{name}`) carries the markup.\n\n"
+             //! methods it lacks. Each reaction takes the source stream's root, the\n\
+             //! event and its context, and returns the commands to send, each with its\n\
+             //! target root, or its `Error`: a bug, since a policy reacts to events the\n\
+             //! application's own domains recorded. The generated adapter\n\
+             //! (`crate::adapters::{name}`) carries the markup.\n\n"
         )
     } else {
         format!(
             "//! {name}: the interface of `{anchor}`, written once by\n\
              //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
-             //! methods it lacks. It names only the domain types; the generated adapter\n\
-             //! (`crate::adapters::{name}`) carries the markup and calls it.\n\n"
+             //! methods it lacks. It names only `crate::domain`'s types, its handlers'\n\
+             //! `Context` among them; the generated adapter (`crate::adapters::{name}`)\n\
+             //! carries the markup and calls it.\n\n"
         )
     };
     out.push_str("use crate::domain::*;\n\n");
@@ -790,16 +803,16 @@ fn domain_adapter(component: &Component) -> TokenStream {
         match input.refuses.as_slice() {
             [] => methods.push(quote! {
                 #[handles_cmd(#ty #starts)]
-                fn #m(&self, cmd: #ty, _ctx: &Context) -> Result<Emit<Self>, Rejection> {
-                    #interface::#m(&self.0, &cmd).map(#emit)
+                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Rejection> {
+                    #interface::#m(&self.0, &cmd, ctx).map(#emit)
                 }
             }),
             refusals => {
                 let refusals: Vec<syn::Ident> = refusals.iter().map(|r| ident(r.name())).collect();
                 methods.push(quote! {
                     #[handles_cmd(#ty #starts, refuses(#(#refusals),*))]
-                    fn #m(&self, cmd: #ty, _ctx: &Context) -> Result<Emit<Self>, Refuses<Self, #ty>> {
-                        #interface::#m(&self.0, &cmd).map(#emit).map_err(Into::into)
+                    fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Refuses<Self, #ty>> {
+                        #interface::#m(&self.0, &cmd, ctx).map(#emit).map_err(Into::into)
                     }
                 });
             }
@@ -893,8 +906,9 @@ fn contract(component: &Component) -> TokenStream {
 }
 
 /// A `<command>_refused` method of a policy's interface: its name, the
-/// command it takes, whether it takes the typed refusal, and the fact it
-/// returns.
+/// command it takes, whether it takes the typed refusal (beside the
+/// refused command's context, which it always takes), and the fact its
+/// `Result` answers.
 struct Refused {
     name: String,
     command: String,
@@ -952,7 +966,10 @@ fn refused_methods(source: &str) -> Vec<Refused> {
             out.push(Refused {
                 name,
                 command,
-                refusal: typed.get(1).and_then(|t| last(t)),
+                refusal: typed
+                    .get(1)
+                    .and_then(|t| last(t))
+                    .filter(|t| t != "CommandContext"),
                 fact,
             });
         }
@@ -1004,8 +1021,8 @@ fn policy_adapter(
                 &self,
                 event: &#ty,
                 ctx: &PolicyContext,
-            ) -> ::core::result::Result<Commands<#target_ty>, ::core::convert::Infallible> {
-                let orders = #interface::#m(&self.0, &source_root(ctx), event);
+            ) -> ::core::result::Result<Commands<#target_ty>, Error> {
+                let orders = #interface::#m(&self.0, &source_root(ctx), event, ctx)?;
                 ::core::result::Result::Ok(orders
                     .into_iter()
                     .fold(Commands::none(), |commands, (root, command)| {
@@ -1034,9 +1051,8 @@ fn policy_adapter(
                 &self,
                 refusal: &Refusal<#command>,
                 ctx: &CommandContext,
-            ) -> ::core::result::Result<#fact, ::core::convert::Infallible> {
-                let _ = ctx;
-                ::core::result::Result::Ok(#interface::#m(&self.0, #args))
+            ) -> ::core::result::Result<#fact, Error> {
+                #interface::#m(&self.0, #args, ctx)
             }
         }
     });

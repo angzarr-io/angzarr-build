@@ -8,10 +8,15 @@ use crate::wallet_buy_in::WalletBuyIn;
 pub struct WalletBuyInImpl;
 
 impl WalletBuyIn for WalletBuyInImpl {
-    fn held(&self, _source: &[u8], event: &Held) -> Vec<(Vec<u8>, BuyInCommand)> {
-        vec![(
+    fn held(
+        &self,
+        _source: &[u8],
+        event: &Held,
+        _ctx: &PolicyContext,
+    ) -> Result<Vec<(Vec<u8>, BuyInCommand)>, Error> {
+        Ok(vec![(
             event.buy_in.clone(),
             BuyInCommand::RecordHeld(RecordHeld { cents: event.cents }),
-        )]
+        )])
     }
 }

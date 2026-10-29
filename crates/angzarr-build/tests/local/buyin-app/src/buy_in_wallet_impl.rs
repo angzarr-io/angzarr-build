@@ -12,19 +12,25 @@ impl BuyInWallet for BuyInWalletImpl {
         &self,
         source: &[u8],
         event: &BuyInStarted,
-    ) -> Vec<(Vec<u8>, WalletCommand)> {
-        vec![(
+        _ctx: &PolicyContext,
+    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Error> {
+        Ok(vec![(
             event.wallet.clone(),
             WalletCommand::Hold(Hold {
                 cents: event.cents,
                 buy_in: source.to_vec(),
             }),
-        )]
+        )])
     }
 
-    fn hold_refused(&self, command: &Hold, refusal: Option<InsufficientFunds>) -> HoldLost {
-        HoldLost {
+    fn hold_refused(
+        &self,
+        command: &Hold,
+        refusal: Option<InsufficientFunds>,
+        _ctx: &CommandContext,
+    ) -> Result<HoldLost, Error> {
+        Ok(HoldLost {
             short: refusal.map(|r| r.short).unwrap_or(command.cents),
-        }
+        })
     }
 }

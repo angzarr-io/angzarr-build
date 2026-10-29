@@ -140,17 +140,25 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_error() {
         .items
         .iter()
         .filter_map(|item| match item {
-            syn::Item::Use(u) => Some(quote::ToTokens::to_token_stream(&u.tree).to_string().replace(' ', "")),
+            syn::Item::Use(u) => Some(
+                quote::ToTokens::to_token_stream(&u.tree)
+                    .to_string()
+                    .replace(' ', ""),
+            ),
             _ => None,
         })
         .collect();
     for name in ["Context", "PolicyContext", "CommandContext"] {
         assert!(
-            reexports.contains(&format!("::angzarr_embedded::next::markup::{name}")),
+            reexports.contains(&format!("angzarr_embedded::next::markup::{name}")),
             "{name}: {reexports:?}"
         );
     }
-    assert!(items(&file).contains(&"Error".to_string()), "{:?}", items(&file));
+    assert!(
+        items(&file).contains(&"Error".to_string()),
+        "{:?}",
+        items(&file)
+    );
     assert!(impls(&file).contains(&(
         "::angzarr_embedded_diagnostic::Diagnostic".to_string(),
         "Error".to_string()

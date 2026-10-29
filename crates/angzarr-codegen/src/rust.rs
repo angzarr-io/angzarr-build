@@ -69,6 +69,7 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         items.extend(structure(message, wire, anchor));
     }
     items.extend(rejection());
+    items.extend(handler_context());
     let mut refusals: Vec<&MessageDescriptor> = Vec::new();
     for component in &package.components {
         for refusal in component.inputs.iter().flat_map(|i| &i.refuses) {
@@ -178,6 +179,73 @@ fn rejection() -> TokenStream {
         impl ::std::error::Error for Rejection {}
 
         impl ::angzarr_embedded_diagnostic::Diagnostic for Rejection {
+            fn code(&self) -> &'static str {
+                self.key
+            }
+
+            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+                self.args
+                    .iter()
+                    .map(|(name, value)| (*name, value.as_str().into()))
+                    .collect()
+            }
+        }
+    }
+}
+
+/// What the user's handlers read and fail with, under the domain layer's
+/// names, so a user file imports only `crate::domain`: the runtime's
+/// contexts re-exported, and `Error`, a policy's failure (a bug): a
+/// diagnostic key and its args, never text (decision 14.37).
+fn handler_context() -> TokenStream {
+    let next = next();
+    quote! {
+        /// What a command handler reads besides its command and state: the
+        /// instant its events are recorded at, and the router's context of
+        /// the input (its stream, sequences, resolution, conflict and
+        /// identity) as `ctx.command`.
+        pub use #next::markup::Context;
+
+        /// What a policy reaction reads: its trigger, the trigger's
+        /// correlation and when it was recorded.
+        pub use #next::markup::PolicyContext;
+
+        /// The refused command's context, whole, as its target's handler
+        /// was handed it: what a `<command>_refused` method reads.
+        pub use #next::markup::CommandContext;
+
+        /// Why a policy cannot answer: a bug, never a business refusal (a
+        /// policy reacts to events the application's own domains
+        /// recorded). A diagnostic key and its args, never text; the
+        /// runtime dead-letters it.
+        #[derive(Clone, Debug, PartialEq, Eq)]
+        pub struct Error {
+            pub key: &'static str,
+            pub args: Vec<(&'static str, String)>,
+        }
+
+        impl Error {
+            /// An error keyed `key`, with no args yet.
+            pub fn new(key: &'static str) -> Error {
+                Error { key, args: Vec::new() }
+            }
+
+            /// This error with the arg `name` set to `value`.
+            pub fn arg(mut self, name: &'static str, value: impl ToString) -> Error {
+                self.args.push((name, value.to_string()));
+                self
+            }
+        }
+
+        impl ::std::fmt::Display for Error {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.write_str(self.key)
+            }
+        }
+
+        impl ::std::error::Error for Error {}
+
+        impl ::angzarr_embedded_diagnostic::Diagnostic for Error {
             fn code(&self) -> &'static str {
                 self.key
             }

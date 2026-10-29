@@ -1,13 +1,25 @@
 //! BuyInWallet: the interface of `buyin.v1.BuyInWalletPolicy`, written once by
 //! `angzarr scaffold rust` and yours from then on: `--missing` adds the
-//! methods it lacks. Each reaction takes the source stream's root and the
-//! event, and returns the commands to send, each with its target root; the
-//! generated adapter (`crate::adapters::BuyInWallet`) carries the markup.
+//! methods it lacks. Each reaction takes the source stream's root, the
+//! event and its context, and returns the commands to send, each with its
+//! target root, or its `Error`: a bug, since a policy reacts to events the
+//! application's own domains recorded. The generated adapter
+//! (`crate::adapters::BuyInWallet`) carries the markup.
 
 use crate::domain::*;
 
 pub trait BuyInWallet {
-    fn buy_in_started(&self, source: &[u8], event: &BuyInStarted) -> Vec<(Vec<u8>, WalletCommand)>;
+    fn buy_in_started(
+        &self,
+        source: &[u8],
+        event: &BuyInStarted,
+        ctx: &PolicyContext,
+    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Error>;
 
-    fn hold_refused(&self, command: &Hold, refusal: Option<InsufficientFunds>) -> HoldLost;
+    fn hold_refused(
+        &self,
+        command: &Hold,
+        refusal: Option<InsufficientFunds>,
+        ctx: &CommandContext,
+    ) -> Result<HoldLost, Error>;
 }

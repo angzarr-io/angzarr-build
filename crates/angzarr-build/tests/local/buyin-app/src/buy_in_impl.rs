@@ -10,14 +10,14 @@ pub struct BuyInImpl {
 }
 
 impl BuyIn for BuyInImpl {
-    fn start_buy_in(&self, cmd: &StartBuyIn) -> Result<BuyInStarted, Rejection> {
+    fn start_buy_in(&self, cmd: &StartBuyIn, _ctx: &Context) -> Result<BuyInStarted, Rejection> {
         Ok(BuyInStarted {
             wallet: cmd.wallet.clone(),
             cents: cmd.cents,
         })
     }
 
-    fn record_held(&self, cmd: &RecordHeld) -> Result<BuyInHeld, Rejection> {
+    fn record_held(&self, cmd: &RecordHeld, _ctx: &Context) -> Result<BuyInHeld, Rejection> {
         Ok(BuyInHeld { cents: cmd.cents })
     }
 

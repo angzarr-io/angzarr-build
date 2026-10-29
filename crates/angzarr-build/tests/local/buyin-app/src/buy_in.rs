@@ -1,14 +1,15 @@
 //! BuyIn: the interface of `buyin.v1.BuyInState`, written once by
 //! `angzarr scaffold rust` and yours from then on: `--missing` adds the
-//! methods it lacks. It names only the domain types; the generated adapter
-//! (`crate::adapters::BuyIn`) carries the markup and calls it.
+//! methods it lacks. It names only `crate::domain`'s types, its handlers'
+//! `Context` among them; the generated adapter (`crate::adapters::BuyIn`)
+//! carries the markup and calls it.
 
 use crate::domain::*;
 
 pub trait BuyIn {
-    fn start_buy_in(&self, cmd: &StartBuyIn) -> Result<BuyInStarted, Rejection>;
+    fn start_buy_in(&self, cmd: &StartBuyIn, ctx: &Context) -> Result<BuyInStarted, Rejection>;
 
-    fn record_held(&self, cmd: &RecordHeld) -> Result<BuyInHeld, Rejection>;
+    fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Rejection>;
 
     fn hold_lost(&self, fact: &HoldLost) -> BuyInFailed;
 

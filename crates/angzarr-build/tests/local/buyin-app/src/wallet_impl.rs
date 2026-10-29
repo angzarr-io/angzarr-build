@@ -10,11 +10,11 @@ pub struct WalletImpl {
 }
 
 impl Wallet for WalletImpl {
-    fn deposit(&self, cmd: &Deposit) -> Result<Deposited, Rejection> {
+    fn deposit(&self, cmd: &Deposit, _ctx: &Context) -> Result<Deposited, Rejection> {
         Ok(Deposited { cents: cmd.cents })
     }
 
-    fn hold(&self, cmd: &Hold) -> Result<Held, InsufficientFunds> {
+    fn hold(&self, cmd: &Hold, _ctx: &Context) -> Result<Held, InsufficientFunds> {
         let available = self.state.balance - self.state.held;
         if cmd.cents > available {
             return Err(InsufficientFunds {

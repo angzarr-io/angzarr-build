@@ -13,7 +13,8 @@ impl BuyInWallet for BuyInWalletImpl {
         &self,
         _source: &[u8],
         _event: &BuyInStarted,
-    ) -> Vec<(Vec<u8>, WalletCommand)> {
+        _ctx: &PolicyContext,
+    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Error> {
         todo!()
     }
 }

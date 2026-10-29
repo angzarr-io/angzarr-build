@@ -9,7 +9,12 @@ use crate::wallet_buy_in::WalletBuyIn;
 pub struct WalletBuyInImpl;
 
 impl WalletBuyIn for WalletBuyInImpl {
-    fn held(&self, _source: &[u8], _event: &Held) -> Vec<(Vec<u8>, BuyInCommand)> {
+    fn held(
+        &self,
+        _source: &[u8],
+        _event: &Held,
+        _ctx: &PolicyContext,
+    ) -> Result<Vec<(Vec<u8>, BuyInCommand)>, Error> {
         todo!()
     }
 }
