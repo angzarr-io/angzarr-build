@@ -17,8 +17,9 @@ pre-commit:
       priority: 2
       run: just lint
     tests:
+      # Red tests are allowed off main, with a warning (`just test-commit`).
       priority: 3
-      run: just test
+      run: just test-commit
 
 # Mutation testing runs here, not at pre-commit: it is too slow for every
 # commit. `just push-check` runs each pushed commit's tests in a tree of its

@@ -217,3 +217,20 @@ _mutants-judge out patch="":
 # new hook.
 hooks-install:
     lefthook install
+
+# lefthook's pre-commit tests: every test of the workspace. Red tests (the
+# tests build and some fail) are committed on a branch other than main, with
+# a warning that it cannot merge until they pass, and refused on main or a
+# detached HEAD; a build failure is refused everywhere.
+test-commit:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cargo test --workspace --no-run --quiet
+    cargo test --workspace && exit 0
+    branch=$(git symbolic-ref --quiet --short HEAD) || branch=
+    if [ -n "$branch" ] && [ "$branch" != main ]; then
+        echo "RED  tests: red tests committed on $branch, which is allowed off main; $branch cannot merge into main (or be pushed to it) until they pass"
+        exit 0
+    fi
+    echo "FAIL tests: red tests cannot be committed on ${branch:-a detached HEAD}. Commit them on a branch." >&2
+    exit 1
