@@ -374,7 +374,8 @@ fn interface(app: &PythonApp, component: &Component) -> String {
         "\"\"\"{name}: the {} domain's logic, for ``{}``. Written once by \
          ``angzarr scaffold python`` and yours from then on: ``--missing`` adds the methods \
          it lacks. It takes and returns the domain's plain types (:mod:`.domain`), each \
-         decision its ``CommandContext`` too, raising ``Rejection`` to refuse its command, \
+         decision its ``CommandContext`` too, raising ``Rejection`` to refuse its command \
+         (or ``Bug`` for a defect), \
          and imports nothing of angzarr directly; the generated dispatch \
          (``_gen/.../{}_angzarr.py``) calls it.",
         app.domain,
@@ -554,21 +555,17 @@ fn domain_py(app: &PythonApp, component: &Component) -> String {
          from __future__ import annotations\n\n\
          import enum\n\
          from dataclasses import dataclass\n\n\
-         # What a decision reads besides its command and state, and what it raises\n\
-         # to refuse its command, re-exported so the logic imports only this module.\n\
-         from angzarr_client.router import CodedError as _CodedError\n\
+         # What a decision reads besides its command and state, and the two\n\
+         # classes it fails with, raised, each a diagnostic key and its args, never\n\
+         # text; re-exported so the logic imports only this module.\n\
+         # - Rejection(key, **args): a business \"no\", refusing the command\n\
+         #   (FAILED_PRECONDITION); the issuing policy's OnRefused receives it.\n\
+         # - Bug(key, **args): a defect, never a business answer; the runtime alerts\n\
+         #   it and dead-letters the command (UNHANDLED_HANDLER_ERROR, its key and\n\
+         #   args the cause).\n\
+         from angzarr_client.router import Bug as Bug\n\
          from angzarr_client.router import CommandContext as CommandContext\n\
-         from angzarr_client.router import GrpcCode as _GrpcCode\n\n\n\
-         class Rejection(_CodedError):\n    \
-         \"\"\"Why a decision refuses its command, raised: a diagnostic key and its\n    \
-         args, never text (a business refusal, FAILED_PRECONDITION).\"\"\"\n\n    \
-         def __init__(self, key: str, **args: object) -> None:\n        \
-         super().__init__(\n            \
-         code=key,\n            \
-         message=key,\n            \
-         grpc=_GrpcCode.FAILED_PRECONDITION,\n            \
-         extras={{name: str(value) for name, value in args.items()}},\n        \
-         )\n",
+         from angzarr_client.router import Rejection as Rejection\n",
         app.domain
     );
     for e in &enums {

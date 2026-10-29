@@ -57,7 +57,7 @@ pub enum CodegenError {
     RefusesOnFact { message: String },
     /// A message or enum named as one of the names the generated domain
     /// layer gives the runtime's types (`Context`, `PolicyContext`,
-    /// `CommandContext`, `Error`, `Rejection`): the generated code would
+    /// `CommandContext`, `Error`, `Rejection`, `Bug`): the generated code would
     /// collide, and nothing is renamed silently.
     ReservedName { message: String, name: String },
     /// A translate selection's fact is an input of the policy's source, but

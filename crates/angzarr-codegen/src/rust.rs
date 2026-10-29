@@ -149,8 +149,11 @@ pub(crate) fn enum_name(e: &EnumDescriptor) -> String {
 /// text (decision 14.37). A command with no typed refusal rejects with it.
 fn rejection() -> TokenStream {
     quote! {
-        /// Why a command is rejected: a diagnostic key and its args, never
-        /// text.
+        /// Why a command is rejected: a business "no", never a fault, the
+        /// command refused (FAILED_PRECONDITION) and the issuing policy's
+        /// refusal handler told. One of the two classes a handler fails
+        /// with; the other is [`Error`], a bug. A diagnostic key and its
+        /// args, never text.
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Rejection {
             pub key: &'static str,
@@ -214,10 +217,12 @@ fn handler_context() -> TokenStream {
         /// was handed it: what a `<command>_refused` method reads.
         pub use #next::markup::CommandContext;
 
-        /// Why a policy cannot answer: a bug, never a business refusal (a
-        /// policy reacts to events the application's own domains
-        /// recorded). A diagnostic key and its args, never text; the
-        /// runtime dead-letters it.
+        /// Why a policy cannot answer: a bug, a defect, never a business
+        /// refusal (a policy reacts to events the application's own
+        /// domains recorded). The other of the two classes a handler fails
+        /// with; the first is [`Rejection`], a business "no". A diagnostic
+        /// key and its args, never text; the runtime alerts it and
+        /// dead-letters the trigger.
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Error {
             pub key: &'static str,
