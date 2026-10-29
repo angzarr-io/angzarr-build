@@ -150,8 +150,9 @@ pub(crate) fn enum_name(e: &EnumDescriptor) -> String {
 fn rejection() -> TokenStream {
     quote! {
         /// Why a command is rejected: a business "no", never a fault, the
-        /// command refused (FAILED_PRECONDITION) and the issuing policy's
-        /// refusal handler told. One of the two classes a handler fails
+        /// command refused under a business status (this one crosses as
+        /// FAILED_PRECONDITION) and the issuing policy's refusal handler
+        /// told. One of the two classes a handler fails
         /// with; the other is [`Error`], a bug. A diagnostic key and its
         /// args, never text.
         #[derive(Clone, Debug, PartialEq, Eq)]

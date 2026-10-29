@@ -28,7 +28,7 @@ use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
 /// on, pinned by commit: every project this CLI scaffolds gets this one.
-pub const CLIENT_PYTHON_REV: &str = "1ede265c48c9fb08b280833e8312dfebc720a1a0";
+pub const CLIENT_PYTHON_REV: &str = "80b55d2a7083cf9ec5a3f4564244390c1549a375";
 /// Where [`CLIENT_PYTHON_REV`] is fetched from.
 pub const CLIENT_PYTHON_GIT: &str = "https://github.com/angzarr-io/angzarr-client-python";
 
@@ -558,8 +558,10 @@ fn domain_py(app: &PythonApp, component: &Component) -> String {
          # What a decision reads besides its command and state, and the two\n\
          # classes it fails with, raised, each a diagnostic key and its args, never\n\
          # text; re-exported so the logic imports only this module.\n\
-         # - Rejection(key, **args): a business \"no\", refusing the command\n\
-         #   (FAILED_PRECONDITION); the issuing policy's OnRefused receives it.\n\
+         # - Rejection(key, [status,] **args): a business \"no\", refusing the\n\
+         #   command under a business status: FAILED_PRECONDITION unless given,\n\
+         #   or INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or\n\
+         #   PERMISSION_DENIED; the issuing policy's OnRefused receives it.\n\
          # - Bug(key, **args): a defect, never a business answer; the runtime alerts\n\
          #   it and dead-letters the command (UNHANDLED_HANDLER_ERROR, its key and\n\
          #   args the cause).\n\

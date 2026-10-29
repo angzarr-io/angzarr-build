@@ -12,8 +12,10 @@ from dataclasses import dataclass
 # What a decision reads besides its command and state, and the two
 # classes it fails with, raised, each a diagnostic key and its args, never
 # text; re-exported so the logic imports only this module.
-# - Rejection(key, **args): a business "no", refusing the command
-#   (FAILED_PRECONDITION); the issuing policy's OnRefused receives it.
+# - Rejection(key, [status,] **args): a business "no", refusing the
+#   command under a business status: FAILED_PRECONDITION unless given,
+#   or INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or
+#   PERMISSION_DENIED; the issuing policy's OnRefused receives it.
 # - Bug(key, **args): a defect, never a business answer; the runtime alerts
 #   it and dead-letters the command (UNHANDLED_HANDLER_ERROR, its key and
 #   args the cause).

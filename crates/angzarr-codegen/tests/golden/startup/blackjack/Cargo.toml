@@ -10,10 +10,10 @@ publish = false
 # angzarr-embedded, its markup and its host, at the commit this angzarr CLI
 # generates for; the generated domain layer needs prost.
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e87c75afbab41ece24f438ebdcc0b5736700b0b3" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e87c75afbab41ece24f438ebdcc0b5736700b0b3" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e87c75afbab41ece24f438ebdcc0b5736700b0b3" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e87c75afbab41ece24f438ebdcc0b5736700b0b3" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0dba385eeae1e9f3e433406d2defb866d117545a" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0dba385eeae1e9f3e433406d2defb866d117545a" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0dba385eeae1e9f3e433406d2defb866d117545a" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "0dba385eeae1e9f3e433406d2defb866d117545a" }
 prost = "0.14"
 
 [build-dependencies]
