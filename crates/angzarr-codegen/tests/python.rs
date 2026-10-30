@@ -104,6 +104,25 @@ fn test_scaffold_python_matches_the_golden_project() {
     }
 }
 
+/// The child's host answers `Describe` with the generated descriptor,
+/// unchanged (decision 14.42): `main.py` registers the domain with
+/// `_descriptor.DESCRIPTOR`.
+#[test]
+fn test_main_py_registers_the_domain_with_its_generated_descriptor() {
+    let files = player();
+    let main = &file(&files, "src/angzarr_player/main.py").source;
+    assert!(
+        main.contains("from angzarr_player._descriptor import DESCRIPTOR\n"),
+        "{main}"
+    );
+    assert!(
+        main.contains(
+            "host.add_aggregate(new_player_aggregate_dispatch(PlayerLogicImpl()), DESCRIPTOR)"
+        ),
+        "{main}"
+    );
+}
+
 #[test]
 fn test_scaffold_python_pins_the_client_by_the_one_constant() {
     let files = player();
