@@ -591,7 +591,8 @@ fn test_domain_py_gives_an_event_its_commands_from_command() {
         .find(|c| c.starts_with("@dataclass(frozen=True)\nclass MoveDecided:"))
         .expect("class MoveDecided");
     assert!(
-        class.ends_with(&format!("\n\n{MOVE_DECIDED_FROM_COMMAND}")),
+        // The class's last newline is the split's.
+        format!("{class}\n").ends_with(&format!("\n\n{MOVE_DECIDED_FROM_COMMAND}")),
         "{class}"
     );
     // A command gets none: only an emitted event does.

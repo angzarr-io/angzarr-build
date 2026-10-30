@@ -629,8 +629,58 @@ fn domain_py(app: &PythonApp, component: &Component) -> String {
             let (ty, default) = field_type(&f);
             out.push_str(&format!("    {}: {ty} = {default}\n", py_name(f.name())));
         }
+        let emitters: Vec<&MessageDescriptor> = component
+            .inputs
+            .iter()
+            .filter(|i| i.emits.contains(m))
+            .map(|i| &i.message)
+            .collect();
+        for command in &emitters {
+            let name = match emitters.len() {
+                1 => "command".to_string(),
+                _ => snake(&local_name(command.full_name(), command.package_name())),
+            };
+            out.push_str(&from_command(m, command, &name));
+        }
     }
     out
+}
+
+/// The classmethod `from_<name>` of `event`, building it from `command`:
+/// each field they share by name and Python type copied, every other field
+/// a keyword-only parameter, so a missing keyword, or one naming a copied
+/// field, is Python's own TypeError.
+fn from_command(event: &MessageDescriptor, command: &MessageDescriptor, name: &str) -> String {
+    let local = |m: &MessageDescriptor| local_name(m.full_name(), m.package_name());
+    let mut params = String::new();
+    let mut args = String::new();
+    let mut keywords = false;
+    for f in event.fields() {
+        let field = py_name(f.name());
+        let (ty, _) = field_type(&f);
+        let shared = command
+            .get_field_by_name(f.name())
+            .is_some_and(|c| field_type(&c).0 == ty);
+        if shared {
+            args.push_str(&format!("            {field}=cmd.{field},\n"));
+            continue;
+        }
+        if !keywords {
+            params.push_str("        *,\n");
+            keywords = true;
+        }
+        params.push_str(&format!("        {field}: {ty},\n"));
+        args.push_str(&format!("            {field}={field},\n"));
+    }
+    format!(
+        "\n    @classmethod\n    def from_{name}(\n        cls,\n        cmd: {command},\n        /,\n\
+         {params}    ) -> {event}:\n        \
+         \"\"\"This event from ``cmd``: every field they share copied, the rest given.\n\n        \
+         A missing keyword, or one naming a copied field, is a TypeError.\n        \
+         \"\"\"\n        return cls(\n{args}        )\n",
+        command = local(command),
+        event = local(event),
+    )
 }
 
 /// The converter names of a message: `_to_card`, `_from_card`.
