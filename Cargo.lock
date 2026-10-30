@@ -32,6 +32,7 @@ dependencies = [
  "angzarr-embedded-diagnostic",
  "angzarr-fmt",
  "angzarr-fmt-clap",
+ "angzarr-proto",
  "clap",
  "serde",
  "serde_json",

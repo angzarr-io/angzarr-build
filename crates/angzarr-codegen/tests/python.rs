@@ -532,12 +532,16 @@ fn test_scaffold_python_converts_an_optional_enum_absent_as_none() {
     }
 }
 
+/// A directory input's paths are buf's `--path`s: relative to where buf
+/// runs (the project root), so each is under the directory, as the
+/// directory itself is.
 #[test]
 fn test_scaffold_python_generates_every_domain_file_its_messages_reach() {
     let buf = basket_file("buf.gen.yaml");
     assert!(
         buf.contains(
-            "    paths:\n      - pyshop/v1/basket.proto\n      - pyshop/v1/mood.proto\nplugins:"
+            "  - directory: proto\n    paths:\n      - proto/pyshop/v1/basket.proto\n      \
+             - proto/pyshop/v1/mood.proto\nplugins:"
         ),
         "{buf}"
     );
