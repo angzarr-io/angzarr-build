@@ -87,3 +87,53 @@ fn test_every_error_has_a_catalog_message_with_its_args() {
     let problems = angzarr_fmt::check(ftl, &angzarr_build::diagnostic_samples());
     assert!(problems.is_empty(), "{problems:#?}");
 }
+
+#[test]
+fn test_descriptors_into_writes_each_components_descriptor_with_the_version() {
+    let out = out_dir();
+    angzarr_build::descriptors_into(
+        &out,
+        &["orders/v1/orders.proto"],
+        &[&fixtures()],
+        &[],
+        "2.0.0",
+    )
+    .unwrap();
+    let source = std::fs::read_to_string(out.join("angzarr-descriptors.rs"))
+        .expect("angzarr-descriptors.rs");
+    let file = syn::parse_file(&source).unwrap();
+    assert!(
+        file.items
+            .iter()
+            .any(|i| matches!(i, syn::Item::Const(c) if c.ident == "DESCRIPTORS")),
+        "const DESCRIPTORS"
+    );
+    // The version is in the encoded descriptors.
+    assert!(source.contains("2.0.0"), "{source}");
+    std::fs::remove_dir_all(&out).unwrap();
+}
+
+#[test]
+fn test_reasons_into_writes_the_catalogs_constants() {
+    let out = out_dir();
+    let catalog = Path::new(&fixtures()).join("catalog/reasons.toml");
+    let rust = out.join("reasons.rs");
+    let python = out.join("reasons.py");
+    assert_eq!(
+        angzarr_build::reasons_rust_into(&catalog, &rust).unwrap(),
+        33
+    );
+    assert_eq!(
+        angzarr_build::reasons_python_into(&catalog, &python).unwrap(),
+        33
+    );
+    let rust = std::fs::read_to_string(rust).unwrap();
+    assert!(rust.contains("pub const POLICY_INPUT_COUNT: &str = \"POLICY_INPUT_COUNT\";"));
+    let python = std::fs::read_to_string(python).unwrap();
+    assert!(python.contains("\nPOLICY_INPUT_COUNT = \"POLICY_INPUT_COUNT\"\n"));
+    assert!(matches!(
+        angzarr_build::reasons_rust_into(&out.join("absent.toml"), &out.join("x.rs")),
+        Err(BuildError::Io { .. })
+    ));
+    std::fs::remove_dir_all(&out).unwrap();
+}

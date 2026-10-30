@@ -34,3 +34,4 @@ angzarr-codegen-startup-empty-launch = the domain { $domain }'s launch names no 
 angzarr-codegen-startup-unknown-domain = the domain { $domain } is owned by no aggregate or process manager of the protos
 angzarr-codegen-startup-duplicate-domain = the domain { $domain } is listed more than once
 angzarr-codegen-startup-unlisted-domain = the protos declare the domain { $domain }, which the config does not list
+angzarr-codegen-catalog = the reason-key catalog does not read: { $detail }

@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+// The descriptor fixture of spec features/codegen/descriptor.feature: the
+// "order" aggregate, the OrderToInventory policy and two projectors, one
+// subscribing by its events' domains and one by its input_domain.
+package orders.v1;
+
+import "io/angzarr/v1/options.proto";
+
+message OrderState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "order"
+    name: "order"
+  };
+
+  string customer = 1;
+}
+
+message PlaceOrder {
+  option (io.angzarr.v1.command) = {
+    component: "orders.v1.OrderState"
+    emits: ["orders.v1.OrderPlaced"]
+  };
+
+  string customer = 1;
+}
+
+// Folded by the order, translated by OrderToInventory, viewed by
+// OrderSummary.
+message OrderPlaced {
+  option (io.angzarr.v1.event) = {component: "orders.v1.OrderState"};
+  option (io.angzarr.v1.event) = {
+    component: "orders.v1.OrderToInventoryPolicy"
+    domain: "order"
+  };
+  option (io.angzarr.v1.event) = {
+    component: "orders.v1.OrderSummaryView"
+    domain: "order"
+  };
+
+  string customer = 1;
+}
+
+message OrderToInventoryPolicy {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_POLICY
+    input_domain: "order"
+    output_domain: "inventory"
+    name: "OrderToInventory"
+  };
+}
+
+// No input_domain: it subscribes to the domain its (event) entries name.
+message OrderSummaryView {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROJECTOR
+    name: "OrderSummary"
+  };
+}
+
+// An input_domain and no events.
+message AuditTrailView {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROJECTOR
+    input_domain: "audit"
+    name: "AuditTrail"
+  };
+}

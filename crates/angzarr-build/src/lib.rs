@@ -117,6 +117,30 @@ pub fn adapters_into(
     std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
+/// Each component's `ComponentDescriptor` (`angzarr-descriptors.rs` in
+/// `OUT_DIR`).
+pub fn descriptors_into(
+    _out: &Path,
+    _protos: &[&str],
+    _includes: &[&str],
+    _remote: &[&str],
+    _rules_version: &str,
+) -> Result<(), BuildError> {
+    Ok(())
+}
+
+/// The reason-key catalog at `catalog` as Rust constants, written to `out`;
+/// the number of keys.
+pub fn reasons_rust_into(_catalog: &Path, _out: &Path) -> Result<usize, BuildError> {
+    Ok(0)
+}
+
+/// The reason-key catalog at `catalog` as Python constants, written to
+/// `out`; the number of keys.
+pub fn reasons_python_into(_catalog: &Path, _out: &Path) -> Result<usize, BuildError> {
+    Ok(0)
+}
+
 /// An angzarr-embedded application's whole generated layer, from its host
 /// config (`config`, relative to the crate) and its protos: the wire types,
 /// the markup domain layer (its package's prost types at `crate::wire`),

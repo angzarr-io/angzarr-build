@@ -72,6 +72,7 @@ fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
             &format!("{gen_dir}/io/angzarr/examples/v1/player_aggregate_angzarr.py"),
             Owner::Generated,
         ),
+        ("src/angzarr_player/_descriptor.py", Owner::Generated),
         ("src/angzarr_player/_version.py", Owner::Generated),
         ("src/angzarr_player/main.py", Owner::Generated),
         (INTERFACE, Owner::User),

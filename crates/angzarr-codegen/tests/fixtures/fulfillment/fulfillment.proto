@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+// The process manager of spec features/codegen C-0607 and C-0716: started
+// by StartFulfillment only.
+package fulfillment;
+
+import "io/angzarr/v1/options.proto";
+
+message FulfillmentState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROCESS_MANAGER
+    domain: "fulfillment"
+    name: "Fulfillment"
+  };
+  option (io.angzarr.v1.state) = {conflict_resolutions: [CONFLICT_RESOLUTION_STRICT]};
+
+  bool started = 1;
+}
+
+message StartFulfillment {
+  option (io.angzarr.v1.command) = {
+    component: "fulfillment.FulfillmentState"
+    emits: ["fulfillment.FulfillmentStarted"]
+    starts: true
+  };
+
+  string order = 1;
+}
+
+message RecordStockReserved {
+  option (io.angzarr.v1.command) = {
+    component: "fulfillment.FulfillmentState"
+    emits: ["fulfillment.StockReserved"]
+    fact: true
+  };
+
+  string sku = 1;
+}
+
+message FulfillmentStarted {
+  option (io.angzarr.v1.event) = {component: "fulfillment.FulfillmentState"};
+
+  string order = 1;
+}
+
+message StockReserved {
+  option (io.angzarr.v1.event) = {component: "fulfillment.FulfillmentState"};
+
+  string sku = 1;
+}
