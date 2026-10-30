@@ -160,7 +160,8 @@ pub(crate) fn build_markup(
 /// domain type may take: a handler's `Context`, a policy reaction's
 /// `PolicyContext`, a refused command's `CommandContext`, the two classes
 /// a handler fails with, the business `Rejection` and the defect `Bug`, and
-/// Rust's `Failed` of either, with its `BusinessStatus`.
+/// Rust's `Failed` of either, with its `BusinessStatus` and its
+/// `RetryableStatus`.
 pub(crate) const RESERVED: &[&str] = &[
     "Context",
     "PolicyContext",
@@ -169,6 +170,7 @@ pub(crate) const RESERVED: &[&str] = &[
     "Bug",
     "Failed",
     "BusinessStatus",
+    "RetryableStatus",
 ];
 
 /// The first of `names` (each a type's full name and the name the domain

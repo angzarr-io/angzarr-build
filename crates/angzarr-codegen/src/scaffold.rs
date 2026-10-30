@@ -5,8 +5,10 @@
 //!   rust` and completed with `--missing`: per component an interface (a
 //!   trait over the domain types) and its implementation (every body
 //!   `todo!()`), neither importing anything of angzarr-embedded directly:
-//!   their context types, `Failed` and `Bug` are the generated domain layer's
-//!   re-exports;
+//!   their context types, `Failed`, `BusinessStatus`, `RetryableStatus`
+//!   and `Bug` are the generated domain layer's re-exports and its own
+//!   (`Failed::retryable_bug(status, &bug)` and `Failed::immediate(&bug)`
+//!   included);
 //! - the CLI's, regenerated into `OUT_DIR` every build: the adapters
 //!   ([`adapters`]), each component's angzarr-embedded markup delegating to
 //!   its interface, and [`register`], which registers every adapter with

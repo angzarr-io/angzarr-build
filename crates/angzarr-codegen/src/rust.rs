@@ -199,7 +199,8 @@ fn rejection() -> TokenStream {
 
 /// What the user's handlers read and fail with, under the domain layer's
 /// names, so a user file imports only `crate::domain`: the runtime's
-/// contexts and its `Failed` and `BusinessStatus` re-exported, and `Bug`,
+/// contexts and its `Failed`, `BusinessStatus` and `RetryableStatus`
+/// re-exported, and `Bug`,
 /// a defect: a diagnostic key and its args, never text (decision 14.37).
 fn handler_context() -> TokenStream {
     let next = next();
@@ -218,12 +219,24 @@ fn handler_context() -> TokenStream {
         /// was handed it: what a `<command>_refused` method reads.
         pub use #next::markup::CommandContext;
 
-        /// What a command handler fails with: `Failed::Rejected`, a
-        /// [`Rejection`] (or a typed refusal) under a [`BusinessStatus`],
-        /// FAILED_PRECONDITION unless `with_status` says otherwise; or
-        /// `Failed::Bug`, a [`Bug`]. `Err(rejection)?` and `Err(bug)?` both
-        /// convert.
-        pub use #next::markup::{BusinessStatus, Failed};
+        /// What a command handler fails with, one of four classes:
+        /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
+        /// a [`BusinessStatus`], FAILED_PRECONDITION unless `with_status`
+        /// says otherwise; `Failed::immediate(&bug)`, ABORTED under the
+        /// [`Bug`]'s key, "re-read and re-decide", back to a caller at
+        /// once and re-run as a policy's step; `Failed::Bug`, a [`Bug`],
+        /// dead-lettered at once; or `Failed::retryable_bug(status, &bug)`,
+        /// a [`Bug`] under the [`RetryableStatus`] the handler picks,
+        /// retried with capped backoff, then dead-lettered.
+        /// `Err(rejection)?` and `Err(bug)?` both convert.
+        ///
+        /// The retryable statuses are not interchangeable: `Unavailable`
+        /// means resend (the dependency is down for now);
+        /// `DeadlineExceeded` means resend only if the call is idempotent,
+        /// since the work may have happened (a command is, by its
+        /// `command_id`); `ResourceExhausted` means wait longer before
+        /// resending (a quota or a capacity limit was hit).
+        pub use #next::markup::{BusinessStatus, Failed, RetryableStatus};
 
         /// A bug: a defect, never a business answer. The other of the two
         /// classes a handler fails with; the first is [`Rejection`], a
