@@ -1,8 +1,7 @@
 # The mutation full pass, weekly and by hand: `just mutants-all` mutates the
 # whole workspace and judges each crate by the justfile's mutation_thresholds.
-# The pre-push gate (`push-check`) judges only what a push adds; this pass
-# catches what has drifted under it, and measures the thresholds still
-# proposed. The toolchain is rust-toolchain.toml's; angzarr-proto's build
+# No git hook runs mutation; this pass catches what has drifted, and measures
+# the thresholds still proposed. The toolchain is rust-toolchain.toml's; angzarr-proto's build
 # needs protoc. Tests needing the network or uv are #[ignore]d, so not run.
 name: mutation
 

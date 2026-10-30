@@ -33,8 +33,9 @@ test-pkg +args:
 # by the workspace's tests. A generated-code test builds and runs a project,
 # so a test may take minutes: the timeout is generous so a slow test is not
 # taken for a hung mutant.
-# Mutation-test the staged change, by hand (unjudged; the pre-push
-# `push-check` is the gate).
+# Mutation-test the staged change, by hand (unjudged). No git hook runs
+# mutation: it runs while tests are written and judged, at the end of an
+# unattended run, and in the scheduled full pass (`mutants-all`).
 mutants-staged:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -79,18 +80,16 @@ mutants-all:
 # lefthook's pre-push step, given the remote's name and git's pushed refs on
 # stdin. For each ref pushed, in that commit's tree checked out alone
 # (target/push-tree, so an unpushed edit cannot pass or fail it): every test
-# of the workspace, then cargo-mutants over the diff the push adds, judged by
-# `mutation_thresholds`. The diff's base is the merge base of the commit pushed
-# and the remote's current tip of that ref (a fast-forward's base is that
-# tip); for a new ref, or a tip not fetched here, the merge base with the
-# remote's default branch (<remote>/HEAD, else main). A deleted ref passes at
-# once, and a diff touching no Rust skips the mutation. The push tree's
+# of the workspace. No mutation: no git hook runs it. The range reported runs
+# from the merge base of the commit pushed and the remote's current tip of
+# that ref (a fast-forward's base is that tip); for a new ref, or a tip not
+# fetched here, the merge base with the remote's default branch
+# (<remote>/HEAD, else main). A deleted ref passes at once. The push tree's
 # angzarr-project is the pushed commit's submodule commit, exported from this
 # checkout's submodule (fetched if it is missing there).
 #
 # Red tests are allowed on a branch and kept out of the default branch: pushed
-# to another branch, failing tests pass with a warning and nothing is mutated
-# (no mutant can be judged against failing tests); pushed to the default
+# to another branch, failing tests pass with a warning; pushed to the default
 # branch they are refused. `lefthook` is what lefthook.yml passes to stop
 # lefthook skipping it, and is ignored.
 [positional-arguments]
@@ -153,7 +152,7 @@ push-check remote *lefthook:
         (cd "$tree" && CARGO_TARGET_DIR="$top/target/push" cargo test --workspace) > "$log" 2>&1 9>&- || rc=$?
         if [ "$rc" -ne 0 ]; then
             if [ "$remote_ref" != "refs/heads/$default" ]; then
-                echo "RED  push-check: $range: the tests fail (target/logs/push-tests.log); allowed off $default, which $target cannot merge into until they pass. Nothing mutated."
+                echo "RED  push-check: $range: the tests fail (target/logs/push-tests.log); allowed off $default, which $target cannot merge into until they pass."
                 continue
             fi
             echo "FAIL push-check: $range: the tests fail, and $default takes no red tests (full log: target/logs/push-tests.log)" >&2
@@ -161,16 +160,6 @@ push-check remote *lefthook:
             exit 1
         fi
         echo "ok   push-check ($range): tests pass"
-        if [ -z "$(git -C "$top" diff --name-only "$base" "$local_sha" -- '*.rs')" ]; then
-            echo "ok   push-check ($range): no mutants, the push touches no Rust"
-            continue
-        fi
-        mkdir -p "$tree/target"
-        git -C "$top" diff --no-color --no-ext-diff --no-renames --src-prefix=a/ --dst-prefix=b/ \
-            "$base" "$local_sha" -- '*.rs' > "$tree/target/push.patch"
-        rc=0
-        (cd "$tree" && CARGO_TARGET_DIR="$top/target/push" just --justfile "$tree/justfile" _mutants-judge "$top/target/mutants-push" target/push.patch) 9>&- || rc=$?
-        [ "$rc" -eq 0 ] || exit "$rc"
     done
     [ "$pushed" = 1 ] || echo "ok   push-check (no commit pushed: nothing to test)"
 
