@@ -35,6 +35,8 @@ pub(crate) enum ComponentKind {
     Aggregate,
     Policy,
     ProcessManager,
+    /// Only the descriptor's: the markup is the write side.
+    Projector,
 }
 
 impl ComponentKind {
@@ -43,7 +45,18 @@ impl ComponentKind {
             AGGREGATE => Some(ComponentKind::Aggregate),
             POLICY => Some(ComponentKind::Policy),
             PROCESS_MANAGER => Some(ComponentKind::ProcessManager),
+            PROJECTOR => Some(ComponentKind::Projector),
             _ => None,
+        }
+    }
+
+    /// Its `ComponentKind` number (types.proto).
+    pub(crate) fn number(self) -> i32 {
+        match self {
+            ComponentKind::Aggregate => AGGREGATE,
+            ComponentKind::Policy => POLICY,
+            ComponentKind::ProcessManager => PROCESS_MANAGER,
+            ComponentKind::Projector => PROJECTOR,
         }
     }
 }
@@ -55,6 +68,13 @@ pub(crate) const MARKUP_KINDS: &[ComponentKind] = &[
     ComponentKind::Aggregate,
     ComponentKind::Policy,
     ComponentKind::ProcessManager,
+];
+/// The kinds a descriptor is generated for: every kind.
+pub(crate) const DESCRIPTOR_KINDS: &[ComponentKind] = &[
+    ComponentKind::Aggregate,
+    ComponentKind::Policy,
+    ComponentKind::ProcessManager,
+    ComponentKind::Projector,
 ];
 
 /// One input of an aggregate or a process manager: a command, or a fact
@@ -84,6 +104,11 @@ pub(crate) struct Component {
     /// An aggregate's or a process manager's events (folded), or the events
     /// a policy reacts to.
     pub events: Vec<MessageDescriptor>,
+    /// The source domains its `(event)` entries name, each once, in order:
+    /// a projector's subscriptions when it names no `input_domain`.
+    pub sources: Vec<String>,
+    /// The conflict resolutions its state's `(state)` option lists.
+    pub resolutions: Vec<i32>,
 }
 
 impl Component {
@@ -284,7 +309,10 @@ pub(crate) fn components(
         let number = enum_field(&declared, "kind");
         // The markup is the write side: a projector beside it is skipped,
         // not refused.
-        if number == PROJECTOR && kinds.contains(&ComponentKind::Policy) {
+        if number == PROJECTOR
+            && kinds.contains(&ComponentKind::Policy)
+            && !kinds.contains(&ComponentKind::Projector)
+        {
             continue;
         }
         let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
@@ -293,13 +321,15 @@ pub(crate) fn components(
                 kind: number,
             });
         };
-        if let (Some(state_ext), Some(commutative)) =
-            (pool.get_extension_by_name(STATE), commutative)
-            && let Some(state) = message_value(&options, &state_ext)
-            && list_field(&state, "conflict_resolutions")
-                .iter()
-                .any(|v| matches!(v, Value::EnumNumber(n) if *n == commutative))
-        {
+        let resolutions: Vec<i32> = pool
+            .get_extension_by_name(STATE)
+            .and_then(|state_ext| message_value(&options, &state_ext))
+            .map(|state| list_field(&state, "conflict_resolutions"))
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|v| v.as_enum_number())
+            .collect();
+        if commutative.is_some_and(|c| resolutions.contains(&c)) {
             return Err(CodegenError::Commutative {
                 component: message.full_name().to_string(),
             });
@@ -317,6 +347,8 @@ pub(crate) fn components(
             output_domain: string_field(&declared, "output_domain"),
             inputs: Vec::new(),
             events: Vec::new(),
+            sources: Vec::new(),
+            resolutions,
         });
     }
 
@@ -333,10 +365,15 @@ pub(crate) fn components(
                 };
                 let named = string_field(consumer, "component");
                 let component = owner(&mut components, &pool, &component_ext, message, &named)?;
-                if let Some(component) = component
-                    && !component.events.contains(message)
-                {
+                let Some(component) = component else {
+                    continue;
+                };
+                if !component.events.contains(message) {
                     component.events.push(message.clone());
+                }
+                let source = string_field(consumer, "domain");
+                if !source.is_empty() && !component.sources.contains(&source) {
+                    component.sources.push(source);
                 }
             }
         }

@@ -370,7 +370,7 @@ fn impl_source(component: &Component, methods: &[Method]) -> String {
 }
 
 /// `tokens`, a whole file, formatted.
-fn file(tokens: TokenStream) -> String {
+pub(crate) fn file(tokens: TokenStream) -> String {
     let file: syn::File = syn::parse2(tokens).expect("the emitter writes valid Rust");
     prettyplease::unparse(&file)
 }
@@ -1095,6 +1095,7 @@ pub fn register(
                     quote!(registry.process_manager::<#ty>(#ty::default);)
                 }
                 ComponentKind::Policy => quote!(registry.policy(#ty::default());),
+                ComponentKind::Projector => unreachable!("the markup's kinds hold no projector"),
             }
         })
         .collect::<Vec<_>>();

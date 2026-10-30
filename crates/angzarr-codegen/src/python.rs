@@ -146,6 +146,11 @@ pub fn scaffold_python(
             main_py(app, &components),
             Owner::Generated,
         ),
+        file(
+            format!("{src}/_descriptor.py"),
+            descriptor_py(app, descriptor_set, files, &anchor)?,
+            Owner::Generated,
+        ),
         file("tests/__init__.py".to_string(), String::new(), Owner::User),
     ];
     let mut packages = BTreeSet::new();
@@ -194,6 +199,38 @@ pub fn scaffold_python(
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(out)
+}
+
+/// `_descriptor.py`: the `anchor` component's generated
+/// `ComponentDescriptor`, `app.rules_version` its rules version, as the
+/// bytes its child answers `Describe` with, unchanged.
+fn descriptor_py(
+    app: &PythonApp,
+    descriptor_set: &[u8],
+    files: &[&str],
+    anchor: &str,
+) -> Result<String, CodegenError> {
+    let encoded = crate::descriptor::descriptors(descriptor_set, files, &app.rules_version)?
+        .into_iter()
+        .find(|d| d.component == anchor)
+        .map(|d| d.encoded)
+        .unwrap_or_default();
+    let hex: String = encoded.iter().map(|b| format!("{b:02x}")).collect();
+    let lines: String = hex
+        .as_bytes()
+        .chunks(64)
+        .map(|chunk| format!("        \"{}\"\n", String::from_utf8_lossy(chunk)))
+        .collect();
+    Ok(format!(
+        "{GENERATED}\"\"\"The {domain} domain's ComponentDescriptor, generated from its protos.\n\n\
+         Its rules_version is ``_version``'s. The child answers ``Describe`` with it,\n\
+         unchanged (decision 14.42).\n\
+         \"\"\"\n\n\
+         from __future__ import annotations\n\n\
+         from angzarr_client.proto.io.angzarr.v1 import types_pb2 as _t\n\n\
+         DESCRIPTOR = _t.ComponentDescriptor.FromString(\n    bytes.fromhex(\n{lines}    )\n)\n",
+        domain = app.domain,
+    ))
 }
 
 /// What the Python scaffold emits: an aggregate's commands and events.

@@ -117,35 +117,65 @@ pub fn adapters_into(
     std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
-/// Each component's `ComponentDescriptor` (`angzarr-descriptors.rs` in
-/// `OUT_DIR`).
+/// Each component's generated `ComponentDescriptor` in `protos`
+/// (`angzarr-descriptors.rs` in `OUT_DIR`, see
+/// `angzarr_codegen::descriptors_rs`), the crate's version
+/// (`CARGO_PKG_VERSION`) its rules version, the `remote` domains (served
+/// by a child process) left to their process. Unversioned, the descriptors'
+/// rules version is empty, which the coordinator refuses.
+pub fn descriptors(protos: &[&str], includes: &[&str], remote: &[&str]) -> Result<(), BuildError> {
+    descriptors_into(&out_dir()?, protos, includes, remote, &rules_version())
+}
+
+/// The build's version: the crate's.
+fn rules_version() -> String {
+    std::env::var("CARGO_PKG_VERSION").unwrap_or_default()
+}
+
+/// [`descriptors`], into `out`, with `rules_version`.
 pub fn descriptors_into(
-    _out: &Path,
-    _protos: &[&str],
-    _includes: &[&str],
-    _remote: &[&str],
-    _rules_version: &str,
+    out: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    remote: &[&str],
+    rules_version: &str,
 ) -> Result<(), BuildError> {
-    Ok(())
+    let bytes = build_descriptors(out, protos, includes)?;
+    let source = angzarr_codegen::descriptors_rs(&bytes, protos, remote, rules_version)
+        .map_err(BuildError::Codegen)?;
+    let path = out.join("angzarr-descriptors.rs");
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
-/// The reason-key catalog at `catalog` as Rust constants, written to `out`;
-/// the number of keys.
-pub fn reasons_rust_into(_catalog: &Path, _out: &Path) -> Result<usize, BuildError> {
-    Ok(0)
+/// The reason-key catalog at `catalog` (angzarr-project's
+/// `catalog/reasons.toml`) as Rust constants, written to `out`; the number
+/// of keys (see `angzarr_codegen::reasons_rust`).
+pub fn reasons_rust_into(catalog: &Path, out: &Path) -> Result<usize, BuildError> {
+    reasons_into(catalog, out, angzarr_codegen::reasons_rust)
 }
 
-/// The reason-key catalog at `catalog` as Python constants, written to
-/// `out`; the number of keys.
-pub fn reasons_python_into(_catalog: &Path, _out: &Path) -> Result<usize, BuildError> {
-    Ok(0)
+/// [`reasons_rust_into`], as Python constants.
+pub fn reasons_python_into(catalog: &Path, out: &Path) -> Result<usize, BuildError> {
+    reasons_into(catalog, out, angzarr_codegen::reasons_python)
+}
+
+fn reasons_into(
+    catalog: &Path,
+    out: &Path,
+    render: fn(&str) -> Result<String, angzarr_codegen::CodegenError>,
+) -> Result<usize, BuildError> {
+    let text = std::fs::read_to_string(catalog).map_err(|e| io(catalog, &e))?;
+    let source = render(&text).map_err(BuildError::Codegen)?;
+    let keys = angzarr_codegen::reason_keys(&text).map_err(BuildError::Codegen)?;
+    std::fs::write(out, source).map_err(|e| io(out, &e))?;
+    Ok(keys.len())
 }
 
 /// An angzarr-embedded application's whole generated layer, from its host
 /// config (`config`, relative to the crate) and its protos: the wire types,
 /// the markup domain layer (its package's prost types at `crate::wire`),
-/// the adapters and `register()`, the domains the config serves from a
-/// child process as contracts.
+/// the adapters, `register()` and the components' descriptors, the domains
+/// the config serves from a child process as contracts.
 pub fn app(config: &str, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
     app_into(&out_dir()?, Path::new(config), protos, includes)
 }
@@ -171,6 +201,7 @@ pub fn app_into(
     wire_into(out, protos, includes)?;
     markup_domain_into(out, protos, includes, &wire)?;
     adapters_into(out, protos, includes, &remote)?;
+    descriptors_into(out, protos, includes, &remote, &rules_version())?;
     register_into(out, protos, includes, &remote)
 }
 
@@ -264,7 +295,7 @@ fn scaffold_descriptors(protos: &[&str], includes: &[&str]) -> Result<Vec<u8>, B
     let work = scratch_dir()?;
     let inputs = with_siblings(protos, includes);
     let inputs: Vec<&str> = inputs.iter().map(String::as_str).collect();
-    let bytes = descriptors(&work, &inputs, includes);
+    let bytes = protoc_set(&work, &inputs, includes);
     let _ = std::fs::remove_dir_all(&work);
     bytes
 }
@@ -493,7 +524,7 @@ fn build_descriptors(
 }
 
 /// protoc's descriptor set for `protos`, written under `work`.
-fn descriptors(work: &Path, protos: &[&str], includes: &[&str]) -> Result<Vec<u8>, BuildError> {
+fn protoc_set(work: &Path, protos: &[&str], includes: &[&str]) -> Result<Vec<u8>, BuildError> {
     protoc(work, protos, &with_angzarr(work, includes)?)
 }
 

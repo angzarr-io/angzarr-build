@@ -17,7 +17,7 @@ mod startup;
 
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
 pub use error::{CodegenError, diagnostic_samples};
-pub use reasons::{reasons_python, reasons_rust};
+pub use reasons::{reason_keys, reasons_python, reasons_rust};
 
 /// This crate's en-US messages.
 pub const EN_US: &str = include_str!("../locales/en-US/angzarr-codegen.ftl");
