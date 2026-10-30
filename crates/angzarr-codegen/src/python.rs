@@ -50,7 +50,8 @@ pub enum ProtoInput {
         rev: String,
         subdir: String,
     },
-    /// A directory, relative to the project root.
+    /// A directory, relative to the project root (where buf runs) or
+    /// absolute.
     Directory(String),
 }
 
@@ -969,15 +970,19 @@ fn proto_paths(components: &[Component]) -> BTreeSet<String> {
 
 fn buf_gen(app: &PythonApp, components: &[Component]) -> String {
     let package = app.package();
-    let input = match &app.protos {
-        ProtoInput::Git { url, rev, subdir } => {
-            format!("  - git_repo: {url}\n    ref: {rev}\n    subdir: {subdir}\n")
-        }
-        ProtoInput::Directory(dir) => format!("  - directory: {dir}\n"),
+    // A git input's paths are under its subdir; a directory's are buf's
+    // `--path`s, relative to where buf runs (the project root), as the
+    // directory is.
+    let (input, under) = match &app.protos {
+        ProtoInput::Git { url, rev, subdir } => (
+            format!("  - git_repo: {url}\n    ref: {rev}\n    subdir: {subdir}\n"),
+            String::new(),
+        ),
+        ProtoInput::Directory(dir) => (format!("  - directory: {dir}\n"), format!("{dir}/")),
     };
     let paths: String = proto_paths(components)
         .iter()
-        .map(|p| format!("      - {p}\n"))
+        .map(|p| format!("      - {under}{p}\n"))
         .collect();
     format!(
         "{GENERATED}#\n\
