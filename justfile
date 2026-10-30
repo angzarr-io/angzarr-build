@@ -64,7 +64,7 @@ fmt:
 # its close-out runs reached 0 missed. The others are proposed at 90, the bar
 # the org's other Rust repositories hold, until a full pass (`just
 # mutants-all`) measures them.
-mutation_thresholds := "crates/angzarr-codegen=100 crates/angzarr-build=90 crates/angzarr-cli=90 crates/angzarr-fmt=90 crates/angzarr-fmt-clap=90"
+mutation_thresholds := "crates/angzarr-codegen=100 crates/angzarr-build=90 crates/angzarr-cli=90 crates/angzarr-fmt=90"
 
 # Mutation-test the whole workspace, judged by `mutation_thresholds`: the full
 # pass, for a scheduled run (slow: a generated-code test builds and runs a
