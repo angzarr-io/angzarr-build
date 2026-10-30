@@ -34,19 +34,6 @@ pub struct Generated {
     pub source: String,
 }
 
-/// The domain layer for every component declared in `files`: one
-/// [`Generated`] per package holding one.
-///
-/// `wire` maps each proto package to the Rust path of its prost types, as
-/// prost-build's `extern_path` does (`("shop.v1", "::shop_proto::v1")`).
-pub fn domain(
-    descriptor_set: &[u8],
-    files: &[&str],
-    wire: &[(&str, &str)],
-) -> Result<Vec<Generated>, CodegenError> {
-    generate(model::build(descriptor_set, files)?, wire, rust::package)
-}
-
 /// One [`Generated`] per package, each emitted with its prost types' Rust
 /// path from `wire`.
 fn generate(

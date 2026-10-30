@@ -1,0 +1,11 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+// A component of no kind: none the generator emits.
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_UNSPECIFIED
+    domain: "things"
+  };
+}

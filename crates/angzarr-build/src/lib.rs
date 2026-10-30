@@ -1,6 +1,7 @@
 //! Helpers for `build.rs`: angzarr's settings for prost types ([`wire`]),
-//! and the generated domain layer ([`domain`], or [`markup_domain`] for
-//! marked-up components) and component registration ([`register`]), written
+//! and the generated domain layer for marked-up components
+//! ([`markup_domain`]), adapters ([`adapters`]), descriptors
+//! ([`descriptors`]) and component registration ([`register`]), written
 //! to `OUT_DIR`, never into the source tree. And the one thing written into
 //! the source tree, once, as the user's: the markup scaffold
 //! ([`scaffold_into`], behind `angzarr scaffold rust`).
@@ -30,13 +31,6 @@ pub const EN_US: &str = include_str!("../locales/en-US/angzarr-build.ftl");
 /// and angzarr's own types taken from angzarr-proto.
 pub fn wire(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
     wire_into(&out_dir()?, protos, includes)
-}
-
-/// The domain layer of every component in `protos`, by package
-/// (`<package>.domain.rs` in `OUT_DIR`). `wire` maps each package to the Rust
-/// path of its prost types (see `angzarr_codegen::domain`).
-pub fn domain(protos: &[&str], includes: &[&str], wire: &[(&str, &str)]) -> Result<(), BuildError> {
-    domain_into(&out_dir()?, protos, includes, wire)
 }
 
 /// The domain layer for marked-up components (angzarr-embedded-macros), by package
@@ -402,18 +396,6 @@ pub fn wire_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<(), B
         .map_err(|e| BuildError::Prost {
             detail: e.to_string(),
         })
-}
-
-/// [`domain`], into `out`.
-pub fn domain_into(
-    out: &Path,
-    protos: &[&str],
-    includes: &[&str],
-    wire: &[(&str, &str)],
-) -> Result<(), BuildError> {
-    let bytes = build_descriptors(out, protos, includes)?;
-    let generated = angzarr_codegen::domain(&bytes, protos, wire).map_err(BuildError::Codegen)?;
-    write_domain(out, generated)
 }
 
 /// Each package's domain layer, as `<package>.domain.rs` in `out`.

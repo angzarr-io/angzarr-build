@@ -4,7 +4,7 @@
 
 mod common;
 
-use angzarr_codegen::{ScaffoldFile, adapters, domain, scaffold};
+use angzarr_codegen::{ScaffoldFile, adapters, markup_domain, scaffold};
 use common::*;
 
 const NAMING: &str = "naming/v1/naming.proto";
@@ -15,7 +15,7 @@ fn files() -> Vec<ScaffoldFile> {
 }
 
 fn generated() -> String {
-    let generated = domain(
+    let generated = markup_domain(
         &descriptors(BOTH),
         &[NAMING],
         &[("naming.v1", "::naming_proto::v1")],
@@ -42,12 +42,13 @@ fn test_names_are_snake_cased_at_each_word_an_acronym_and_a_digit() {
     }
 }
 
+/// `DELIVERY_STATUS_SHIPPED_LATE` of `DeliveryStatus` loses the enum's
+/// screaming-cased name as its prefix, its words camel-cased.
 #[test]
-fn test_names_are_screaming_cased_at_each_word() {
+fn test_enum_values_lose_the_enums_screaming_cased_prefix() {
     let source = generated();
-    for expected in ["ORDER_BOOK_DOMAIN", "ShippedLate"] {
-        assert!(source.contains(expected), "{expected}:\n{source}");
-    }
+    assert!(source.contains("ShippedLate"), "{source}");
+    assert!(!source.contains("DeliveryStatusShippedLate"), "{source}");
 }
 
 #[test]

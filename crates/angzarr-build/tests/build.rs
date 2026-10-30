@@ -1,11 +1,11 @@
-//! What a build script gets: angzarr's prost types for a wire crate, and the
-//! domain layer for a domain crate, each written into the output directory
-//! by package.
+//! What a build script gets: angzarr's prost types for a wire crate, the
+//! domain layer, and the descriptors, each written into the output
+//! directory, and the failures it reports.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use angzarr_build::{BuildError, domain_into, wire_into};
+use angzarr_build::{BuildError, markup_domain_into, wire_into};
 
 const SHOP: &str = "shop/v1/shop.proto";
 
@@ -44,38 +44,17 @@ fn test_wire_into_writes_prost_types_by_package() {
 }
 
 #[test]
-fn test_domain_into_writes_the_domain_layer_by_package() {
+fn test_markup_domain_into_reports_the_generators_refusal() {
     let out = out_dir();
-    domain_into(
-        &out,
-        &[SHOP],
-        &[&fixtures()],
-        &[("shop.v1", "::shop_proto::v1")],
-    )
-    .unwrap();
-    let source = std::fs::read_to_string(out.join("shop.v1.domain.rs")).expect("domain file");
-    let file = syn::parse_file(&source).unwrap();
-    assert!(
-        file.items
-            .iter()
-            .any(|i| matches!(i, syn::Item::Enum(e) if e.ident == "CartCommand")),
-        "the payload enum"
-    );
-    std::fs::remove_dir_all(&out).unwrap();
-}
-
-#[test]
-fn test_domain_into_reports_the_generators_refusal() {
-    let out = out_dir();
-    let error = domain_into(&out, &[SHOP], &[&fixtures()], &[]).expect_err("no wire path");
+    let error = markup_domain_into(&out, &[SHOP], &[&fixtures()], &[]).expect_err("no wire path");
     assert!(matches!(error, BuildError::Codegen(_)), "{error:?}");
     std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
-fn test_domain_into_reports_a_proto_protoc_cannot_find() {
+fn test_markup_domain_into_reports_a_proto_protoc_cannot_find() {
     let out = out_dir();
-    let error = domain_into(&out, &["shop/v1/absent.proto"], &[&fixtures()], &[])
+    let error = markup_domain_into(&out, &["shop/v1/absent.proto"], &[&fixtures()], &[])
         .expect_err("no such proto");
     assert!(matches!(error, BuildError::Protoc { .. }), "{error:?}");
     std::fs::remove_dir_all(&out).unwrap();

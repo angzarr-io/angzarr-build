@@ -61,8 +61,6 @@ impl ComponentKind {
     }
 }
 
-/// The kinds the domain layer emits.
-pub(crate) const DOMAIN_KINDS: &[ComponentKind] = &[ComponentKind::Aggregate];
 /// The kinds the markup (scaffold, register, markup domain layer) emits.
 pub(crate) const MARKUP_KINDS: &[ComponentKind] = &[
     ComponentKind::Aggregate,
@@ -127,22 +125,6 @@ pub(crate) struct Package {
     /// Domain types, in the order they were reached.
     pub messages: Vec<MessageDescriptor>,
     pub enums: Vec<EnumDescriptor>,
-}
-
-/// The domain layer's packages by name, each with a component: its
-/// aggregates, every type their state, commands and events reach.
-pub(crate) fn build(
-    descriptor_set: &[u8],
-    files: &[&str],
-) -> Result<BTreeMap<String, Package>, CodegenError> {
-    let components = components(descriptor_set, files, DOMAIN_KINDS)?;
-    packages(components, |c| {
-        std::iter::once(&c.anchor)
-            .chain(c.inputs.iter().map(|i| &i.message))
-            .chain(&c.events)
-            .cloned()
-            .collect()
-    })
 }
 
 /// The markup domain layer's packages by name: every type the inputs,
@@ -309,10 +291,7 @@ pub(crate) fn components(
         let number = enum_field(&declared, "kind");
         // The markup is the write side: a projector beside it is skipped,
         // not refused.
-        if number == PROJECTOR
-            && kinds.contains(&ComponentKind::Policy)
-            && !kinds.contains(&ComponentKind::Projector)
-        {
+        if number == PROJECTOR && !kinds.contains(&ComponentKind::Projector) {
             continue;
         }
         let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {

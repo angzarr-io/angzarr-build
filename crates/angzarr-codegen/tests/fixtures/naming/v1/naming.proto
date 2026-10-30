@@ -47,4 +47,6 @@ message TrackingIDAssigned {
 
 message Level2Reached {
   option (io.angzarr.v1.event) = {component: "naming.v1.OrderBookState"};
+
+  DeliveryStatus status = 1;
 }

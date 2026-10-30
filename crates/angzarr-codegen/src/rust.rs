@@ -1,5 +1,5 @@
-//! The Rust emitter: a package's domain layer on angzarr-embedded, either complete
-//! ([`package`]) or for marked-up components ([`markup_package`]).
+//! The Rust emitter: a package's domain layer for marked-up components on
+//! angzarr-embedded ([`markup_package`]).
 //!
 //! Every domain type is a plain Rust type with its wire conversions: into the
 //! prost message infallibly, back out fallibly with angzarr-embedded's `WireError`
@@ -13,7 +13,7 @@ use proc_macro2::{Span, TokenStream};
 use prost_reflect::{EnumDescriptor, FieldDescriptor, Kind, MessageDescriptor};
 use quote::{format_ident, quote};
 
-use crate::model::{Component, Package, TIMESTAMP};
+use crate::model::{Package, TIMESTAMP};
 
 /// The runtime crate the generated code targets, as its Rust identifier:
 /// every path into it, the macros crate's name (`<RUNTIME>_macros`) and the
@@ -35,24 +35,6 @@ pub(crate) fn runtime_macros() -> syn::Ident {
 pub(crate) fn next() -> TokenStream {
     let runtime = runtime();
     quote!(::#runtime::next)
-}
-
-/// The generated source for one package. `wire` is the Rust path of its
-/// prost types.
-pub(crate) fn package(package: &Package, wire: &syn::Path) -> String {
-    let mut items = TokenStream::new();
-    for e in &package.enums {
-        items.extend(enumeration(e));
-    }
-    for message in &package.messages {
-        let anchor = package.components.iter().any(|c| &c.anchor == message);
-        items.extend(structure(message, wire, anchor));
-    }
-    for component in &package.components {
-        items.extend(component_items(component, wire));
-    }
-    let file: syn::File = syn::parse2(items).expect("the emitter writes valid Rust");
-    prettyplease::unparse(&file)
 }
 
 /// The markup domain layer for one package: its domain types with their
@@ -428,107 +410,6 @@ fn structure(message: &MessageDescriptor, wire: &syn::Path, anchor: bool) -> Tok
 
             fn try_from(#param: #wire::#name) -> Result<Self, Self::Error> {
                 Ok(#name { #(#from),* })
-            }
-        }
-    }
-}
-
-fn component_items(component: &Component, wire: &syn::Path) -> TokenStream {
-    let next = next();
-    let domain_const = format_ident!("{}_DOMAIN", screaming(&component.name));
-    let domain = &component.domain;
-    let inputs: Vec<MessageDescriptor> =
-        component.inputs.iter().map(|i| i.message.clone()).collect();
-    let commands = payload(&format_ident!("{}Command", component.name), &inputs, wire);
-    let events = payload(
-        &format_ident!("{}Event", component.name),
-        &component.events,
-        wire,
-    );
-    let state = ident(component.anchor.name());
-    quote! {
-        pub const #domain_const: &str = #domain;
-
-        #commands
-        #events
-
-        impl #next::State for #state {
-            type Snapshot = #wire::#state;
-
-            fn to_snapshot(&self) -> #wire::#state {
-                #wire::#state::from(self.clone())
-            }
-
-            fn from_snapshot(
-                snapshot: #wire::#state,
-            ) -> Result<Self, ::angzarr_embedded_diagnostic::Report> {
-                #state::try_from(snapshot).map_err(|error| ::angzarr_embedded_diagnostic::Report::of(&error))
-            }
-
-            fn descriptor() -> #next::v1::StateDescriptor {
-                #next::v1::StateDescriptor {
-                    type_url: <#wire::#state as ::prost::Name>::type_url(),
-                    options: Some(#next::v1::StateOptions {
-                        conflict_resolutions: vec![
-                            #next::v1::ConflictResolution::Strict as i32,
-                            #next::v1::ConflictResolution::AggregateHandles as i32,
-                        ],
-                    }),
-                }
-            }
-        }
-    }
-}
-
-/// An enum of `messages`, one variant each, as angzarr-embedded's `Payload`.
-fn payload(name: &syn::Ident, messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStream {
-    let next = next();
-    let variants: Vec<syn::Ident> = messages.iter().map(|m| ident(m.name())).collect();
-    let to_any = variants
-        .iter()
-        .map(|v| quote!(#name::#v(value) => #next::pack(&#wire::#v::from(value.clone()))));
-    let from_any = variants.iter().map(|v| {
-        quote! {
-            if name == <#wire::#v as ::prost::Name>::full_name() {
-                return #next::decode_as::<#wire::#v, #v>(any).map(#name::#v);
-            }
-        }
-    });
-    let type_urls = variants
-        .iter()
-        .map(|v| quote!(<#wire::#v as ::prost::Name>::type_url()));
-    let froms = variants.iter().map(|v| {
-        quote! {
-            impl From<#v> for #name {
-                fn from(value: #v) -> Self {
-                    #name::#v(value)
-                }
-            }
-        }
-    });
-    quote! {
-        #[derive(Clone, Debug, PartialEq)]
-        pub enum #name { #(#variants(#variants)),* }
-
-        #(#froms)*
-
-        impl #next::Payload for #name {
-            fn to_any(&self) -> #next::Any {
-                match self { #(#to_any),* }
-            }
-
-            fn from_any(
-                any: &#next::Any,
-            ) -> Result<Self, #next::PayloadError> {
-                let name = #next::type_name(&any.type_url);
-                #(#from_any)*
-                Err(#next::PayloadError::UnknownType {
-                    type_url: any.type_url.clone(),
-                })
-            }
-
-            fn type_urls() -> Vec<String> {
-                vec![#(#type_urls),*]
             }
         }
     }
