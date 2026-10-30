@@ -18,8 +18,14 @@ pub const BUYIN: &[&str] = &[
 ];
 pub const BUYIN_WIRE: &[(&str, &str)] = &[("buyin.v1", "::buyin_proto::v1")];
 
-/// protoc's descriptor set for `files` under `tests/fixtures`, with
-/// angzarr's protos importable.
+/// The spec's protos: the angzarr-project submodule's `proto`, which holds
+/// the blackjack example's (`io/angzarr/examples/v1`).
+pub fn spec() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../angzarr-project/proto")
+}
+
+/// protoc's descriptor set for `files` under `tests/fixtures` or the spec's
+/// protos ([`spec`]), with angzarr's protos importable.
 pub fn descriptors(files: &[&str]) -> Vec<u8> {
     static RUN: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -36,6 +42,7 @@ pub fn descriptors(files: &[&str]) -> Vec<u8> {
         .arg(format!("--descriptor_set_out={}", out.display()))
         .arg(format!("-I{}", fixtures.display()))
         .arg(format!("-I{}", angzarr.display()))
+        .arg(format!("-I{}", spec().display()))
         .args(files)
         .status()
         .expect("protoc on PATH");
@@ -115,8 +122,8 @@ pub fn s(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The blackjack example of spec decision 14.38 (`tests/fixtures/io`, the
-/// spec's protos as they are).
+/// The blackjack example of spec decision 14.38, the spec's protos
+/// ([`spec`]).
 pub const BLACKJACK: &[&str] = &[
     "io/angzarr/examples/v1/buy_in.proto",
     "io/angzarr/examples/v1/cards.proto",

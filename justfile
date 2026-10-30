@@ -1,6 +1,10 @@
 # Build, test and lint the workspace. Plain cargo works too; these recipes are
 # the checks CI and the git hooks (lefthook.yml) run.
 
+# Submodule-protection recipes (install-submodule-hooks,
+# check-submodules-clean). Source of truth: angzarr-project/submodule.just.
+import? 'angzarr-project/submodule.just'
+
 # List the recipes.
 default:
     @just --list
@@ -80,7 +84,9 @@ mutants-all:
 # and the remote's current tip of that ref (a fast-forward's base is that
 # tip); for a new ref, or a tip not fetched here, the merge base with the
 # remote's default branch (<remote>/HEAD, else main). A deleted ref passes at
-# once, and a diff touching no Rust skips the mutation.
+# once, and a diff touching no Rust skips the mutation. The push tree's
+# angzarr-project is the pushed commit's submodule commit, exported from this
+# checkout's submodule (fetched if it is missing there).
 #
 # Red tests are allowed on a branch and kept out of the default branch: pushed
 # to another branch, failing tests pass with a warning and nothing is mutated
@@ -132,6 +138,16 @@ push-check remote *lefthook:
         fi
         git -c core.hooksPath=/dev/null -C "$tree" checkout --quiet --detach --force "$local_sha"
         git -C "$tree" clean -fdqx -e /target/
+        sub=$(git -C "$top" ls-tree "$local_sha" angzarr-project | awk '{print $3}')
+        if ! git -C "$top/angzarr-project" cat-file -e "$sub^{commit}" 2>/dev/null; then
+            git -C "$top/angzarr-project" fetch --quiet origin "$sub" || {
+                echo "FAIL push-check: angzarr-project $sub, the pushed commit's submodule, is not here (git submodule update --init)" >&2
+                exit 1
+            }
+        fi
+        rm -rf "$tree/angzarr-project"
+        mkdir -p "$tree/angzarr-project"
+        git -C "$top/angzarr-project" archive "$sub" | tar -x -C "$tree/angzarr-project"
         log="$top/target/logs/push-tests.log"
         rc=0
         (cd "$tree" && CARGO_TARGET_DIR="$top/target/push" cargo test --workspace) > "$log" 2>&1 9>&- || rc=$?

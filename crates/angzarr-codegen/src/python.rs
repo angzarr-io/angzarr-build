@@ -44,12 +44,9 @@ const GENERATED: &str =
 /// Where `buf generate` reads the domain's protos from.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ProtoInput {
-    /// A git repository at a revision, the protos under `subdir`.
-    Git {
-        url: String,
-        rev: String,
-        subdir: String,
-    },
+    /// A git repository at a revision, the protos under its `proto`, as
+    /// angzarr-project lays them out.
+    Git { url: String, rev: String },
     /// A directory, relative to the project root (where buf runs) or
     /// absolute.
     Directory(String),
@@ -970,12 +967,12 @@ fn proto_paths(components: &[Component]) -> BTreeSet<String> {
 
 fn buf_gen(app: &PythonApp, components: &[Component]) -> String {
     let package = app.package();
-    // A git input's paths are under its subdir; a directory's are buf's
+    // A git input's paths are under its `proto`; a directory's are buf's
     // `--path`s, relative to where buf runs (the project root), as the
     // directory is.
     let (input, under) = match &app.protos {
-        ProtoInput::Git { url, rev, subdir } => (
-            format!("  - git_repo: {url}\n    ref: {rev}\n    subdir: {subdir}\n"),
+        ProtoInput::Git { url, rev } => (
+            format!("  - git_repo: {url}\n    ref: {rev}\n    subdir: proto\n"),
             String::new(),
         ),
         ProtoInput::Directory(dir) => (format!("  - directory: {dir}\n"), format!("{dir}/")),
