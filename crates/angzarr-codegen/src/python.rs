@@ -28,7 +28,7 @@ use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
 /// on, pinned by commit: every project this CLI scaffolds gets this one.
-pub const CLIENT_PYTHON_REV: &str = "80b55d2a7083cf9ec5a3f4564244390c1549a375";
+pub const CLIENT_PYTHON_REV: &str = "95c8c0cafd66984490a075359239dee77f094be0";
 /// Where [`CLIENT_PYTHON_REV`] is fetched from.
 pub const CLIENT_PYTHON_GIT: &str = "https://github.com/angzarr-io/angzarr-client-python";
 
