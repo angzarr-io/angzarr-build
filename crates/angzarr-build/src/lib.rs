@@ -147,30 +147,6 @@ pub fn descriptors_into(
     std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
-/// The reason-key catalog at `catalog` (angzarr-project's
-/// `catalog/reasons.toml`) as Rust constants, written to `out`; the number
-/// of keys (see `angzarr_codegen::reasons_rust`).
-pub fn reasons_rust_into(catalog: &Path, out: &Path) -> Result<usize, BuildError> {
-    reasons_into(catalog, out, angzarr_codegen::reasons_rust)
-}
-
-/// [`reasons_rust_into`], as Python constants.
-pub fn reasons_python_into(catalog: &Path, out: &Path) -> Result<usize, BuildError> {
-    reasons_into(catalog, out, angzarr_codegen::reasons_python)
-}
-
-fn reasons_into(
-    catalog: &Path,
-    out: &Path,
-    render: fn(&str) -> Result<String, angzarr_codegen::CodegenError>,
-) -> Result<usize, BuildError> {
-    let text = std::fs::read_to_string(catalog).map_err(|e| io(catalog, &e))?;
-    let source = render(&text).map_err(BuildError::Codegen)?;
-    let keys = angzarr_codegen::reason_keys(&text).map_err(BuildError::Codegen)?;
-    std::fs::write(out, source).map_err(|e| io(out, &e))?;
-    Ok(keys.len())
-}
-
 /// An angzarr-embedded application's whole generated layer, from its host
 /// config (`config`, relative to the crate) and its protos: the wire types,
 /// the markup domain layer (its package's prost types at `crate::wire`),

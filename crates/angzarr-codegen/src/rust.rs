@@ -244,8 +244,8 @@ fn handler_context() -> TokenStream {
         /// `Failed::Bug` (`Err(Bug::new("key").arg(..))?`), a policy as its
         /// `Err`, since a policy reacts to events the application's own
         /// domains recorded. A diagnostic key and its args, never text; it
-        /// goes out as UNHANDLED_HANDLER_ERROR, the key its `cause`, and
-        /// the runtime alerts it and dead-letters the input.
+        /// goes out as ROUTER_REASON_UNHANDLED_HANDLER_ERROR, the key its
+        /// `cause`, and the runtime alerts it and dead-letters the input.
         #[derive(Clone, Debug, PartialEq, Eq)]
         pub struct Bug {
             pub key: &'static str,

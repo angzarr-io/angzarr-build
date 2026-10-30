@@ -113,31 +113,6 @@ fn test_descriptors_into_writes_each_components_descriptor_with_the_version() {
     std::fs::remove_dir_all(&out).unwrap();
 }
 
-#[test]
-fn test_reasons_into_writes_the_catalogs_constants() {
-    let out = out_dir();
-    let catalog = Path::new(&fixtures()).join("catalog/reasons.toml");
-    let rust = out.join("reasons.rs");
-    let python = out.join("reasons.py");
-    assert_eq!(
-        angzarr_build::reasons_rust_into(&catalog, &rust).unwrap(),
-        33
-    );
-    assert_eq!(
-        angzarr_build::reasons_python_into(&catalog, &python).unwrap(),
-        33
-    );
-    let rust = std::fs::read_to_string(rust).unwrap();
-    assert!(rust.contains("pub const POLICY_INPUT_COUNT: &str = \"POLICY_INPUT_COUNT\";"));
-    let python = std::fs::read_to_string(python).unwrap();
-    assert!(python.contains("\nPOLICY_INPUT_COUNT = \"POLICY_INPUT_COUNT\"\n"));
-    assert!(matches!(
-        angzarr_build::reasons_rust_into(&out.join("absent.toml"), &out.join("x.rs")),
-        Err(BuildError::Io { .. })
-    ));
-    std::fs::remove_dir_all(&out).unwrap();
-}
-
 /// `DESCRIPTORS`' names in an `angzarr-descriptors.rs`.
 fn descriptor_names(source: &str) -> Vec<String> {
     let file = syn::parse_file(source).unwrap();

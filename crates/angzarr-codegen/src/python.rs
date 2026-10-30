@@ -28,7 +28,7 @@ use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
 /// on, pinned by commit: every project this CLI scaffolds gets this one.
-pub const CLIENT_PYTHON_REV: &str = "95c8c0cafd66984490a075359239dee77f094be0";
+pub const CLIENT_PYTHON_REV: &str = "361be4a389c72a78cf7ddd79b9766d9c8fafd0eb";
 /// Where [`CLIENT_PYTHON_REV`] is fetched from.
 pub const CLIENT_PYTHON_GIT: &str = "https://github.com/angzarr-io/angzarr-client-python";
 
@@ -601,8 +601,8 @@ fn domain_py(app: &PythonApp, component: &Component) -> String {
          #   or INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or\n\
          #   PERMISSION_DENIED; the issuing policy's OnRefused receives it.\n\
          # - Bug(key, **args): a defect, never a business answer; the runtime alerts\n\
-         #   it and dead-letters the command (UNHANDLED_HANDLER_ERROR, its key and\n\
-         #   args the cause).\n\
+         #   it and dead-letters the command (ROUTER_REASON_UNHANDLED_HANDLER_ERROR,\n\
+         #   its key and args the cause).\n\
          from angzarr_client.router import Bug as Bug\n\
          from angzarr_client.router import CommandContext as CommandContext\n\
          from angzarr_client.router import Rejection as Rejection\n",

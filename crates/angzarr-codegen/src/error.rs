@@ -91,9 +91,6 @@ pub enum CodegenError {
     StartupPackages { files: String },
     /// A host config that does not read as one.
     StartupConfig { detail: String },
-    /// A reason-key catalog (angzarr-project's `catalog/reasons.toml`) that
-    /// does not read as one.
-    Catalog { detail: String },
 }
 
 impl fmt::Display for CodegenError {
@@ -220,9 +217,6 @@ impl fmt::Display for CodegenError {
             CodegenError::StartupConfig { detail } => {
                 write!(f, "the host config does not read: {detail}")
             }
-            CodegenError::Catalog { detail } => {
-                write!(f, "the reason-key catalog does not read: {detail}")
-            }
         }
     }
 }
@@ -266,7 +260,6 @@ impl Diagnostic for CodegenError {
             CodegenError::PythonRefuses { .. } => "angzarr-codegen-python-refuses",
             CodegenError::StartupPackages { .. } => "angzarr-codegen-startup-packages",
             CodegenError::StartupConfig { .. } => "angzarr-codegen-startup-config",
-            CodegenError::Catalog { .. } => "angzarr-codegen-catalog",
         }
     }
 
@@ -345,9 +338,7 @@ impl Diagnostic for CodegenError {
                 vec![("message", s(message))]
             }
             CodegenError::StartupPackages { files } => vec![("files", s(files))],
-            CodegenError::StartupConfig { detail } | CodegenError::Catalog { detail } => {
-                vec![("detail", s(detail))]
-            }
+            CodegenError::StartupConfig { detail } => vec![("detail", s(detail))],
         }
     }
 }
@@ -432,7 +423,6 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::PythonRefuses { message: s() }),
         Box::new(CodegenError::StartupPackages { files: s() }),
         Box::new(CodegenError::StartupConfig { detail: s() }),
-        Box::new(CodegenError::Catalog { detail: s() }),
     ];
     samples.extend(crate::startup::startup_lint_samples());
     samples

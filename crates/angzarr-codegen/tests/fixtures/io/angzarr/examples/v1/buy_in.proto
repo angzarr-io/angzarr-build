@@ -36,7 +36,7 @@ option ruby_package = "Angzarr::Examples";
 // starts; ruling B1, adapted, decision 14.31): it alone starts an instance
 // for a correlation the PM has not seen. Any other command for a
 // correlation with no buy-in instance is refused by the PM's coordinator
-// before the handler (PM_NO_INSTANCE). policy-table-buy-in and
+// before the handler (COORDINATOR_REASON_PM_NO_INSTANCE). policy-table-buy-in and
 // policy-wallet-buy-in pass such a refusal through to the table or the
 // wallet, which define no on_refused handler for these commands, so it is
 // dead-lettered and alerted, for a human, at run time (decision 14.31).

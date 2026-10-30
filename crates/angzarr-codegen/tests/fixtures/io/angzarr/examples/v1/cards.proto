@@ -72,10 +72,10 @@ option ruby_package = "Angzarr::Examples";
 // (value - 1).
 enum Suit {
   SUIT_UNSPECIFIED = 0;
-  CLUBS = 1;
-  DIAMONDS = 2;
-  HEARTS = 3;
-  SPADES = 4;
+  SUIT_CLUBS = 1;
+  SUIT_DIAMONDS = 2;
+  SUIT_HEARTS = 3;
+  SUIT_SPADES = 4;
 }
 
 // One playing card.

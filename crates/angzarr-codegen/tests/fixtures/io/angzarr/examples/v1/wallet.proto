@@ -238,8 +238,8 @@ message FundsDeposited {
 }
 
 // Legacy shape of FundsDeposited. Never emitted by current code; it exists
-// only in stored history. The wallet upcaster (served by the agg-wallet
-// binary through UpcasterService) rewrites it to
+// only in stored history. The wallet upcaster (the wallet's upcaster
+// sidecar, serving UpcasterService to the wallet's coordinator) rewrites it to
 // FundsDeposited{amount = amount_chips} before any handler sees it, so no
 // component consumes it directly.
 message FundsDepositedV1 {

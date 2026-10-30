@@ -18,7 +18,7 @@ fn player_app() -> PythonApp {
         domain: "player".to_string(),
         protos: ProtoInput::Git {
             url: "https://github.com/angzarr-io/angzarr-project".to_string(),
-            rev: "b9b87bfc30acbb90b089515761186ceb5aa6d52d".to_string(),
+            rev: "47c8e09b1d034391f3cf24beb47aa47994722a5a".to_string(),
             subdir: "proto".to_string(),
         },
         rules_version: "0.1.0".to_string(),
@@ -175,8 +175,8 @@ fn test_the_users_files_name_nothing_of_the_harness() {
 /// A decision fails in one of two classes, both angzarr-client-python's,
 /// re-exported by the domain module: `Rejection`, a business "no" under a
 /// business status (FAILED_PRECONDITION unless given), and `Bug`, a defect
-/// the runtime alerts and dead-letters (UNHANDLED_HANDLER_ERROR, its key
-/// the cause). Each is a diagnostic key and its args, never text.
+/// the runtime alerts and dead-letters (ROUTER_REASON_UNHANDLED_HANDLER_ERROR,
+/// its key the cause). Each is a diagnostic key and its args, never text.
 #[test]
 fn test_domain_py_gives_the_logic_its_rejection_and_its_bug() {
     let files = player();
