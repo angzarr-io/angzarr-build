@@ -172,8 +172,8 @@ fn test_app_into_writes_the_whole_layer_with_the_crates_version() {
     let config = out.join("angzarr.toml");
     std::fs::write(
         &config,
-        "[[domain]]\nname = \"wallet\"\nlanguage = \"rust\"\n\n\
-         [[domain]]\nname = \"buyin\"\nlanguage = \"python\"\n",
+        "[[component]]\nname = \"wallet\"\nlanguage = \"rust\"\n\n\
+         [[component]]\nname = \"buyin\"\nlanguage = \"python\"\n",
     )
     .unwrap();
     angzarr_build::app_into(

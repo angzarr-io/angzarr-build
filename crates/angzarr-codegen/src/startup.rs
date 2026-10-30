@@ -1,6 +1,6 @@
 //! The startup of an angzarr-embedded application: the host config
-//! (`angzarr.toml`, data: every domain, its language, how a remote one is
-//! launched, and the store), the thin `src/main.rs` that runs it with
+//! (`angzarr.toml`, data: every component in a `[[component]]` table, its
+//! kind, its language, how a remote one is launched, and the store), the thin `src/main.rs` that runs it with
 //! angzarr-embedded-host's `run`, the driver it hands the running
 //! application to (`src/driver.rs`), the `build.rs` generating the rest, and
 //! the `Cargo.toml`. All are written once and are the user's.
@@ -27,7 +27,7 @@ pub const LAUNCHED_LANGUAGES: &[&str] = &["python"];
 
 /// The angzarr-embedded commit a generated application depends on: its
 /// runtime, markup, diagnostics and host.
-pub const ANGZARR_EMBEDDED_REV: &str = "4fef59dd95f4c00d75d6f42248021a72f5ea70e0";
+pub const ANGZARR_EMBEDDED_REV: &str = "91d230a382326ab0f79fbbc81ec67985f92350af";
 /// Where [`ANGZARR_EMBEDDED_REV`] is fetched from.
 pub const ANGZARR_EMBEDDED_GIT: &str = "https://github.com/angzarr-io/angzarr-embedded";
 
@@ -95,15 +95,16 @@ fn domains(components: &[Component]) -> Vec<String> {
 
 fn config(app: &StartupApp, domains: &[String]) -> String {
     let mut out = format!(
-        "# angzarr-embedded's host configuration for {}: every domain, the\n\
-         # language it is written in and, for one served by a child process, how it\n\
+        "# angzarr-embedded's host configuration for {}: every component (its\n\
+         # `kind` is \"domain\" unless given: \"policy\", \"projector\" or \"upcaster\"),\n\
+         # the language it is written in and, for one served by a child process, how it\n\
          # is launched (its language's default launch, then its entry; `launch`\n\
          # replaces both). Written once by `angzarr scaffold startup` and yours from\n\
          # then on; `angzarr lint startup` checks it against the protos.\n",
         app.name
     );
     for domain in domains {
-        out.push_str(&format!("\n[[domain]]\nname = {domain:?}\n"));
+        out.push_str(&format!("\n[[component]]\nname = {domain:?}\n"));
         if app.python.contains(domain) {
             out.push_str(&format!(
                 "language = \"python\"\ndir = {domain:?}\nentry = [\"angzarr-{}\"]\n",
@@ -274,8 +275,8 @@ fn main_rs(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HostConfig {
-    #[serde(rename = "domain", default)]
-    domains: Vec<DomainConfig>,
+    #[serde(rename = "component", default)]
+    components: Vec<ComponentConfig>,
     #[serde(default)]
     #[allow(dead_code)]
     supervision: Option<toml::Table>,
@@ -289,10 +290,24 @@ struct HostConfig {
     policy: Option<toml::Table>,
 }
 
+/// A `[[component]]` table's `kind`, as the host reads it.
+#[derive(Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum Kind {
+    #[default]
+    Domain,
+    Policy,
+    Projector,
+    Upcaster,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct DomainConfig {
+struct ComponentConfig {
     name: String,
+    /// What it is; only a domain is checked against the protos' domains.
+    #[serde(default)]
+    kind: Kind,
     language: String,
     #[serde(default)]
     launch: Option<Vec<String>>,
@@ -307,15 +322,17 @@ struct DomainConfig {
     env: std::collections::BTreeMap<String, String>,
 }
 
-/// The domains a host config serves from a child process: every domain
-/// not in the in-process language, or given a `launch`.
+/// The domains a host config serves from a child process: every
+/// `kind = "domain"` component not in the in-process language, or given a
+/// `launch`.
 pub fn remote_domains(config: &str) -> Result<Vec<String>, CodegenError> {
     let parsed: HostConfig = toml::from_str(config).map_err(|e| CodegenError::StartupConfig {
         detail: e.message().to_string(),
     })?;
     Ok(parsed
-        .domains
+        .components
         .into_iter()
+        .filter(|d| d.kind == Kind::Domain)
         .filter(|d| d.language != IN_PROCESS_LANGUAGE || d.launch.is_some())
         .map(|d| d.name)
         .collect())
@@ -431,15 +448,19 @@ pub fn lint_startup(
     let declared = domains(&components);
     let mut lints = Vec::new();
     let mut seen: Vec<&str> = Vec::new();
-    for domain in &parsed.domains {
+    let mut names: Vec<&str> = Vec::new();
+    for domain in &parsed.components {
         let name = domain.name.clone();
-        if seen.contains(&domain.name.as_str()) {
+        if names.contains(&domain.name.as_str()) {
             lints.push(StartupLint::DuplicateDomain {
                 domain: name.clone(),
             });
         }
-        seen.push(&domain.name);
-        if !declared.contains(&domain.name) {
+        names.push(&domain.name);
+        if domain.kind == Kind::Domain {
+            seen.push(&domain.name);
+        }
+        if domain.kind == Kind::Domain && !declared.contains(&domain.name) {
             lints.push(StartupLint::UnknownDomain {
                 domain: name.clone(),
             });

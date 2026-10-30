@@ -1,14 +1,15 @@
-# angzarr-embedded's host configuration for blackjack: every domain, the
-# language it is written in and, for one served by a child process, how it
+# angzarr-embedded's host configuration for blackjack: every component (its
+# `kind` is "domain" unless given: "policy", "projector" or "upcaster"),
+# the language it is written in and, for one served by a child process, how it
 # is launched (its language's default launch, then its entry; `launch`
 # replaces both). Written once by `angzarr scaffold startup` and yours from
 # then on; `angzarr lint startup` checks it against the protos.
 
-[[domain]]
+[[component]]
 name = "table"
 language = "rust"
 
-[[domain]]
+[[component]]
 name = "player"
 language = "python"
 dir = "player"
