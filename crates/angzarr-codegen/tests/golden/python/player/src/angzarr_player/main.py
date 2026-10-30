@@ -11,6 +11,7 @@ from __future__ import annotations
 from angzarr_client import ComponentHost, configure_logging
 from angzarr_client.child import run_child
 
+from angzarr_player._descriptor import DESCRIPTOR
 from angzarr_player._gen.io.angzarr.examples.v1.player_aggregate_angzarr import (
     new_player_aggregate_dispatch,
 )
@@ -20,7 +21,7 @@ from angzarr_player.logic_impl import PlayerLogicImpl
 
 def register(host: ComponentHost) -> ComponentHost:
     """The PlayerAggregate on ``host``."""
-    return host.add_aggregate(new_player_aggregate_dispatch(PlayerLogicImpl()))
+    return host.add_aggregate(new_player_aggregate_dispatch(PlayerLogicImpl()), DESCRIPTOR)
 
 
 def host() -> ComponentHost:

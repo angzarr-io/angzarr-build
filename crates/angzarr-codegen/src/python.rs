@@ -869,8 +869,9 @@ fn main_py(app: &PythonApp, components: &[Component]) -> String {
         imports.push(format!(
             "from {package}._gen.{dir}.{stem}_angzarr import (\n    new_{stem}_dispatch,\n)\n"
         ));
-        chain = format!("{chain}.add_aggregate(new_{stem}_dispatch({logic}Impl()))");
+        chain = format!("{chain}.add_aggregate(new_{stem}_dispatch({logic}Impl()), DESCRIPTOR)");
     }
+    imports.push(format!("from {package}._descriptor import DESCRIPTOR\n"));
     imports.push(format!("from {package}.logic_impl import {logic}Impl\n"));
     imports.push(format!("from {package}._version import __version__\n"));
     imports.sort();
