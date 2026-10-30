@@ -27,7 +27,7 @@ pub const LAUNCHED_LANGUAGES: &[&str] = &["python"];
 
 /// The angzarr-embedded commit a generated application depends on: its
 /// runtime, markup, diagnostics and host.
-pub const ANGZARR_EMBEDDED_REV: &str = "91d230a382326ab0f79fbbc81ec67985f92350af";
+pub const ANGZARR_EMBEDDED_REV: &str = "22d3266030cc99a0182d384fc6dd2eb715315fe3";
 /// Where [`ANGZARR_EMBEDDED_REV`] is fetched from.
 pub const ANGZARR_EMBEDDED_GIT: &str = "https://github.com/angzarr-io/angzarr-embedded";
 
