@@ -86,11 +86,6 @@ pub enum CodegenError {
     /// A command declaring typed refusals, which the Python scaffold does
     /// not emit yet.
     PythonRefuses { message: String },
-    /// The startup's components span more than one proto package, which
-    /// its `main.rs` does not lay out yet.
-    StartupPackages { files: String },
-    /// A host config that does not read as one.
-    StartupConfig { detail: String },
 }
 
 impl fmt::Display for CodegenError {
@@ -210,13 +205,6 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} declares refuses, which the Python scaffold does not emit yet"
             ),
-            CodegenError::StartupPackages { files } => write!(
-                f,
-                "{files} declare components of more than one package, which the startup does not lay out yet"
-            ),
-            CodegenError::StartupConfig { detail } => {
-                write!(f, "the host config does not read: {detail}")
-            }
         }
     }
 }
@@ -258,8 +246,6 @@ impl Diagnostic for CodegenError {
             CodegenError::PythonKind { .. } => "angzarr-codegen-python-kind",
             CodegenError::PythonFact { .. } => "angzarr-codegen-python-fact",
             CodegenError::PythonRefuses { .. } => "angzarr-codegen-python-refuses",
-            CodegenError::StartupPackages { .. } => "angzarr-codegen-startup-packages",
-            CodegenError::StartupConfig { .. } => "angzarr-codegen-startup-config",
         }
     }
 
@@ -337,8 +323,6 @@ impl Diagnostic for CodegenError {
             CodegenError::PythonFact { message } | CodegenError::PythonRefuses { message } => {
                 vec![("message", s(message))]
             }
-            CodegenError::StartupPackages { files } => vec![("files", s(files))],
-            CodegenError::StartupConfig { detail } => vec![("detail", s(detail))],
         }
     }
 }
@@ -346,7 +330,7 @@ impl Diagnostic for CodegenError {
 /// One value of every error this crate defines, for the catalog test.
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     let s = || "x".to_string();
-    let mut samples: Vec<Box<dyn Diagnostic>> = vec![
+    vec![
         Box::new(CodegenError::Descriptors { detail: s() }),
         Box::new(CodegenError::FileNotInSet { file: s() }),
         Box::new(CodegenError::UnknownComponent {
@@ -421,9 +405,5 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             name: s(),
         }),
         Box::new(CodegenError::PythonRefuses { message: s() }),
-        Box::new(CodegenError::StartupPackages { files: s() }),
-        Box::new(CodegenError::StartupConfig { detail: s() }),
-    ];
-    samples.extend(crate::startup::startup_lint_samples());
-    samples
+    ]
 }

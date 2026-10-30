@@ -398,8 +398,7 @@ pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, 
         component: fresh.component.clone(),
     };
     let fresh_file = syn::parse_file(&fresh.source).expect("a scaffold parses");
-    // A file with neither (the startup's build.rs and main.rs) has nothing
-    // to complete.
+    // A file with neither has nothing to complete.
     let Some(fresh_block) = block(&fresh_file, None) else {
         return Ok(None);
     };

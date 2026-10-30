@@ -15,9 +15,7 @@ prettyplease = "0.3.0"
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 prost-reflect = "0.16"
 quote = "1.0.47"
-serde.workspace = true
 syn = { version = "3.0.9", features = ["full"] }
-toml.workspace = true
 
 [dev-dependencies]
 angzarr-proto.workspace = true

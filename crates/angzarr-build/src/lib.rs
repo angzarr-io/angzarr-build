@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
-pub use angzarr_codegen::{ProtoInput, PythonApp, StartupApp, StartupLint, Translate};
+pub use angzarr_codegen::{ProtoInput, PythonApp, Translate};
 
 /// This crate's en-US messages.
 pub const EN_US: &str = include_str!("../locales/en-US/angzarr-build.ftl");
@@ -147,40 +147,6 @@ pub fn descriptors_into(
     std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
-/// An angzarr-embedded application's whole generated layer, from its host
-/// config (`config`, relative to the crate) and its protos: the wire types,
-/// the markup domain layer (its package's prost types at `crate::wire`),
-/// the adapters, `register()` and the components' descriptors, the domains
-/// the config serves from a child process as contracts.
-pub fn app(config: &str, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
-    app_into(&out_dir()?, Path::new(config), protos, includes)
-}
-
-/// [`app`], into `out`.
-pub fn app_into(
-    out: &Path,
-    config: &Path,
-    protos: &[&str],
-    includes: &[&str],
-) -> Result<(), BuildError> {
-    println!("cargo:rerun-if-changed={}", config.display());
-    let text = std::fs::read_to_string(config).map_err(|e| io(config, &e))?;
-    let remote = angzarr_codegen::remote_domains(&text).map_err(BuildError::Codegen)?;
-    let remote: Vec<&str> = remote.iter().map(String::as_str).collect();
-    let bytes = build_descriptors(out, protos, includes)?;
-    let packages =
-        angzarr_codegen::component_packages(&bytes, protos).map_err(BuildError::Codegen)?;
-    let wire: Vec<(&str, &str)> = packages
-        .iter()
-        .map(|p| (p.as_str(), "crate::wire"))
-        .collect();
-    wire_into(out, protos, includes)?;
-    markup_domain_into(out, protos, includes, &wire)?;
-    adapters_into(out, protos, includes, &remote)?;
-    descriptors_into(out, protos, includes, &remote, &rules_version())?;
-    register_into(out, protos, includes, &remote)
-}
-
 /// What [`scaffold_into`] does with a component's file that exists.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Existing {
@@ -236,32 +202,6 @@ pub fn scaffold_python_into(
     let files =
         angzarr_codegen::scaffold_python(&bytes, protos, app).map_err(BuildError::Codegen)?;
     write_scaffold(root, files, existing)
-}
-
-/// The startup of an angzarr-embedded application (see
-/// `angzarr_codegen::startup`) under `root`, the crate root: its host
-/// config, `build.rs` and `src/main.rs`, each the user's, written once.
-pub fn startup_into(
-    root: &Path,
-    protos: &[&str],
-    includes: &[&str],
-    app: &StartupApp,
-) -> Result<Vec<Scaffolded>, BuildError> {
-    let bytes = scaffold_descriptors(protos, includes)?;
-    let files = angzarr_codegen::startup(&bytes, protos, app).map_err(BuildError::Codegen)?;
-    write_scaffold(root, files, Existing::Keep)
-}
-
-/// The lints of the host config at `config` against the domains `protos`
-/// declare (see `angzarr_codegen::lint_startup`).
-pub fn lint_startup(
-    config: &Path,
-    protos: &[&str],
-    includes: &[&str],
-) -> Result<Vec<StartupLint>, BuildError> {
-    let text = std::fs::read_to_string(config).map_err(|e| io(config, &e))?;
-    let bytes = scaffold_descriptors(protos, includes)?;
-    angzarr_codegen::lint_startup(&text, &bytes, protos).map_err(BuildError::Codegen)
 }
 
 /// protoc's descriptor set for a scaffold: `protos`, and every other proto

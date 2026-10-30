@@ -24,13 +24,3 @@ angzarr-codegen-python-no-domain = the protos declare no aggregate of the domain
 angzarr-codegen-python-kind = { $component } is not an aggregate; the Python scaffold emits aggregates only
 angzarr-codegen-python-fact = { $message } is a fact, which the Python scaffold does not emit yet
 angzarr-codegen-python-refuses = { $message } declares refuses, which the Python scaffold does not emit yet
-angzarr-codegen-startup-packages = { $files } declare components of more than one package, which the startup does not lay out yet
-angzarr-codegen-startup-config = the host config does not read: { $detail }
-
-## Startup lints.
-
-angzarr-codegen-startup-unknown-language = the domain { $domain } is in { $language }, which has no default launch; give it a launch
-angzarr-codegen-startup-empty-launch = the domain { $domain }'s launch names no program
-angzarr-codegen-startup-unknown-domain = the domain { $domain } is owned by no aggregate or process manager of the protos
-angzarr-codegen-startup-duplicate-domain = the domain { $domain } is listed more than once
-angzarr-codegen-startup-unlisted-domain = the protos declare the domain { $domain }, which the config does not list
