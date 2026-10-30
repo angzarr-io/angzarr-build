@@ -554,3 +554,141 @@ fn test_scaffold_python_refuses_a_command_with_a_typed_refusal() {
         })
     );
 }
+
+// ------------------------------------------------------- event helpers
+
+const PLAYER_DOMAIN: &str = "src/angzarr_player/domain.py";
+const MOVE_DECIDED_FROM_COMMAND: &str = r#"    @classmethod
+    def from_command(
+        cls,
+        cmd: DecideMove,
+        /,
+        *,
+        action: MoveAction,
+    ) -> MoveDecided:
+        """This event from ``cmd``: every field they share copied, the rest given.
+
+        A missing keyword, or one naming a copied field, is a TypeError.
+        """
+        return cls(
+            table_root=cmd.table_root,
+            round=cmd.round,
+            seat=cmd.seat,
+            action=action,
+            cards=cmd.cards,
+            total=cmd.total,
+            soft=cmd.soft,
+            dealer_up=cmd.dealer_up,
+        )
+"#;
+
+#[test]
+fn test_domain_py_gives_an_event_its_commands_from_command() {
+    let files = player();
+    let domain = &file(&files, PLAYER_DOMAIN).source;
+    let class = domain
+        .split("\n\n\n")
+        .find(|c| c.starts_with("@dataclass(frozen=True)\nclass MoveDecided:"))
+        .expect("class MoveDecided");
+    assert!(
+        class.ends_with(&format!("\n\n{MOVE_DECIDED_FROM_COMMAND}")),
+        "{class}"
+    );
+    // A command gets none: only an emitted event does.
+    let command = domain
+        .split("\n\n\n")
+        .find(|c| c.starts_with("@dataclass(frozen=True)\nclass DecideMove:"))
+        .expect("class DecideMove");
+    assert!(!command.contains("from_"), "{command}");
+}
+
+#[test]
+fn test_an_event_several_commands_emit_gets_a_helper_named_for_each() {
+    let domain = basket_file("src/angzarr_store/domain.py");
+    assert!(
+        domain.contains(
+            "    @classmethod\n    def from_add_item(\n        cls,\n        cmd: AddItem,\n        /,\n    ) -> ItemAdded:\n"
+        ),
+        "{domain}"
+    );
+    assert!(
+        domain.contains("        return cls(\n            item=cmd.item,\n        )\n"),
+        "{domain}"
+    );
+    // EmptyTheBasketShelves shares no field: the item is given.
+    assert!(
+        domain.contains(
+            "    def from_empty_the_basket_shelves(\n        cls,\n        cmd: EmptyTheBasketShelves,\n        /,\n        *,\n        item: Item | None,\n    ) -> ItemAdded:\n"
+        ),
+        "{domain}"
+    );
+    assert!(
+        domain.contains("        return cls(\n            item=item,\n        )\n"),
+        "{domain}"
+    );
+    assert!(!domain.contains("def from_command("), "{domain}");
+}
+
+/// Runs `script` with python3 beside the player's `domain.py`, an
+/// `angzarr_client.router` stub standing in for the client.
+fn run_player_domain(script: &str) -> std::process::Output {
+    static RUN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "angzarr-codegen-from-command-{}-{}",
+        std::process::id(),
+        RUN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let client = dir.join("angzarr_client");
+    std::fs::create_dir_all(&client).unwrap();
+    std::fs::write(client.join("__init__.py"), "").unwrap();
+    std::fs::write(
+        client.join("router.py"),
+        "class Bug(Exception): ...\nclass CommandContext: ...\nclass Rejection(Exception): ...\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("domain.py"),
+        &file(&player(), PLAYER_DOMAIN).source,
+    )
+    .unwrap();
+    let main = dir.join("check.py");
+    std::fs::write(
+        &main,
+        format!(
+            "import sys\nsys.path.insert(0, {:?})\nfrom domain import *\n{script}",
+            dir.display().to_string()
+        ),
+    )
+    .unwrap();
+    let out = std::process::Command::new("python3")
+        .arg("-I")
+        .arg(&main)
+        .output()
+        .expect("python3 on PATH");
+    std::fs::remove_dir_all(&dir).unwrap();
+    out
+}
+
+#[test]
+fn test_from_command_copies_the_shared_fields_and_takes_the_rest() {
+    let out = run_player_domain(
+        "cmd = DecideMove(table_root=b't', round=2, seat=3, cards=(Card(1, Suit.CLUBS),), \
+         total=11, soft=True, dealer_up=Card(5, Suit.HEARTS), can_double=True, stack=9, wager=4)\n\
+         e = MoveDecided.from_command(cmd, action=MoveAction.HIT)\n\
+         assert e == MoveDecided(table_root=b't', round=2, seat=3, action=MoveAction.HIT, \
+         cards=(Card(1, Suit.CLUBS),), total=11, soft=True, dealer_up=Card(5, Suit.HEARTS)), e\n\
+         for bad in ({}, {'action': MoveAction.HIT, 'total': 12}, {'action': MoveAction.HIT, 'nope': 1}):\n\
+         \x20   try:\n\
+         \x20       MoveDecided.from_command(cmd, **bad)\n\
+         \x20   except TypeError:\n\
+         \x20       continue\n\
+         \x20   raise AssertionError(bad)\n\
+         print('ok')\n",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "ok\n");
+}

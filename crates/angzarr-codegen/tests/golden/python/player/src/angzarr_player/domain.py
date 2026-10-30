@@ -70,6 +70,29 @@ class MoveDecided:
     soft: bool = False
     dealer_up: Card | None = None
 
+    @classmethod
+    def from_command(
+        cls,
+        cmd: DecideMove,
+        /,
+        *,
+        action: MoveAction,
+    ) -> MoveDecided:
+        """This event from ``cmd``: every field they share copied, the rest given.
+
+        A missing keyword, or one naming a copied field, is a TypeError.
+        """
+        return cls(
+            table_root=cmd.table_root,
+            round=cmd.round,
+            seat=cmd.seat,
+            action=action,
+            cards=cmd.cards,
+            total=cmd.total,
+            soft=cmd.soft,
+            dealer_up=cmd.dealer_up,
+        )
+
 
 @dataclass(frozen=True)
 class Card:
