@@ -104,7 +104,8 @@ fn test_markup_domain_refuses_refuses_on_a_fact() {
 
 /// A message named as one of the names the domain layer gives the
 /// runtime's types (`Context`, `PolicyContext`, `CommandContext`,
-/// `Rejection`, `Bug`, `Failed`, `BusinessStatus`) is refused, naming
+/// `Rejection`, `Bug`, `Failed`, `BusinessStatus`, `RetryableStatus`) is
+/// refused, naming
 /// both, never renamed.
 #[test]
 fn test_markup_domain_refuses_a_message_named_as_a_reserved_name() {
@@ -118,6 +119,24 @@ fn test_markup_domain_refuses_a_message_named_as_a_reserved_name() {
         Err(angzarr_codegen::CodegenError::ReservedName {
             message: "bad.v1.Context".to_string(),
             name: "Context".to_string(),
+        })
+    );
+}
+
+/// `RetryableStatus` is reserved as well: the status a handler's
+/// retryable bug goes out under, re-exported by the domain layer.
+#[test]
+fn test_markup_domain_refuses_a_message_named_retryable_status() {
+    const FILE: &str = "bad/v1/reserved_retryable_status.proto";
+    assert_eq!(
+        markup_domain(
+            &descriptors(&[FILE]),
+            &[FILE],
+            &[("bad.v1", "::bad_proto::v1")]
+        ),
+        Err(angzarr_codegen::CodegenError::ReservedName {
+            message: "bad.v1.RetryableStatus".to_string(),
+            name: "RetryableStatus".to_string(),
         })
     );
 }
@@ -169,8 +188,8 @@ fn test_markup_domain_has_the_rejection_and_each_components_command_and_event_en
 /// The domain layer gives the user's files the runtime's contexts and what
 /// a handler fails with under its own names, so a user file imports only
 /// `crate::domain`: a handler's `Context`, a policy reaction's
-/// `PolicyContext`, a refused command's `CommandContext`, `Failed` and
-/// `BusinessStatus`, and `Bug`, a diagnostic key and its args, which a
+/// `PolicyContext`, a refused command's `CommandContext`, `Failed`,
+/// `BusinessStatus` and `RetryableStatus`, and `Bug`, a diagnostic key and its args, which a
 /// command handler's `Failed` of its rejection or of a typed refusal takes
 /// by `?`.
 #[test]
@@ -192,7 +211,7 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_bug() {
         "Context",
         "PolicyContext",
         "CommandContext",
-        "{BusinessStatus,Failed}",
+        "{BusinessStatus,Failed,RetryableStatus}",
     ] {
         assert!(
             reexports.contains(&format!("angzarr_embedded::next::markup::{name}")),
