@@ -512,6 +512,40 @@ fn test_adapters_name_a_remote_domain_by_its_commands_and_events() {
     assert!(!source.contains("unreachable!"), "{source}");
 }
 
+/// The markup the adapters import, by name.
+fn markup_imports(source: &str) -> Vec<String> {
+    let file = syn::parse_file(source).unwrap();
+    let tree = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            syn::Item::Use(u) if text(u).contains("markup::") => Some(text(&u.tree)),
+            _ => None,
+        })
+        .expect("a markup import");
+    let (_, names) = tree.rsplit_once('{').unwrap();
+    names
+        .trim_end_matches('}')
+        .split(',')
+        .map(str::to_string)
+        .collect()
+}
+
+/// A remote domain's import takes `Decides` only when a command of its own
+/// reaches it, `Ingests` only when a fact does: the wallet, commands alone,
+/// imports `Decides` and no `Ingests`; the buy-in, a fact as well, both.
+#[test]
+fn test_adapters_import_a_remote_domains_markup_by_its_inputs() {
+    let wallet = adapters(&descriptors(BUYIN), BUYIN, &["wallet"], &golden_interface).unwrap();
+    let imports = markup_imports(&wallet);
+    assert!(imports.iter().any(|m| m == "Decides"), "{imports:?}");
+    assert!(!imports.iter().any(|m| m == "Ingests"), "{imports:?}");
+    let buyin = adapters(&descriptors(BUYIN), BUYIN, &["buyin"], &golden_interface).unwrap();
+    let imports = markup_imports(&buyin);
+    assert!(imports.iter().any(|m| m == "Decides"), "{imports:?}");
+    assert!(imports.iter().any(|m| m == "Ingests"), "{imports:?}");
+}
+
 // ------------------------------------------------------------- --missing
 
 /// The wallet's interface as a user has it: Hold and Held absent (the proto
