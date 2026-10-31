@@ -52,7 +52,7 @@ async fn send<D: Domain, C: DomainMessage>(app: &App, n: u8, root: Uuid, command
 }
 
 /// The state of the `D` stream at `root`: its events, folded.
-async fn state<D: Domain<State = D, Rules = ()> + Default>(app: &App, root: Uuid) -> D {
+async fn state<D: Domain<State = D> + Default>(app: &App, root: Uuid) -> D {
     let mut state = D::default();
     for page in app
         .events(&cover::<D>(root))
@@ -61,7 +61,7 @@ async fn state<D: Domain<State = D, Rules = ()> + Default>(app: &App, root: Uuid
     {
         let any = page.payload.expect("an event page carries its event");
         let event = D::Event::from_any(&any).expect("the event decodes");
-        D::apply(&mut state, &event, &());
+        D::apply(&mut state, &event);
     }
     state
 }
