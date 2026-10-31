@@ -55,7 +55,7 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-diagnostic"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=d3d642b043771c4c7a755fe5f6f77b74e703a594#d3d642b043771c4c7a755fe5f6f77b74e703a594"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=e2810b47fcfce7ad97f063f33252d1d44a53d263#e2810b47fcfce7ad97f063f33252d1d44a53d263"
 
 [[package]]
 name = "angzarr-fmt"
@@ -72,7 +72,7 @@ dependencies = [
 [[package]]
 name = "angzarr-proto"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-project?rev=47c8e09b1d034391f3cf24beb47aa47994722a5a#47c8e09b1d034391f3cf24beb47aa47994722a5a"
+source = "git+https://github.com/angzarr-io/angzarr?rev=1cf00b71b094c185b0fd6964f646e48b4c39b8ab#1cf00b71b094c185b0fd6964f646e48b4c39b8ab"
 dependencies = [
  "bytes",
  "prost",
