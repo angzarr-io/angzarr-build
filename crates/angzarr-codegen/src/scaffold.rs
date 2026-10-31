@@ -671,13 +671,14 @@ fn application(components: &[Component]) -> Vec<&Component> {
         .collect()
 }
 
-/// The generated adapters of every component declared in `files`, the
-/// `remote` domains (served by a child process) as contracts: each
-/// aggregate's, process manager's and policy's angzarr-embedded markup,
-/// every handler delegating to the component's interface on its
-/// implementation (`crate::<component>_impl::<Component>Impl`). A remote
-/// domain's contract is its markup with no logic, so a policy can name it
-/// as its source or target; it is never registered.
+/// The generated adapters of every component declared in `files`: each
+/// aggregate's, process manager's, policy's and projector's
+/// angzarr-embedded markup, every handler delegating to the component's
+/// interface on its implementation
+/// (`crate::<component>_impl::<Component>Impl`). A `remote` domain (served
+/// by a child process) has no markup here: it is its command set
+/// (`CommandTarget`) and its event set (`EventSource`), so a policy can
+/// name it as its source or target; it is never registered.
 ///
 /// `interface` reads the user's interface of a policy (its path relative to
 /// `src`, `buy_in_wallet.rs`): each `<command>_refused` method there is the
@@ -716,14 +717,14 @@ pub fn adapters(
                 policy_adapter(component, &components, &refused)
             }
             _ if is_remote => {
-                macros.extend(["applies", "handles_cmd", "handles_fact"]);
-                markup.push("Record");
-                macros.push(if component.kind == ComponentKind::ProcessManager {
-                    "process_manager"
-                } else {
-                    "aggregate"
-                });
-                contract(component)
+                markup.extend(["CommandTarget", "EventSource"]);
+                if component.inputs.iter().any(|i| !i.fact) {
+                    markup.push("Decides");
+                }
+                if component.inputs.iter().any(|i| i.fact) {
+                    markup.push("Ingests");
+                }
+                remote_domain(component)
             }
             _ => {
                 macros.extend(["applies", "handles_cmd", "handles_fact"]);
@@ -745,6 +746,15 @@ pub fn adapters(
     let markup: Vec<syn::Ident> = markup.iter().map(|m| format_ident!("{m}")).collect();
     let macros: Vec<syn::Ident> = macros.iter().map(|m| format_ident!("{m}")).collect();
     let macros_crate = runtime_macros();
+    // A remote domain alone takes no macro: no import of none.
+    let macros = if macros.is_empty() {
+        quote!()
+    } else {
+        quote! {
+            #[allow(unused_imports)]
+            use ::#macros_crate::{#(#macros),*};
+        }
+    };
     let uuid = if has_policy {
         quote!(use #next::v1::Uuid;)
     } else {
@@ -754,8 +764,7 @@ pub fn adapters(
         #[allow(unused_imports)]
         use #next::markup::{#(#markup),*};
         #uuid
-        #[allow(unused_imports)]
-        use ::#macros_crate::{#(#macros),*};
+        #macros
         use crate::domain::*;
         #items
     });
@@ -942,59 +951,58 @@ fn domain_adapter(component: &Component) -> TokenStream {
     }
 }
 
-/// A remote domain's contract: its markup, every handler unreachable (the
-/// child serves it), every applier a no-op.
-fn contract(component: &Component) -> TokenStream {
+/// A remote domain (served by a child process) as a policy names it: its
+/// command set (`CommandTarget`, `Decides` of each command) and its
+/// event set (`EventSource`, `Ingests` of each fact), each type by its full
+/// name. No aggregate stands in for it.
+fn remote_domain(component: &Component) -> TokenStream {
     let name = ident(&component.name);
     let doc = format!(
-        " `{}`, served by a child process: the contract a policy names, never \
-         registered.",
+        " `{}`, served by a child process: its commands and events, as a \
+         policy names it; never registered.",
         component.anchor.full_name()
     );
-    let markup = if component.kind == ComponentKind::ProcessManager {
-        format_ident!("process_manager")
-    } else {
-        format_ident!("aggregate")
-    };
     let domain = &component.domain;
-    let served = format!("the {domain} domain is served by its child process");
-    let mut methods = Vec::new();
-    for input in &component.inputs {
-        let ty = ident(input.message.name());
-        let m = format_ident!("{}", method(input.message.name()));
-        if input.fact {
-            methods.push(quote! {
-                #[handles_fact(#ty)]
-                fn #m(&self, _fact: #ty, _ctx: &Context) -> Record<Self> {
-                    unreachable!(#served)
-                }
-            });
-        } else {
-            methods.push(quote! {
-                #[handles_cmd(#ty)]
-                fn #m(&self, _cmd: #ty, _ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
-                    unreachable!(#served)
-                }
-            });
-        }
-    }
-    for event in &component.events {
-        let ty = ident(event.name());
-        let m = format_ident!("{}", method(event.name()));
-        methods.push(quote! {
-            #[applies(#ty)]
-            fn #m(&mut self, _event: #ty) {}
-        });
-    }
+    let full = |m: &prost_reflect::MessageDescriptor| m.full_name().to_string();
+    let commands: Vec<String> = component
+        .inputs
+        .iter()
+        .filter(|i| !i.fact)
+        .map(|i| full(&i.message))
+        .collect();
+    let events: Vec<String> = component.events.iter().map(full).collect();
+    let decides = component.inputs.iter().filter(|i| !i.fact).map(|i| {
+        let ty = ident(i.message.name());
+        quote!(impl Decides<#ty> for #name {})
+    });
+    let ingests = component.inputs.iter().filter(|i| i.fact).map(|i| {
+        let ty = ident(i.message.name());
+        quote!(impl Ingests<#ty> for #name {})
+    });
     quote! {
         #[doc = #doc]
         #[derive(Clone, Debug, Default)]
         pub struct #name;
 
-        #[#markup(domain = #domain)]
-        impl #name {
-            #(#methods)*
+        impl CommandTarget for #name {
+            const DOMAIN: &'static str = #domain;
+
+            fn command_types() -> Vec<String> {
+                vec![#(#commands.to_string()),*]
+            }
         }
+
+        #(#decides)*
+
+        impl EventSource for #name {
+            const DOMAIN: &'static str = #domain;
+
+            fn event_types() -> Vec<String> {
+                vec![#(#events.to_string()),*]
+            }
+        }
+
+        #(#ingests)*
     }
 }
 

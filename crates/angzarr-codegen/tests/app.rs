@@ -487,7 +487,7 @@ fn remote_domains_are_the_domains_not_in_rust_or_given_a_launch() {
 }
 
 #[test]
-fn a_projector_is_listed_when_its_sources_all_run_in_process() {
+fn a_projector_is_listed_when_its_sources_are_all_the_applications() {
     const WITH_LEDGER: &[&str] = &[
         "io/angzarr/examples/v1/table.proto",
         "io/angzarr/examples/v1/wallet.proto",
@@ -508,12 +508,24 @@ fn a_projector_is_listed_when_its_sources_all_run_in_process() {
         ..seed("ledger")
     };
     assert!(listed(&player));
-    // The wallet a Python child: the projector would have a remote source.
+    // The wallet a Python child: the host records its events, so the
+    // projector of it runs in process all the same.
     let python = AppSeed {
         python: vec!["wallet".to_string()],
         ..seed("ledger")
     };
-    assert!(!listed(&python));
+    assert!(listed(&python));
+    // A source no component of the application owns (the wallet's protos
+    // not generated) leaves it unlisted.
+    let alone = [WITH_LEDGER[0], WITH_LEDGER[2]];
+    let files = app(&set, &alone, &seed("ledger"), None).unwrap();
+    assert!(
+        !file(&files, "angzarr.toml")
+            .source
+            .contains("kind = \"projector\""),
+        "{}",
+        file(&files, "angzarr.toml").source
+    );
     // A projector of no source is not listed.
     const LONE: &[&str] = &["lone/v1/lone.proto"];
     let files = app(&descriptors(LONE), LONE, &seed("lone"), None).unwrap();

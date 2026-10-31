@@ -37,7 +37,7 @@ use crate::scaffold::{Owner, ScaffoldFile};
 /// The angzarr-embedded commit a generated application's `Cargo.toml` pins
 /// (its markup, diagnostics and host): the one this generator's output is
 /// written against.
-pub const ANGZARR_EMBEDDED_REV: &str = "760797e58eaf4f20ebe416dc24ec18e10c8f0991";
+pub const ANGZARR_EMBEDDED_REV: &str = "c23457c14c857fc457324c563a12ca14fe4e7e79";
 /// Where [`ANGZARR_EMBEDDED_REV`] is fetched from.
 pub const ANGZARR_EMBEDDED_GIT: &str = "https://github.com/angzarr-io/angzarr-embedded";
 /// Where angzarr-build is fetched from when a seed names no other source.
@@ -556,7 +556,8 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
 /// The host config a seed makes for `components`: every aggregate and
 /// process manager (Rust, or a Python child for a domain the seed names),
 /// every policy whose two domains are among them and every projector all
-/// of whose sources are in-process domains, each in Rust; then `[retry]`
+/// of whose sources are among them (a Python child's too: the host records
+/// its events), each in Rust; then `[retry]`
 /// with the keys seeded, and `[store]`.
 fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
     struct Entry {
@@ -596,7 +597,6 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
         }
     }
     let has = |domain: &str| domains.iter().any(|d| d.domain == domain);
-    let in_process = |domain: &str| has(domain) && !seed.python.iter().any(|p| p == domain);
     for policy in components
         .iter()
         .filter(|c| c.kind == ComponentKind::Policy)
@@ -614,7 +614,9 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
         .iter()
         .filter(|c| c.kind == ComponentKind::Projector)
     {
-        if !projector.sources.is_empty() && projector.sources.iter().all(|s| in_process(s)) {
+        // A Python child's events are recorded by the host, so a projector
+        // of them runs in process as one of a Rust domain's does.
+        if !projector.sources.is_empty() && projector.sources.iter().all(|s| has(s)) {
             entries.push(Entry {
                 name: projector.component_name.clone(),
                 kind: "projector",
@@ -752,7 +754,7 @@ fn build_script(files: &[&str], includes: &[String]) -> String {
          //! The application's generated layer, into OUT_DIR: the wire types, the\n\
          //! markup domain layer, the adapters, the descriptors and `register()`,\n\
          //! from the protos and angzarr.toml; a domain angzarr.toml serves from a\n\
-         //! child process gets a contract, not an adapter, and `register()`\n\
+         //! child process is its command and event sets, and `register()`\n\
          //! registers the in-process components angzarr.toml lists.\n\
          \n\
          const PROTOS: &[&str] = {};\n\

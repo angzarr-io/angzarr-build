@@ -224,7 +224,8 @@ pub fn component_names(
 /// markup domain layer (each package's prost types at `crate::wire`), the
 /// adapters, the components' descriptors and `register()`, which registers
 /// the in-process components the config lists; a domain the config serves
-/// from a child process is a contract. Cargo reruns it when the config
+/// from a child process is its command and event sets
+/// (`CommandTarget`, `EventSource`). Cargo reruns it when the config
 /// changes.
 pub fn app(config: &str, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
     let config = std::env::var_os("CARGO_MANIFEST_DIR")
@@ -246,8 +247,8 @@ pub fn app_into(
     let text = std::fs::read_to_string(config).map_err(|e| io(config, &e))?;
     let bytes = build_descriptors(out, protos, includes)?;
     let names = angzarr_codegen::component_names(&bytes, protos).map_err(BuildError::Codegen)?;
-    // The config names components; a remote domain's contract is by its
-    // stream domain.
+    // The config names components; a remote domain's command and event
+    // sets are by its stream domain.
     let remote: Vec<String> = angzarr_codegen::remote_domains(&text)
         .map_err(BuildError::Codegen)?
         .into_iter()

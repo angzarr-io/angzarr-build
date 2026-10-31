@@ -72,12 +72,20 @@ fn macros(source: &str) -> String {
 #[test]
 fn test_adapters_of_an_aggregate_import_the_aggregate_markup_only() {
     let none = |_: &str| None;
-    for remote in [&[][..], &["books"][..]] {
-        let source = adapters(&descriptors(BOTH), BOTH, remote, &none).unwrap();
-        let line = macros(&source);
-        assert!(line.contains("aggregate"), "{remote:?}: {line}");
-        assert!(!line.contains("process_manager"), "{remote:?}: {line}");
-    }
+    let source = adapters(&descriptors(BOTH), BOTH, &[], &none).unwrap();
+    let line = macros(&source);
+    assert!(line.contains("aggregate"), "{line}");
+    assert!(!line.contains("process_manager"), "{line}");
+}
+
+/// A remote aggregate has no markup here (it is its command and event
+/// sets), so adapters of it alone import no macro at all.
+#[test]
+fn test_adapters_of_a_remote_aggregate_alone_import_no_macro() {
+    let none = |_: &str| None;
+    let source = adapters(&descriptors(BOTH), BOTH, &["books"], &none).unwrap();
+    assert!(!source.contains("angzarr_embedded_macros"), "{source}");
+    assert!(source.contains("impl CommandTarget for"), "{source}");
 }
 
 #[test]

@@ -427,27 +427,71 @@ fn test_scaffold_gives_a_policy_reaction_its_context_and_a_result() {
     );
 }
 
+/// A domain served by a child process is no aggregate here: a policy
+/// names it by its command set (`CommandTarget`, with `Decides` of each
+/// command) and its event set (`EventSource`, with `Ingests` of each
+/// fact), and no stand-in markup is generated for it.
 #[test]
-fn test_adapters_give_a_remote_domain_a_contract() {
+fn test_adapters_name_a_remote_domain_by_its_commands_and_events() {
     let source = adapters(&descriptors(BUYIN), BUYIN, &["buyin"], &golden_interface).unwrap();
     let file = syn::parse_file(&source).unwrap();
-    let contract = inherent_impl(&file, "BuyIn");
-    assert_eq!(
-        impl_markup(contract),
-        (
-            "process_manager".to_string(),
-            "domain=\"buyin\"".to_string()
-        )
+    let impls: Vec<&syn::ItemImpl> = file
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            syn::Item::Impl(imp) if text(&imp.self_ty) == "BuyIn" => Some(imp),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        impls.iter().all(|imp| imp.trait_.is_some()),
+        "no markup impl of the buy-in: {source}"
     );
-    for f in methods(contract) {
-        let body = text(&f.block);
-        assert!(
-            body == "{}" || body.starts_with("{unreachable!("),
-            "{}: {body}",
-            f.sig.ident
-        );
-    }
+    let traits: Vec<String> = impls
+        .iter()
+        .filter_map(|imp| imp.trait_.as_ref().map(|t| text(&t.0)))
+        .collect();
+    assert_eq!(
+        traits,
+        [
+            "CommandTarget",
+            "Decides<StartBuyIn>",
+            "Decides<RecordHeld>",
+            "EventSource",
+            "Ingests<HoldLost>",
+        ]
+    );
+    let body = |name: &str| {
+        impls
+            .iter()
+            .find(|imp| imp.trait_.as_ref().is_some_and(|t| text(&t.0) == name))
+            .map(|imp| imp.items.iter().map(text).collect::<String>())
+            .unwrap()
+    };
+    let target = body("CommandTarget");
+    assert!(
+        target.contains("constDOMAIN:&'staticstr=\"buyin\";"),
+        "{target}"
+    );
+    assert!(
+        target.contains(
+            "vec![\"buyin.v1.StartBuyIn\".to_string(),\"buyin.v1.RecordHeld\".to_string()]"
+        ),
+        "{target}"
+    );
+    let events = body("EventSource");
+    assert!(
+        events.contains("constDOMAIN:&'staticstr=\"buyin\";"),
+        "{events}"
+    );
+    assert!(
+        events.contains(
+            "vec![\"buyin.v1.BuyInStarted\".to_string(),\"buyin.v1.BuyInHeld\".to_string(),\"buyin.v1.BuyInFailed\".to_string()]"
+        ),
+        "{events}"
+    );
     assert!(!source.contains("crate::buy_in_impl::"), "{source}");
+    assert!(!source.contains("unreachable!"), "{source}");
 }
 
 // ------------------------------------------------------------- --missing

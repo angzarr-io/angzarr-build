@@ -192,7 +192,7 @@ fn a_config_with_lints_is_refused_and_nothing_is_written() {
 }
 
 #[test]
-fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_contracts() {
+fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_command_and_event_sets() {
     let out = empty_dir();
     let config = out.join("angzarr.toml");
     std::fs::write(
@@ -214,7 +214,7 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_contracts() {
     let register = std::fs::read_to_string(out.join("angzarr-register.rs")).unwrap();
     assert!(register.contains("adapters::Wallet"), "{register}");
     // The Python child's process manager, listed by its name, is its
-    // domain's contract.
+    // domain's command and event sets.
     let adapters = std::fs::read_to_string(out.join("angzarr-adapters.rs")).unwrap();
     assert!(
         adapters.contains("`buyin.v1.BuyInState`, served by a child process"),
