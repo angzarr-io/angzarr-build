@@ -24,7 +24,7 @@ use quote::{format_ident, quote};
 
 use crate::common::{has_code_status, refusal_choice_name, snake};
 use crate::error::CodegenError;
-use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Input};
+use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Input, owner};
 use crate::rust::{RUNTIME, ident, root, runtime_macros};
 use crate::{Generated, generate};
 
@@ -76,21 +76,15 @@ pub fn scaffold(
     translate: &[Translate],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
-    let pool = model::pool_components(descriptor_set)?;
-    for selection in translate {
-        check_translate(&pool, selection)?;
-    }
+    let pool = checked_pool(descriptor_set, translate)?;
     let mut out = Vec::new();
     for component in &components {
-        if component.kind == ComponentKind::Policy
-            && (owner(&pool, &component.input_domain).is_none()
-                || owner(&pool, &component.output_domain).is_none())
-        {
+        if component.kind == ComponentKind::Policy && !component.is_connected(&pool) {
             continue;
         }
         let stem = snake(&component.name);
         let anchor = component.anchor.full_name().to_string();
-        let selected: Vec<&Translate> = translate.iter().filter(|t| t.policy == anchor).collect();
+        let selected: Vec<&Translate> = selected(translate, component).collect();
         let methods = interface_methods(component, &pool, &selected)?;
         out.push(ScaffoldFile {
             component: anchor.clone(),
@@ -108,12 +102,33 @@ pub fn scaffold(
     Ok(crate::headed_files(out))
 }
 
+/// Every marked-up component of the descriptor set
+/// ([`model::pool_components`]), each of `translate`'s selections checked
+/// against them ([`check_translate`]).
+pub(crate) fn checked_pool(
+    descriptor_set: &[u8],
+    translate: &[Translate],
+) -> Result<Vec<Component>, CodegenError> {
+    let pool = model::pool_components(descriptor_set)?;
+    for selection in translate {
+        check_translate(&pool, selection)?;
+    }
+    Ok(pool)
+}
+
+/// The selections of `translate` for `policy`.
+pub(crate) fn selected<'a>(
+    translate: &'a [Translate],
+    policy: &'a Component,
+) -> impl Iterator<Item = &'a Translate> {
+    translate
+        .iter()
+        .filter(|t| t.policy == policy.anchor.full_name())
+}
+
 /// `selection`'s policy is a policy, its command one its target decides,
 /// and its fact a fact its source ingests.
-pub(crate) fn check_translate(
-    components: &[Component],
-    selection: &Translate,
-) -> Result<(), CodegenError> {
+fn check_translate(components: &[Component], selection: &Translate) -> Result<(), CodegenError> {
     let policy = components
         .iter()
         .find(|c| c.kind == ComponentKind::Policy && c.anchor.full_name() == selection.policy)
@@ -140,13 +155,6 @@ pub(crate) fn check_translate(
         }),
         Some(_) => Ok(()),
     }
-}
-
-/// The aggregate or process manager owning `domain`.
-fn owner<'a>(components: &'a [Component], domain: &str) -> Option<&'a Component> {
-    components
-        .iter()
-        .find(|c| c.kind != ComponentKind::Policy && c.domain == domain)
 }
 
 /// One method of a component's interface: its signature, the message it
@@ -257,11 +265,7 @@ fn policy_methods(
     translate: &[&Translate],
 ) -> Result<Vec<Method>, CodegenError> {
     let mut methods = Vec::new();
-    let target =
-        owner(pool, &component.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
-            policy: component.anchor.full_name().to_string(),
-            domain: component.output_domain.clone(),
-        })?;
+    let target = component.target(pool)?;
     for event in &component.events {
         methods.push(Method {
             name: method(event.name()),
@@ -688,11 +692,7 @@ fn first_message(sig: &syn::Signature) -> Option<(String, String)> {
 fn application(components: &[Component]) -> Vec<&Component> {
     components
         .iter()
-        .filter(|c| {
-            c.kind != ComponentKind::Policy
-                || (owner(components, &c.input_domain).is_some()
-                    && owner(components, &c.output_domain).is_some())
-        })
+        .filter(|c| c.kind != ComponentKind::Policy || c.is_connected(components))
         .collect()
 }
 
@@ -724,10 +724,7 @@ pub fn adapters(
     let mut macros = vec![];
     let mut has_policy = false;
     for component in application(&components) {
-        if component.kind != ComponentKind::Aggregate
-            && component.kind != ComponentKind::ProcessManager
-            && remote.contains(&component.component_name.as_str())
-        {
+        if !component.kind.is_domain() && remote.contains(&component.component_name.as_str()) {
             continue;
         }
         let is_remote = remote.contains(&component.domain.as_str());
@@ -1026,15 +1023,7 @@ fn command_method(component: &Component, input: &Input, interface: &TokenStream)
 /// the domain. Its domain types are `crate::domain`'s.
 pub fn stand_ins(descriptor_set: &[u8], files: &[&str]) -> Result<String, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
-    let domains: Vec<&Component> = components
-        .iter()
-        .filter(|c| {
-            matches!(
-                c.kind,
-                ComponentKind::Aggregate | ComponentKind::ProcessManager
-            )
-        })
-        .collect();
+    let domains: Vec<&Component> = components.iter().filter(|c| c.kind.is_domain()).collect();
     let mut markup = vec!["CommandTarget", "EventSource"];
     if domains.iter().any(|d| d.inputs.iter().any(|i| !i.fact)) {
         markup.push("Decides");

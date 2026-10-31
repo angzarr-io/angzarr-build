@@ -62,6 +62,15 @@ impl ComponentKind {
         }
     }
 
+    /// An aggregate or a process manager: a domain, owning a stream domain,
+    /// deciding its inputs and folding its events.
+    pub(crate) fn is_domain(self) -> bool {
+        matches!(
+            self,
+            ComponentKind::Aggregate | ComponentKind::ProcessManager
+        )
+    }
+
     /// Its `ComponentKind` number (types.proto).
     pub(crate) fn number(self) -> i32 {
         match self {
@@ -149,12 +158,35 @@ pub(crate) struct Component {
 }
 
 impl Component {
+    /// A policy's target: the aggregate or process manager of `components`
+    /// owning its output domain, refused when none does.
+    pub fn target<'a>(&self, components: &'a [Component]) -> Result<&'a Component, CodegenError> {
+        owner(components, &self.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
+            policy: self.anchor.full_name().to_string(),
+            domain: self.output_domain.clone(),
+        })
+    }
+
+    /// A policy both of whose domains an aggregate or process manager of
+    /// `components` owns: one an application of them runs.
+    pub fn is_connected(&self, components: &[Component]) -> bool {
+        owner(components, &self.input_domain).is_some()
+            && owner(components, &self.output_domain).is_some()
+    }
+
     /// The input whose message is `full_name`.
     pub fn input(&self, full_name: &str) -> Option<&Input> {
         self.inputs
             .iter()
             .find(|i| i.message.full_name() == full_name)
     }
+}
+
+/// The aggregate or process manager of `components` owning `domain`.
+pub(crate) fn owner<'a>(components: &'a [Component], domain: &str) -> Option<&'a Component> {
+    components
+        .iter()
+        .find(|c| c.kind.is_domain() && c.domain == domain)
 }
 
 /// Everything generated into one package.

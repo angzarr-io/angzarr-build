@@ -391,12 +391,9 @@ fn has_default_launch(language: &str) -> bool {
 
 /// The aggregate or process manager of `components` named `name`.
 fn domain_named<'a>(components: &'a [Component], name: &str) -> Option<&'a Component> {
-    components.iter().find(|c| {
-        matches!(
-            c.kind,
-            ComponentKind::Aggregate | ComponentKind::ProcessManager
-        ) && c.component_name == name
-    })
+    components
+        .iter()
+        .find(|c| c.kind.is_domain() && c.component_name == name)
 }
 
 /// The component of `kind` of `components` named `name`.
@@ -484,12 +481,7 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
             _ => {}
         }
     }
-    for component in components.iter().filter(|c| {
-        matches!(
-            c.kind,
-            ComponentKind::Aggregate | ComponentKind::ProcessManager
-        )
-    }) {
+    for component in components.iter().filter(|c| c.kind.is_domain()) {
         let listed = config
             .components
             .iter()

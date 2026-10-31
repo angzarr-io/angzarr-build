@@ -18,7 +18,7 @@ use prost_reflect::{DescriptorPool, DynamicMessage, ReflectMessage, Value};
 use quote::quote;
 
 use crate::error::CodegenError;
-use crate::model::{self, ALL_KINDS, Component, ComponentKind};
+use crate::model::{self, ALL_KINDS, Component};
 
 const COMPONENT_DESCRIPTOR: &str = "io.angzarr.v1.ComponentDescriptor";
 /// `ConflictResolution`'s implicit base (types.proto): STRICT and
@@ -101,10 +101,7 @@ fn encode(
         "rules_version",
         Value::String(rules_version.to_string()),
     )?;
-    if matches!(
-        component.kind,
-        ComponentKind::Aggregate | ComponentKind::ProcessManager
-    ) {
+    if component.kind.is_domain() {
         let mut options = new(pool, "io.angzarr.v1.StateOptions")?;
         let mut resolutions: Vec<i32> = BASE_RESOLUTIONS
             .into_iter()

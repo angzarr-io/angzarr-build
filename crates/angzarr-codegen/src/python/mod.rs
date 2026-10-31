@@ -45,7 +45,7 @@ use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 use crate::common::{local_name, snake, wire_name};
 use crate::error::CodegenError;
 use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input};
-use crate::scaffold::{Owner, ScaffoldFile, Translate};
+use crate::scaffold::{Owner, ScaffoldFile, Translate, selected};
 use dispatch::dispatch;
 use domain::domain_py;
 use logic::{implementation, interface};
@@ -156,10 +156,7 @@ impl Unit {
     /// A domain: an aggregate or a process manager, deciding inputs and
     /// folding its events.
     fn is_domain(&self) -> bool {
-        matches!(
-            self.kind(),
-            ComponentKind::Aggregate | ComponentKind::ProcessManager
-        )
+        self.kind().is_domain()
     }
 
     /// The fact the refusal switch translates `command`'s refusal into, when
@@ -181,10 +178,7 @@ pub fn scaffold_python(
     app: &PythonApp,
     translate: &[Translate],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
-    let pool = model::pool_components(descriptor_set)?;
-    for selection in translate {
-        crate::scaffold::check_translate(&pool, selection)?;
-    }
+    let pool = crate::scaffold::checked_pool(descriptor_set, translate)?;
     let components: Vec<Component> = model::components(descriptor_set, files, ALL_KINDS)?
         .into_iter()
         .filter(|c| c.domain == app.domain || c.component_name == app.domain)
@@ -362,10 +356,7 @@ fn unit(
     pool: &[Component],
     translate: &[Translate],
 ) -> Result<Unit, CodegenError> {
-    let owner = |domain: &str| {
-        pool.iter()
-            .find(|t| t.kind != ComponentKind::Policy && t.domain == domain)
-    };
+    let owner = |domain: &str| model::owner(pool, domain);
     let fact_of = |selection: &Translate| {
         owner_input(pool, &selection.fact).map(|f| (selection.command.clone(), f))
     };
@@ -375,11 +366,7 @@ fn unit(
     let mut facts = Vec::new();
     match component.kind {
         ComponentKind::Policy => {
-            let target =
-                owner(&component.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
-                    policy: component.anchor.full_name().to_string(),
-                    domain: component.output_domain.clone(),
-                })?;
+            let target = component.target(pool)?;
             let sent: Vec<&Input> = target.inputs.iter().filter(|i| !i.fact).collect();
             commands = sent.iter().map(|i| i.message.clone()).collect();
             if let Some(source) = owner(&component.input_domain) {
@@ -393,9 +380,7 @@ fn unit(
             if !facts.is_empty() {
                 refusable = sent.into_iter().map(Refusable::of).collect();
             }
-            translated = translate
-                .iter()
-                .filter(|t| t.policy == component.anchor.full_name())
+            translated = selected(translate, &component)
                 .filter_map(fact_of)
                 .collect();
         }
@@ -415,12 +400,7 @@ fn unit(
                         refusable.push(Refusable::of(input));
                     }
                 }
-                translated.extend(
-                    translate
-                        .iter()
-                        .filter(|t| t.policy == policy.anchor.full_name())
-                        .filter_map(fact_of),
-                );
+                translated.extend(selected(translate, policy).filter_map(fact_of));
             }
         }
         ComponentKind::Projector => {}
@@ -445,7 +425,7 @@ fn unit(
 /// `pool` named `full_name`.
 fn owner_input(pool: &[Component], full_name: &str) -> Option<MessageDescriptor> {
     pool.iter()
-        .filter(|c| c.kind != ComponentKind::Policy)
+        .filter(|c| c.kind.is_domain())
         .find_map(|c| c.input(full_name))
         .map(|i| i.message.clone())
 }
