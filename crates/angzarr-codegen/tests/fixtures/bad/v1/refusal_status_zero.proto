@@ -1,0 +1,32 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+// A refusal status on a refusal Reason's zero value, the absence of a
+// code (decision 14.52): generation fails.
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+}
+
+message Poke {
+  option (io.angzarr.v1.command) = {
+    component: "bad.v1.ThingState"
+    emits: ["bad.v1.Poked"]
+    refuses: ["bad.v1.PokeRefused"]
+  };
+}
+
+message Poked {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+}
+
+message PokeRefused {
+  enum Reason {
+    REASON_UNSPECIFIED = 0 [(io.angzarr.v1.refusal_status) = REFUSAL_STATUS_NOT_FOUND];
+    REASON_GONE = 1;
+  }
+  Reason reason = 1;
+}

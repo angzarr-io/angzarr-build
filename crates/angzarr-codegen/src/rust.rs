@@ -405,7 +405,39 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
             args
         }
     };
+    let status = refusal_reason(message).map(|e| {
+        let ty = ident(&enum_name(&e));
+        let arms = e.values().filter(|v| v.number() != 0).map(|v| {
+            let variant = ident(&camel(wire_name(&e, v.name())));
+            let status = business_status(crate::model::refusal_status(&v));
+            quote!(#ty::#variant => BusinessStatus::#status)
+        });
+        quote! {
+            impl #name {
+                /// The status this refusal is refused with (decision 14.52): its
+                /// reason's `refusal_status`, FAILED_PRECONDITION where unmarked.
+                pub fn status(&self) -> BusinessStatus {
+                    match self.reason { #(#arms),* }
+                }
+
+                /// `failed`, its refusal under its code's status ([`Self::status`]),
+                /// whatever status it was given; any other failure unchanged.
+                /// What the generated adapter refuses with.
+                pub fn with_code_status(failed: Failed<#name>) -> Failed<#name> {
+                    match failed {
+                        Failed::Rejected { rejection, .. } => {
+                            let status = rejection.status();
+                            Failed::Rejected { rejection, status }
+                        }
+                        other => other,
+                    }
+                }
+            }
+        }
+    });
     quote! {
+        #status
+
         /// A bug of the handler refusing with this, as it fails:
         /// `Failed::Bug`.
         impl ::core::convert::From<Bug> for Failed<#name> {
@@ -432,6 +464,12 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
     }
 }
 
+/// Whether a refusal of `input` is refused under its code's status
+/// (decision 14.52): one of its refuses types has a Reason.
+pub(crate) fn has_code_status(input: &crate::model::Input) -> bool {
+    input.refuses.iter().any(|r| refusal_reason(r).is_some())
+}
+
 /// The name of the choice a command refusing several types refuses with
 /// (`<Command>Refuses`), in the domain layer.
 pub(crate) fn refusal_choice_name(command: &MessageDescriptor) -> String {
@@ -448,7 +486,36 @@ fn refusal_choice(input: &crate::model::Input) -> TokenStream {
         " What {} refuses with: one of its refuses types.",
         input.message.name()
     );
+    let coded = has_code_status(input).then(|| {
+        let arms = input.refuses.iter().map(|r| {
+            let ty = ident(r.name());
+            if refusal_reason(r).is_some() {
+                quote!(#name::#ty(refusal) => refusal.status())
+            } else {
+                quote!(#name::#ty(_) => status)
+            }
+        });
+        quote! {
+            impl #name {
+                /// `failed`, its refusal under the chosen type's code's status
+                /// (decision 14.52) when it has a Reason, else the status it was
+                /// given; any other failure unchanged. What the generated adapter
+                /// refuses with.
+                pub fn with_code_status(failed: Failed<#name>) -> Failed<#name> {
+                    match failed {
+                        Failed::Rejected { rejection, status } => {
+                            let status = match &rejection { #(#arms),* };
+                            Failed::Rejected { rejection, status }
+                        }
+                        other => other,
+                    }
+                }
+            }
+        }
+    });
     quote! {
+        #coded
+
         #[doc = #doc]
         #[derive(Clone, Debug, PartialEq)]
         pub enum #name { #(#types(#types)),* }
@@ -512,6 +579,23 @@ fn refusal_choice(input: &crate::model::Input) -> TokenStream {
             }
         }
     }
+}
+
+/// The `BusinessStatus` variant of a `refusal_status` number (a
+/// `google.rpc.Code`, decision 14.52); unmarked, or a number outside the
+/// business set, FAILED_PRECONDITION.
+fn business_status(code: i32) -> syn::Ident {
+    format_ident!(
+        "{}",
+        match code {
+            3 => "InvalidArgument",
+            5 => "NotFound",
+            6 => "AlreadyExists",
+            7 => "PermissionDenied",
+            11 => "OutOfRange",
+            _ => "FailedPrecondition",
+        }
+    )
 }
 
 /// The diagnostic key of a typed refusal (decision 14.50): its message's

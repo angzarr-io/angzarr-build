@@ -37,6 +37,7 @@ impl LedgerState {
     ) -> Result<Emit<Self>, Failed<Refuses<Self, Post>>> {
         crate::ledger_state::LedgerState::post(&self.0, &cmd, ctx)
             .map(Emit::of)
+            .map_err(PostRefuses::with_code_status)
             .map_err(PostRefuses::widen)
     }
     #[handles_cmd(Open)]
@@ -103,6 +104,7 @@ impl LedgerState {
                         },
                     )
             })
+            .map_err(PostRefused::with_code_status)
             .map_err(Failed::widen)
     }
     #[handles_cmd(Raw)]
@@ -212,6 +214,7 @@ impl AuditState {
     ) -> Result<Emit<Self>, Failed<Refuses<Self, Audit>>> {
         crate::audit_state::AuditState::audit(&self.0, &cmd, ctx)
             .map(Emit::of)
+            .map_err(AuditRefuses::with_code_status)
             .map_err(AuditRefuses::widen)
     }
     #[applies(Audited)]

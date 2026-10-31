@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use prost_reflect::{
-    DescriptorPool, DynamicMessage, EnumDescriptor, ExtensionDescriptor, Kind, MessageDescriptor,
-    Value,
+    DescriptorPool, DynamicMessage, EnumDescriptor, EnumValueDescriptor, ExtensionDescriptor, Kind,
+    MessageDescriptor, Value,
 };
 
 use crate::error::CodegenError;
@@ -18,6 +18,7 @@ const COMMAND: &str = "io.angzarr.v1.command";
 const EVENT: &str = "io.angzarr.v1.event";
 const STATE: &str = "io.angzarr.v1.state";
 const RESOLUTION: &str = "io.angzarr.v1.ConflictResolution";
+const REFUSAL_STATUS: &str = "io.angzarr.v1.refusal_status";
 const COMMUTATIVE: &str = "CONFLICT_RESOLUTION_COMMUTATIVE";
 /// The one well-known type the domain layer maps (to angzarr-embedded's `Timestamp`).
 pub(crate) const TIMESTAMP: &str = "google.protobuf.Timestamp";
@@ -547,7 +548,82 @@ pub(crate) fn components(
             });
         }
     }
+    check_refusal_statuses(&pool, files, &declaring, command_ext.as_ref())?;
     Ok(components)
+}
+
+/// The status a refusal Reason's value marks (decision 14.52), its
+/// `google.rpc.Code` number: 0 where unmarked, or where the set's
+/// options.proto has no `refusal_status`.
+pub(crate) fn refusal_status(value: &EnumValueDescriptor) -> i32 {
+    let Some(ext) = value
+        .parent_enum()
+        .parent_pool()
+        .get_extension_by_name(REFUSAL_STATUS)
+    else {
+        return 0;
+    };
+    let options = value.options();
+    if !options.has_extension(&ext) {
+        return 0;
+    }
+    options.get_extension(&ext).as_enum_number().unwrap_or(0)
+}
+
+/// Every enum of `files`, nested ones too, each value marked with a
+/// `refusal_status` checked (C-0746): it must be a non-zero value of the
+/// nested `Reason` of a message some command of the set refuses with.
+fn check_refusal_statuses(
+    pool: &DescriptorPool,
+    files: &[&str],
+    declaring: &[MessageDescriptor],
+    command_ext: Option<&ExtensionDescriptor>,
+) -> Result<(), CodegenError> {
+    let Some(status_ext) = pool.get_extension_by_name(REFUSAL_STATUS) else {
+        return Ok(());
+    };
+    let mut refused: BTreeSet<String> = BTreeSet::new();
+    if let Some(command_ext) = command_ext {
+        for message in declaring {
+            if let Some(declared) = message_value(&message.options(), command_ext) {
+                refused.extend(list_field(&declared, "refuses").into_iter().filter_map(
+                    |v| match v {
+                        Value::String(s) => Some(s),
+                        _ => None,
+                    },
+                ));
+            }
+        }
+    }
+    fn nested(message: MessageDescriptor, out: &mut Vec<EnumDescriptor>) {
+        out.extend(message.child_enums());
+        for child in message.child_messages() {
+            nested(child, out);
+        }
+    }
+    let mut enums = Vec::new();
+    for file in files {
+        if let Some(file) = pool.get_file_by_name(file) {
+            enums.extend(file.enums());
+            for message in file.messages() {
+                nested(message, &mut enums);
+            }
+        }
+    }
+    for e in enums {
+        let codes = e.parent_message().filter(|m| {
+            refused.contains(m.full_name()) && crate::rust::refusal_reason(m).as_ref() == Some(&e)
+        });
+        for value in e.values() {
+            let marked = value.options().has_extension(&status_ext);
+            if marked && (codes.is_none() || value.number() == 0) {
+                return Err(CodegenError::RefusalStatusMisplaced {
+                    value: format!("{}.{}", e.full_name(), value.name()),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A projector's listed sources (decision 14.50): its `input_domains`, or

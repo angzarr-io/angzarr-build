@@ -713,6 +713,31 @@ impl From<Audited> for AuditStateEvent {
         AuditStateEvent::Audited(value)
     }
 }
+impl PostRefused {
+    /// The status this refusal is refused with (decision 14.52): its
+    /// reason's `refusal_status`, FAILED_PRECONDITION where unmarked.
+    pub fn status(&self) -> BusinessStatus {
+        match self.reason {
+            PostRefusedReason::Closed => BusinessStatus::FailedPrecondition,
+            PostRefusedReason::OverLimit => BusinessStatus::OutOfRange,
+        }
+    }
+    /// `failed`, its refusal under its code's status ([`Self::status`]),
+    /// whatever status it was given; any other failure unchanged.
+    /// What the generated adapter refuses with.
+    pub fn with_code_status(failed: Failed<PostRefused>) -> Failed<PostRefused> {
+        match failed {
+            Failed::Rejected { rejection, .. } => {
+                let status = rejection.status();
+                Failed::Rejected {
+                    rejection,
+                    status,
+                }
+            }
+            other => other,
+        }
+    }
+}
 /// A bug of the handler refusing with this, as it fails:
 /// `Failed::Bug`.
 impl ::core::convert::From<Bug> for Failed<PostRefused> {
@@ -908,6 +933,30 @@ impl ::angzarr_embedded_diagnostic::Diagnostic for Mislabeled {
         args
     }
 }
+impl PostRefuses {
+    /// `failed`, its refusal under the chosen type's code's status
+    /// (decision 14.52) when it has a Reason, else the status it was
+    /// given; any other failure unchanged. What the generated adapter
+    /// refuses with.
+    pub fn with_code_status(failed: Failed<PostRefuses>) -> Failed<PostRefuses> {
+        match failed {
+            Failed::Rejected { rejection, status } => {
+                let status = match &rejection {
+                    PostRefuses::PostRefused(refusal) => refusal.status(),
+                    PostRefuses::Unreasoned(_) => status,
+                    PostRefuses::Listed(_) => status,
+                    PostRefuses::Elsewhere(_) => status,
+                    PostRefuses::Mislabeled(_) => status,
+                };
+                Failed::Rejected {
+                    rejection,
+                    status,
+                }
+            }
+            other => other,
+        }
+    }
+}
 /// What Post refuses with: one of its refuses types.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PostRefuses {
@@ -1032,6 +1081,27 @@ impl ::angzarr_embedded_diagnostic::Diagnostic for PostRefuses {
             PostRefuses::Mislabeled(refusal) => {
                 ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
             }
+        }
+    }
+}
+impl AuditRefuses {
+    /// `failed`, its refusal under the chosen type's code's status
+    /// (decision 14.52) when it has a Reason, else the status it was
+    /// given; any other failure unchanged. What the generated adapter
+    /// refuses with.
+    pub fn with_code_status(failed: Failed<AuditRefuses>) -> Failed<AuditRefuses> {
+        match failed {
+            Failed::Rejected { rejection, status } => {
+                let status = match &rejection {
+                    AuditRefuses::PostRefused(refusal) => refusal.status(),
+                    AuditRefuses::Unreasoned(_) => status,
+                };
+                Failed::Rejected {
+                    rejection,
+                    status,
+                }
+            }
+            other => other,
         }
     }
 }

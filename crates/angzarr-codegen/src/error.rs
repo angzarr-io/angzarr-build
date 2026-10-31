@@ -118,6 +118,10 @@ pub enum CodegenError {
     AppManifest { detail: String },
     /// A domain crate's path, or its wire types', that is no Rust path.
     AppDomainPath { path: String },
+    /// A `refusal_status` on an enum value that is no refusal's code
+    /// (decision 14.52): a value of an enum other than the nested `Reason`
+    /// of a message some command refuses with, or that Reason's zero.
+    RefusalStatusMisplaced { value: String },
 }
 
 impl fmt::Display for CodegenError {
@@ -279,6 +283,10 @@ impl fmt::Display for CodegenError {
             CodegenError::AppManifest { detail } => {
                 write!(f, "the manifest does not read as one: {detail}")
             }
+            CodegenError::RefusalStatusMisplaced { value } => write!(
+                f,
+                "{value} is marked (io.angzarr.v1.refusal_status), which marks a refusal's code alone: a non-zero value of the nested Reason of a message a command refuses with"
+            ),
             CodegenError::AppDomainPath { path } => write!(
                 f,
                 "the domain crate's {path} is no Rust path: name it as Rust does (examples_proto, not examples-proto)"
@@ -339,6 +347,9 @@ impl Diagnostic for CodegenError {
             CodegenError::AppRefused { .. } => "angzarr-codegen-app-refused",
             CodegenError::AppManifest { .. } => "angzarr-codegen-app-manifest",
             CodegenError::AppDomainPath { .. } => "angzarr-codegen-app-domain-path",
+            CodegenError::RefusalStatusMisplaced { .. } => {
+                "angzarr-codegen-refusal-status-misplaced"
+            }
         }
     }
 
@@ -454,6 +465,7 @@ impl Diagnostic for CodegenError {
                 vec![("detail", s(detail))]
             }
             CodegenError::AppDomainPath { path } => vec![("path", s(path))],
+            CodegenError::RefusalStatusMisplaced { value } => vec![("value", s(value))],
             CodegenError::AppRefused { lints } => {
                 vec![(
                     "count",
@@ -574,6 +586,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::AppRefused { lints: Vec::new() }),
         Box::new(CodegenError::AppManifest { detail: s() }),
         Box::new(CodegenError::AppDomainPath { path: s() }),
+        Box::new(CodegenError::RefusalStatusMisplaced { value: s() }),
     ];
     errors
         .into_iter()

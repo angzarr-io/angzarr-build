@@ -41,3 +41,4 @@ angzarr-codegen-app-policy-target-absent = the policy { $policy } sends to the d
 angzarr-codegen-app-not-exposable = { $name } is a { $kind }, which cannot be exposed: only an aggregate is
 angzarr-codegen-app-unknown-language = { $name } is in { $language }, which has no default launch; give it a launch
 angzarr-codegen-app-empty-launch = { $name }'s launch names no program
+angzarr-codegen-refusal-status-misplaced = { $value } is marked (io.angzarr.v1.refusal_status), which marks a refusal's code alone: a non-zero value of the nested Reason of a message a command refuses with

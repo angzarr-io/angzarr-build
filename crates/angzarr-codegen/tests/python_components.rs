@@ -362,7 +362,7 @@ fn test_a_decision_returns_its_cardinality_or_one_of_its_refusals() {
 }
 
 /// The dispatch answers a returned refusal as the client's `Refused`, the
-/// refusal on the wire.
+/// refusal on the wire, under its code's status (decision 14.52).
 #[test]
 fn test_the_dispatch_refuses_with_a_returned_typed_refusal() {
     let files = till();
@@ -372,7 +372,9 @@ fn test_the_dispatch_refuses_with_a_returned_typed_refusal() {
         &[
             "_REFUSALS = {_d.TillRefused: _from_till_refused, _d.CardDeclined: _from_card_declined, _d.Unbalanced: _from_unbalanced,}",
             "to_wire = _REFUSALS.get(type(result))",
-            "raise _az.Refused(to_wire(result))",
+            "refused = _az.Refused(to_wire(result))",
+            "refused.grpc = result.status()",
+            "raise refused",
             "return _decided(logic.charge(cmd, _to_till_state(state), cctx))",
             // A command refusing nothing answers its events as before.
             "return _book(logic.settle(cmd, _to_till_state(state), cctx))",
@@ -398,11 +400,16 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
              TillRefusedReason.OVER_LIMIT: \"pyshop-v1-tillrefused-over-limit\",}\
              .get(self.reason, \"pyshop-v1-tillrefused\")",
             "def args(self) -> dict[str, object]:",
+            "def status(self) -> int:",
         ],
     );
     let out = run_domain(
         domain,
         "r = TillRefused(reason=TillRefusedReason.OVER_LIMIT, limit=5)\n\
+         assert r.status() == 11, r.status()\n\
+         assert TillRefused(reason=TillRefusedReason.TILL_CLOSED).status() == 9\n\
+         assert TillRefused().status() == 9\n\
+         assert CardDeclined().status() == 9\n\
          assert r.key() == 'pyshop-v1-tillrefused-over-limit', r.key()\n\
          assert r.args() == {'reason': 'OVER_LIMIT', 'limit': 5}, r.args()\n\
          assert TillRefused(reason=TillRefusedReason.TILL_CLOSED).args() == {'reason': 'TILL_CLOSED'}\n\

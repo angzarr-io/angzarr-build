@@ -27,8 +27,14 @@ fn line(diagnostic: &dyn Diagnostic) -> String {
     format!("{} {}", diagnostic.code(), args.join(" "))
 }
 
-/// `command` to `domain`'s stream at root `n`, the `n`th command.
-async fn send<C: DomainMessage>(app: &App, n: u8, domain: &str, command: C) {
+/// `command` to `domain`'s stream at root `n`, the `n`th command, as
+/// `App::handle` answers it.
+async fn handle<C: DomainMessage>(
+    app: &App,
+    n: u8,
+    domain: &str,
+    command: C,
+) -> Result<(), angzarr_embedded::next::Failure<angzarr_embedded::next::Rejected>> {
     let book = CommandBook {
         cover: Some(Cover {
             domain: domain.to_string(),
@@ -51,7 +57,13 @@ async fn send<C: DomainMessage>(app: &App, n: u8, domain: &str, command: C) {
         },
         command_id: Uuid::from_bytes([0x70 | n; 16]),
     };
-    app.handle(book, &sampled)
+    app.handle(book, &sampled).await.map(|_| ())
+}
+
+/// `command` to `domain`'s stream at root `n`, the `n`th command, which
+/// must be handled.
+async fn send<C: DomainMessage>(app: &App, n: u8, domain: &str, command: C) {
+    handle(app, n, domain, command)
         .await
         .expect("the command is handled");
 }
@@ -96,6 +108,13 @@ async fn main() {
     // MANY: Noted, then Posted, as the handler ordered them.
     send(&app, 2, "ledger", Batch {}).await;
     send(&app, 3, "audit", Audit {}).await;
+    // Post refuses OVER_LIMIT, marked OUT_OF_RANGE: refused under it.
+    match handle(&app, 4, "ledger", Post {}).await {
+        Err(angzarr_embedded::next::Failure::Rejected(rejected)) => {
+            println!("post refused: {:?}", rejected.status())
+        }
+        other => panic!("post refuses: {other:?}"),
+    }
     drop(app);
 
     // The policy swapped for the hand-written one of the same name: the

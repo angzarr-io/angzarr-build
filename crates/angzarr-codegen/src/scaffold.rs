@@ -911,19 +911,25 @@ fn domain_adapter(component: &Component) -> TokenStream {
             refusals => {
                 let emit = emitted(component, input, &quote!(Failed<Refuses<Self, #ty>>));
                 // One type widens by its own `Into`; several, by their
-                // domain-layer choice's `widen`.
-                let widen = match refusals {
-                    [_] => quote!(Failed::widen),
+                // domain-layer choice's `widen`. A refusal with a Reason is
+                // refused under its code's status first (decision 14.52).
+                let (refusal, widen) = match refusals {
+                    [one] => (ident(one.name()), quote!(Failed::widen)),
                     _ => {
                         let choice = format_ident!("{}", refusal_choice_name(&input.message));
-                        quote!(#choice::widen)
+                        (choice.clone(), quote!(#choice::widen))
                     }
+                };
+                let widen = if crate::rust::has_code_status(input) {
+                    quote!(map_err(#refusal::with_code_status).map_err(#widen))
+                } else {
+                    quote!(map_err(#widen))
                 };
                 let refusals: Vec<syn::Ident> = refusals.iter().map(|r| ident(r.name())).collect();
                 methods.push(quote! {
                     #[handles_cmd(#ty #starts, refuses(#(#refusals),*))]
                     fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Refuses<Self, #ty>>> {
-                        #interface::#m(&self.0, &cmd, ctx).map(#emit).map_err(#widen)
+                        #interface::#m(&self.0, &cmd, ctx).map(#emit).#widen
                     }
                 });
             }

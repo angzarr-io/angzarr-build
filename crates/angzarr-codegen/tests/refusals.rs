@@ -113,3 +113,84 @@ fn test_a_command_refusing_one_type_has_no_choice_to_collide_with() {
     .unwrap();
     assert!(generated[0].source.contains("pub struct BookRefuses"));
 }
+
+/// A typed refusal with a Reason is refused under its code's status
+/// (decision 14.52): the value's `refusal_status`, FAILED_PRECONDITION
+/// where unmarked. The domain layer says which (`status`), for a
+/// hand-written handler too, and the adapter refuses under it, for one
+/// refusal type and for a choice of several.
+#[test]
+fn test_a_reasons_status_is_its_values_refusal_status() {
+    let domain = kinds_domain();
+    let file = syn::parse_file(&domain).unwrap();
+    let status =
+        file.items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Impl(imp)
+                    if text(&imp.self_ty) == "PostRefused"
+                        && imp.trait_.is_none()
+                        && imp.items.iter().any(
+                            |i| matches!(i, syn::ImplItem::Fn(f) if f.sig.ident == "status"),
+                        ) =>
+                {
+                    Some(text(imp))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no PostRefused::status:\n{domain}"));
+    assert!(
+        status.contains(
+            "pubfnstatus(&self)->BusinessStatus{matchself.reason{\
+             PostRefusedReason::Closed=>BusinessStatus::FailedPrecondition,\
+             PostRefusedReason::OverLimit=>BusinessStatus::OutOfRange,}}"
+        ),
+        "{status}"
+    );
+    // A refusal with no Reason has no code to take a status from: the
+    // handler's own stands.
+    assert!(!domain.contains("impl Unreasoned {"), "{domain}");
+    let adapters = adapters(&descriptors(&[KINDS]), &[KINDS], &[], &|_| None).unwrap();
+    for refused in [
+        ".map_err(PostRefuses::with_code_status).map_err(PostRefuses::widen)",
+        ".map_err(PostRefused::with_code_status).map_err(Failed::widen)",
+    ] {
+        assert!(
+            adapters
+                .split_whitespace()
+                .collect::<String>()
+                .contains(refused),
+            "{refused}:\n{adapters}"
+        );
+    }
+}
+
+/// The status option marks a refusal's code alone (C-0746): on any other
+/// enum's value, on a Reason's zero value, or on the Reason of a message
+/// no command refuses with, generation fails naming the value.
+#[test]
+fn test_a_refusal_status_anywhere_but_a_refusals_code_is_refused() {
+    for (file, value) in [
+        (
+            "bad/v1/refusal_status_elsewhere.proto",
+            "bad.v1.Suit.SUIT_HEARTS",
+        ),
+        (
+            "bad/v1/refusal_status_zero.proto",
+            "bad.v1.PokeRefused.Reason.REASON_UNSPECIFIED",
+        ),
+        (
+            "bad/v1/refusal_status_unrefused.proto",
+            "bad.v1.Poked.Reason.REASON_GONE",
+        ),
+    ] {
+        assert_eq!(
+            markup_domain(&descriptors(&[file]), &[file], &[("bad.v1", "crate::wire")])
+                .expect_err(file),
+            CodegenError::RefusalStatusMisplaced {
+                value: value.to_string()
+            },
+            "{file}"
+        );
+    }
+}

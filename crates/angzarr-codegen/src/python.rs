@@ -972,13 +972,44 @@ fn diagnostic(refusal: &MessageDescriptor) -> String {
         }
         None => format!("{base:?}"),
     };
+    // The status its code is refused with (decision 14.52), a
+    // google.rpc.Code number: its Reason value's refusal_status, else
+    // FAILED_PRECONDITION (9).
+    let status = match crate::rust::refusal_reason(refusal) {
+        Some(reason) => {
+            let enum_type = local_name(reason.full_name(), reason.package_name());
+            let entries: String = reason
+                .values()
+                .filter(|v| v.number() != 0)
+                .map(|v| (v.name().to_string(), crate::model::refusal_status(&v)))
+                .filter(|(_, status)| *status != 0)
+                .map(|(name, status)| {
+                    format!(
+                        "            {enum_type}.{}: {status},\n",
+                        member(&reason, &name)
+                    )
+                })
+                .collect();
+            if entries.is_empty() {
+                "9".to_string()
+            } else {
+                format!("{{\n{entries}        }}.get(self.reason, 9)")
+            }
+        }
+        None => "9".to_string(),
+    };
     format!(
         "\n    def key(self) -> str:\n        \
          \"\"\"Its diagnostic key: its full name and its reason.\"\"\"\n        \
          return {key}\n\n    \
          def args(self) -> dict[str, object]:\n        \
          \"\"\"Its diagnostic args: the fields it sets.\"\"\"\n        \
-         return _args(self)\n",
+         return _args(self)\n\n    \
+         def status(self) -> int:\n        \
+         \"\"\"The status it is refused with, a google.rpc.Code: its reason's\n        \
+         refusal_status, FAILED_PRECONDITION (9) where unmarked.\n        \
+         \"\"\"\n        \
+         return {status}\n",
     )
 }
 
@@ -1189,11 +1220,15 @@ const WIRE_EVENTS: &str = "\n\ndef _wire(result) -> list:\n    \
     book.pages.add().payload.CopyFrom(_az.pack(wire))\n    \
     return book\n";
 
-/// A decision's result refused, when it is a typed refusal.
+/// A decision's result refused, when it is a typed refusal: under its
+/// code's status (decision 14.52), the client's `Refused` being
+/// FAILED_PRECONDITION unless its public `grpc` says otherwise.
 const DECIDED: &str = "\n\ndef _decided(result) -> _t.EventBook:\n    \
     to_wire = _REFUSALS.get(type(result))\n    \
     if to_wire is not None:\n        \
-    raise _az.Refused(to_wire(result))\n    \
+    refused = _az.Refused(to_wire(result))\n        \
+    refused.grpc = result.status()\n        \
+    raise refused\n    \
     return _book(result)\n";
 
 /// The event loop a projector's coroutines run on.

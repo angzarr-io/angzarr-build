@@ -143,7 +143,8 @@ fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
 /// commands whose events the generated projector and one written by hand
 /// (registered through angzarr-embedded's public API beside the generated
 /// register()) project and a generated policy reacts to, translating a
-/// refusal of a command refusing two types as their choice; then the policy
+/// refusal of a command refusing two types as their choice, and a refusal
+/// refused under its code's status; then the policy
 /// swapped for one written by hand under the generated one's name
 /// (`angzarr_build::component_names`): the same derived command id.
 #[test]
@@ -186,6 +187,9 @@ fn test_the_kinds_app_refuses_records_and_projects_as_generated() {
             "tally: 2 events from ledger",
             // Audit, the view's other source.
             "view: Audited from audit (4)",
+            // Post refuses OVER_LIMIT, whose refusal_status is OUT_OF_RANGE
+            // (decision 14.52): refused under it, not FAILED_PRECONDITION.
+            "post refused: OutOfRange",
             // The policy swapped for one written by hand under the
             // generated one's name: the same command id.
             "swapped",
