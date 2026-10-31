@@ -55,7 +55,7 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-diagnostic"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=e2810b47fcfce7ad97f063f33252d1d44a53d263#e2810b47fcfce7ad97f063f33252d1d44a53d263"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=7c8520470fa0fd9435020d7c30ade79dd2808ae7#7c8520470fa0fd9435020d7c30ade79dd2808ae7"
 
 [[package]]
 name = "angzarr-fmt"
