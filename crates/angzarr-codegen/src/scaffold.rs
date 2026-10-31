@@ -22,9 +22,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
+use crate::common::{has_code_status, refusal_choice_name, snake};
 use crate::error::CodegenError;
 use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Input};
-use crate::rust::{RUNTIME, ident, next, refusal_choice_name, runtime_macros, snake};
+use crate::rust::{RUNTIME, ident, next, runtime_macros};
 use crate::{Generated, generate};
 
 /// One file of a scaffold.
@@ -923,7 +924,7 @@ fn domain_adapter(component: &Component) -> TokenStream {
                         (choice.clone(), quote!(#choice::widen))
                     }
                 };
-                let widen = if crate::rust::has_code_status(input) {
+                let widen = if has_code_status(input) {
                     quote!(map_err(#refusal::with_code_status).map_err(#widen))
                 } else {
                     quote!(map_err(#widen))

@@ -28,9 +28,9 @@ use std::collections::BTreeSet;
 
 use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 
+use crate::common::{local_name, refusal_key, refusal_reason, snake, wire_name};
 use crate::error::CodegenError;
 use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Input};
-use crate::rust::snake;
 use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
@@ -770,24 +770,9 @@ fn py_name(name: &str) -> String {
     }
 }
 
-/// A nested type's plain name: its enclosing messages' names, then its own.
-fn local_name(full: &str, package: &str) -> String {
-    full.strip_prefix(package)
-        .map_or(full, |rest| rest.trim_start_matches('.'))
-        .replace('.', "")
-}
-
 /// `MOVE_ACTION_HIT` of `MoveAction` as `HIT`.
 fn member(e: &EnumDescriptor, value: &str) -> String {
-    let mut prefix = String::new();
-    for (i, c) in e.name().chars().enumerate() {
-        if c.is_ascii_uppercase() && i > 0 {
-            prefix.push('_');
-        }
-        prefix.push(c.to_ascii_uppercase());
-    }
-    prefix.push('_');
-    py_name(value.strip_prefix(&prefix).unwrap_or(value))
+    py_name(wire_name(e, value))
 }
 
 /// The plain type of one value of `kind`, and its zero where it has one.
@@ -950,18 +935,15 @@ fn domain_py(served: &str, unit: &Unit) -> String {
 /// `Reason` enum as its `reason`; an unset reason keys as the refusal
 /// alone.
 fn diagnostic(refusal: &MessageDescriptor) -> String {
-    let base = crate::refusal_key(refusal.full_name(), None);
-    let key = match crate::rust::refusal_reason(refusal) {
+    let base = refusal_key(refusal.full_name(), None);
+    let key = match refusal_reason(refusal) {
         Some(reason) => {
             let enum_type = local_name(reason.full_name(), reason.package_name());
             let entries: String = reason
                 .values()
                 .filter(|v| v.number() != 0)
                 .map(|v| {
-                    let key = crate::refusal_key(
-                        refusal.full_name(),
-                        Some(crate::rust::wire_name(&reason, v.name())),
-                    );
+                    let key = refusal_key(refusal.full_name(), Some(wire_name(&reason, v.name())));
                     format!(
                         "            {enum_type}.{}: {key:?},\n",
                         member(&reason, v.name())
@@ -975,7 +957,7 @@ fn diagnostic(refusal: &MessageDescriptor) -> String {
     // The status its code is refused with (decision 14.52), a
     // google.rpc.Code number: its Reason value's refusal_status, else
     // FAILED_PRECONDITION (9).
-    let status = match crate::rust::refusal_reason(refusal) {
+    let status = match refusal_reason(refusal) {
         Some(reason) => {
             let enum_type = local_name(reason.full_name(), reason.package_name());
             let entries: String = reason

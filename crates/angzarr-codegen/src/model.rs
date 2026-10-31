@@ -195,14 +195,14 @@ pub(crate) fn build_markup(
                 package
                     .enums
                     .iter()
-                    .map(|e| (e.full_name(), crate::rust::enum_name(e))),
+                    .map(|e| (e.full_name(), crate::common::enum_name(e))),
             );
         refuse_reserved(names.clone())?;
         // A command refusing several types refuses with a choice the
         // domain layer names after it: no domain type may take that name.
         for component in &package.components {
             for input in component.inputs.iter().filter(|i| i.refuses.len() > 1) {
-                let choice = crate::rust::refusal_choice_name(&input.message);
+                let choice = crate::common::refusal_choice_name(&input.message);
                 if let Some((full, _)) = names.clone().find(|(_, local)| *local == choice) {
                     return Err(CodegenError::RefusalChoiceName {
                         message: full.to_string(),
@@ -612,7 +612,7 @@ fn check_refusal_statuses(
     }
     for e in enums {
         let codes = e.parent_message().filter(|m| {
-            refused.contains(m.full_name()) && crate::rust::refusal_reason(m).as_ref() == Some(&e)
+            refused.contains(m.full_name()) && crate::common::refusal_reason(m).as_ref() == Some(&e)
         });
         for value in e.values() {
             let marked = value.options().has_extension(&status_ext);

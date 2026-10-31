@@ -31,9 +31,9 @@ use std::fmt;
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 use serde::Deserialize;
 
+use crate::common::snake;
 use crate::error::CodegenError;
 use crate::model::{self, Component, ComponentKind};
-use crate::rust::snake;
 use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr-embedded commit a generated application's `Cargo.toml` pins

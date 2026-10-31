@@ -79,7 +79,7 @@ pub(crate) fn well_formed(name: &str) -> bool {
 /// follows a lower-case letter or a digit, or that is followed by a
 /// lower-case letter and follows a capital, then all lower-case.
 pub fn kebab(name: &str) -> String {
-    crate::rust::snake(name).replace('_', "-")
+    crate::common::snake(name).replace('_', "-")
 }
 
 /// One component of a descriptor set and its name in an application.

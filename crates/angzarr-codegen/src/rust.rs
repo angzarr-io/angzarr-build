@@ -13,6 +13,10 @@ use proc_macro2::{Span, TokenStream};
 use prost_reflect::{EnumDescriptor, FieldDescriptor, Kind, MessageDescriptor};
 use quote::{format_ident, quote};
 
+use crate::common::{
+    enum_name, has_code_status, refusal_choice_name, refusal_key, refusal_reason, screaming,
+    wire_name,
+};
 use crate::model::{Package, TIMESTAMP};
 
 /// The runtime crate the generated code targets, as its Rust identifier:
@@ -205,17 +209,6 @@ fn wire_settings(messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStrea
 
         #(#checks)*
     }
-}
-
-/// An enum's domain name: its name, after its enclosing messages' names
-/// when it is nested (`SeatOutcome.Outcome` as `SeatOutcomeOutcome`).
-pub(crate) fn enum_name(e: &EnumDescriptor) -> String {
-    let full = e.full_name();
-    let package = e.package_name();
-    let local = full
-        .strip_prefix(package)
-        .map_or(full, |rest| rest.trim_start_matches('.'));
-    local.replace('.', "")
 }
 
 /// The domain's untyped rejection: a diagnostic key and its args, never
@@ -464,18 +457,6 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
     }
 }
 
-/// Whether a refusal of `input` is refused under its code's status
-/// (decision 14.52): one of its refuses types has a Reason.
-pub(crate) fn has_code_status(input: &crate::model::Input) -> bool {
-    input.refuses.iter().any(|r| refusal_reason(r).is_some())
-}
-
-/// The name of the choice a command refusing several types refuses with
-/// (`<Command>Refuses`), in the domain layer.
-pub(crate) fn refusal_choice_name(command: &MessageDescriptor) -> String {
-    format!("{}Refuses", command.name())
-}
-
 /// What a command naming several `refuses` types refuses with: one of
 /// them, each `From` its type, its diagnostic the chosen one's, and
 /// `widen`, which hands the adapter's markup its own choice.
@@ -596,43 +577,6 @@ fn business_status(code: i32) -> syn::Ident {
             _ => "FailedPrecondition",
         }
     )
-}
-
-/// The diagnostic key of a typed refusal (decision 14.50): its message's
-/// full name, then the reason's wire name when it has one (its `Reason`
-/// value's name without the enum's prefix), `.` and `_` as `-`, all
-/// lower-case: `refusals.v1.BetRefused` refusing `REASON_ALREADY_BET` is
-/// `refusals-v1-betrefused-already-bet`. The generated `Diagnostic::code`
-/// is this; a hand-written refusal reproduces it with this function.
-pub fn refusal_key(full_name: &str, reason: Option<&str>) -> String {
-    let key = match reason {
-        Some(reason) => format!("{full_name}-{reason}"),
-        None => full_name.to_string(),
-    };
-    key.replace(['.', '_'], "-").to_lowercase()
-}
-
-/// A typed refusal's rejection codes (decision 14.50): the nested `Reason`
-/// enum it declares as its singular `reason` field, which its diagnostic
-/// key reads; `None` for a refusal without one.
-pub(crate) fn refusal_reason(message: &MessageDescriptor) -> Option<EnumDescriptor> {
-    let field = message
-        .get_field_by_name("reason")
-        .filter(|f| !f.is_list())?;
-    match field.kind() {
-        Kind::Enum(e) if e.name() == "Reason" && e.parent_message().as_ref() == Some(message) => {
-            Some(e)
-        }
-        _ => None,
-    }
-}
-
-/// An enum value's wire name: its name without the enum's prefix
-/// (`REASON_ALREADY_BET` of `Reason` as `ALREADY_BET`), what ErrorInfo
-/// carries and an arg holds.
-pub(crate) fn wire_name<'a>(e: &EnumDescriptor, value: &'a str) -> &'a str {
-    let prefix = format!("{}_", screaming(e.name()));
-    value.strip_prefix(&prefix).unwrap_or(value)
 }
 
 /// The statement pushing `field` onto a refusal's args when it is set:
@@ -969,40 +913,6 @@ impl Shape {
 pub(crate) fn ident(name: &str) -> syn::Ident {
     syn::parse_str::<syn::Ident>(name)
         .unwrap_or_else(|_| syn::Ident::new_raw(name, Span::call_site()))
-}
-
-/// `BuyInWallet` as `buy_in_wallet`: a word starts at an uppercase letter
-/// after a lowercase one or a digit, or before a lowercase one in a run of
-/// uppercase (`HTTPServer` as `http_server`).
-pub(crate) fn snake(camel: &str) -> String {
-    let chars: Vec<char> = camel.chars().collect();
-    let mut out = String::new();
-    for (i, c) in chars.iter().enumerate() {
-        if c.is_ascii_uppercase() && i > 0 {
-            let before = chars[i - 1];
-            let after = chars.get(i + 1);
-            if before.is_ascii_lowercase()
-                || before.is_ascii_digit()
-                || (before.is_ascii_uppercase() && after.is_some_and(char::is_ascii_lowercase))
-            {
-                out.push('_');
-            }
-        }
-        out.push(c.to_ascii_lowercase());
-    }
-    out
-}
-
-/// `CartState` as `CART_STATE`.
-fn screaming(camel: &str) -> String {
-    let mut out = String::new();
-    for (i, c) in camel.chars().enumerate() {
-        if c.is_ascii_uppercase() && i > 0 {
-            out.push('_');
-        }
-        out.push(c.to_ascii_uppercase());
-    }
-    out
 }
 
 /// `SHIPPED_LATE` as `ShippedLate`.

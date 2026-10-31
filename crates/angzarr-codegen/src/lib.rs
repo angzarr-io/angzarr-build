@@ -7,6 +7,7 @@
 //! decodes a set.
 
 mod app;
+mod common;
 mod descriptor;
 mod error;
 mod model;
@@ -19,10 +20,10 @@ pub use app::{
     ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate,
     Exposure, RetrySeed, app, app_lint_samples, in_process_components, lint_app, remote_domains,
 };
+pub use common::refusal_key;
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
 pub use error::{CodegenError, diagnostic_samples};
 pub use names::{ComponentName, NameKind, NameOf, component_name, component_names, kebab};
-pub use rust::refusal_key;
 
 /// The one comment line every file the generator writes opens with, in
 /// the file's own comment syntax: angzarr-cli's LICENSE-EXCEPTION (owner
