@@ -438,6 +438,53 @@ fn test_complete_takes_a_method_naming_its_event_otherwise_as_present() {
     assert_eq!(complete(&fresh, &renamed), Ok(None));
 }
 
+/// A method the user has, its signature written otherwise than the
+/// scaffold writes it: the reader takes its first input by the
+/// parameter list's own brackets, so nothing inside them that is not a
+/// parameter (a default's call, a comment, a quoted annotation, a
+/// subscript's comma) moves it.
+#[test]
+fn test_complete_reads_a_signature_written_otherwise_as_present() {
+    let fresh = file(&player(), INTERFACE).clone();
+    let header = "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    )";
+    assert!(fresh.source.contains(header));
+    for written in [
+        // A default calling a constructor: its `)` is not the list's.
+        "    def decide_move(\n        self, cmd: DecideMove = DecideMove(), state: PlayerState = PlayerState(), ctx: CommandContext = None\n    )",
+        // A comment holding a `)` before the input.
+        "    def decide_move(\n        self,  # the logic (its own)\n        cmd: DecideMove,\n        state: PlayerState,\n        ctx: CommandContext,\n    )",
+        // A quoted (forward) annotation.
+        "    def decide_move(\n        self, cmd: \"DecideMove\", state: PlayerState, ctx: CommandContext\n    )",
+        // The state first, a subscript with a comma in its annotation.
+        "    def decide_move(\n        self, state: dict[str, int], cmd: DecideMove, ctx: CommandContext\n    )",
+    ] {
+        let user = fresh.source.replace(header, written);
+        assert_ne!(user, fresh.source);
+        assert_eq!(complete(&fresh, &user), Ok(None), "{written}");
+    }
+}
+
+/// A method whose input is taken as a fact where the proto declares a
+/// command is refused however its signature is written.
+#[test]
+fn test_complete_refuses_a_command_taken_as_a_fact_behind_a_default() {
+    let fresh = file(&player(), INTERFACE).clone();
+    let user = fresh.source.replace(
+        "cmd: DecideMove, state: PlayerState, ctx: CommandContext",
+        "fact: DecideMove = DecideMove(), state: PlayerState = None, ctx: CommandContext = None",
+    );
+    assert_ne!(user, fresh.source);
+    assert_eq!(
+        complete(&fresh, &user),
+        Err(CodegenError::InputMismatch {
+            path: INTERFACE.to_string(),
+            message: "io.angzarr.examples.v1.DecideMove".to_string(),
+            expected: "cmd".to_string(),
+            found: "fact".to_string(),
+        })
+    );
+}
+
 // ------------------------------------------------------------- field shapes
 
 const BASKET: &[&str] = &["pyshop/v1/mood.proto", "pyshop/v1/basket.proto"];
