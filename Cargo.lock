@@ -58,12 +58,12 @@ dependencies = [
 [[package]]
 name = "angzarr-diagnostic"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe#a75eb28f8416ca485aea2e28fe7b45924404d3fe"
+source = "git+https://github.com/angzarr-io/angzarr?rev=d5bb6692bd0fbc6ed8450b1db280578de21a48bc#d5bb6692bd0fbc6ed8450b1db280578de21a48bc"
 
 [[package]]
 name = "angzarr-embedded-host-config"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=77e62062765446d0a339f05bcb69a9593a30b94e#77e62062765446d0a339f05bcb69a9593a30b94e"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=a9374883218474da2cdeaa4c05a07a4ff70a91f3#a9374883218474da2cdeaa4c05a07a4ff70a91f3"
 dependencies = [
  "angzarr-yaml",
  "serde",
@@ -84,7 +84,7 @@ dependencies = [
 [[package]]
 name = "angzarr-proto"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe#a75eb28f8416ca485aea2e28fe7b45924404d3fe"
+source = "git+https://github.com/angzarr-io/angzarr?rev=d5bb6692bd0fbc6ed8450b1db280578de21a48bc#d5bb6692bd0fbc6ed8450b1db280578de21a48bc"
 dependencies = [
  "bytes",
  "prost",
@@ -96,7 +96,7 @@ dependencies = [
 [[package]]
 name = "angzarr-yaml"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=a75eb28f8416ca485aea2e28fe7b45924404d3fe#a75eb28f8416ca485aea2e28fe7b45924404d3fe"
+source = "git+https://github.com/angzarr-io/angzarr?rev=d5bb6692bd0fbc6ed8450b1db280578de21a48bc#d5bb6692bd0fbc6ed8450b1db280578de21a48bc"
 dependencies = [
  "angzarr-diagnostic",
  "serde",

@@ -7,7 +7,7 @@
 use angzarr_embedded::markup::{Commands, PolicyContext};
 use angzarr_embedded_macros::{on_event, policy};
 use angzarr_router::error::CodedError;
-use angzarr_router::pb;
+use angzarr_embedded::angzarr_proto::v1 as pb;
 use angzarr_router::router::ProjectorHandler;
 
 /// Counts the ledger's events, a committed book at a time.
