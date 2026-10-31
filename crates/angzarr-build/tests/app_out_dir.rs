@@ -11,8 +11,13 @@ fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
     let out = root.join("out");
     std::fs::create_dir_all(&out).unwrap();
     std::fs::write(
-        root.join("angzarr.toml"),
-        "[[component]]\nname = \"carts\"\nkind = \"domain\"\nlanguage = \"rust\"\n",
+        root.join("angzarr.yaml"),
+        "schema_version: 1\
+         \ncomponent:\
+         \n  - name: carts\
+         \n    kind: domain\
+         \n    language: rust\
+         \n",
     )
     .unwrap();
     // SAFETY: this binary's one test; nothing else reads the environment.
@@ -24,7 +29,7 @@ fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
         .join("../angzarr-codegen/tests/fixtures")
         .display()
         .to_string();
-    angzarr_build::app("angzarr.toml", &["shop/v1/shop.proto"], &[&fixtures]).unwrap();
+    angzarr_build::app("angzarr.yaml", &["shop/v1/shop.proto"], &[&fixtures]).unwrap();
     let register = std::fs::read_to_string(out.join("angzarr-register.rs")).unwrap();
     assert!(register.contains("adapters::Cart"), "{register}");
     // Over a domain crate: the same layer, but no wire types or domain
@@ -33,7 +38,7 @@ fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
     std::fs::create_dir_all(&over).unwrap();
     // SAFETY: as above.
     unsafe { std::env::set_var("OUT_DIR", &over) };
-    angzarr_build::app_without_domain("angzarr.toml", &["shop/v1/shop.proto"], &[&fixtures])
+    angzarr_build::app_without_domain("angzarr.yaml", &["shop/v1/shop.proto"], &[&fixtures])
         .unwrap();
     assert!(over.join("angzarr-register.rs").exists());
     assert!(!over.join("shop.v1.domain.rs").exists());

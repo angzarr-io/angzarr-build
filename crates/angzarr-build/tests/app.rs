@@ -20,7 +20,7 @@ const BUYIN: &[&str] = &[
 const SHOP: &[&str] = &["shop/v1/shop.proto"];
 const APP_FILES: &[&str] = &[
     "Cargo.toml",
-    "angzarr.toml",
+    "angzarr.yaml",
     "build.rs",
     "src/driver.rs",
     "src/main.rs",
@@ -118,11 +118,11 @@ fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_cl
     let root = empty_dir();
     scaffold(&root, SHOP, &seed());
     let config = format!(
-        "{}\n[retry]\nmax_retries = 9\n",
-        read(&root, "angzarr.toml")
+        "{}\nretry:\n  max_retries: 9\n",
+        read(&root, "angzarr.yaml")
     );
     let driver = "// mine\npub async fn drive(_: &angzarr_embedded_host::App) -> Result<(), Box<dyn std::error::Error>> { Ok(()) }\n";
-    std::fs::write(root.join("angzarr.toml"), &config).unwrap();
+    std::fs::write(root.join("angzarr.yaml"), &config).unwrap();
     std::fs::write(root.join("src/driver.rs"), driver).unwrap();
     let main = read(&root, "src/main.rs");
     let build = read(&root, "build.rs");
@@ -142,13 +142,13 @@ fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_cl
         actions(&root, &scaffold(&root, SHOP, &other)),
         [
             ("Cargo.toml".to_string(), "kept"),
-            ("angzarr.toml".to_string(), "kept"),
+            ("angzarr.yaml".to_string(), "kept"),
             ("build.rs".to_string(), "regenerated"),
             ("src/driver.rs".to_string(), "kept"),
             ("src/main.rs".to_string(), "regenerated"),
         ]
     );
-    assert_eq!(read(&root, "angzarr.toml"), config);
+    assert_eq!(read(&root, "angzarr.yaml"), config);
     assert_eq!(read(&root, "src/driver.rs"), driver);
     assert_eq!(read(&root, "src/main.rs"), main);
     assert_eq!(read(&root, "build.rs"), build);
@@ -162,13 +162,13 @@ fn an_edit_to_the_config_is_followed_by_the_next_main() {
     assert!(read(&root, "src/main.rs").contains("pub mod buy_in;"));
     // The user moves the buy-in (its process manager, pmg-buyin) to a
     // Python child.
-    let config = read(&root, "angzarr.toml").replace(
-        "name = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"rust\"\n",
-        "name = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"python\"\n\
-         entry = [\"angzarr-buyin\"]\n",
+    let config = read(&root, "angzarr.yaml").replace(
+        "  - name: pmg-buyin\n    kind: domain\n    language: rust\n",
+        "  - name: pmg-buyin\n    kind: domain\n    language: python\n    \
+         entry: [angzarr-buyin]\n",
     );
-    assert_ne!(config, read(&root, "angzarr.toml"));
-    std::fs::write(root.join("angzarr.toml"), &config).unwrap();
+    assert_ne!(config, read(&root, "angzarr.yaml"));
+    std::fs::write(root.join("angzarr.yaml"), &config).unwrap();
     scaffold(&root, BUYIN, &seed());
     let main = read(&root, "src/main.rs");
     assert!(!main.contains("pub mod buy_in;"), "{main}");
@@ -198,11 +198,18 @@ fn a_config_with_lints_is_refused_and_nothing_is_written() {
 #[test]
 fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_command_and_event_sets() {
     let out = empty_dir();
-    let config = out.join("angzarr.toml");
+    let config = out.join("angzarr.yaml");
     std::fs::write(
         &config,
-        "[[component]]\nname = \"wallet\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
-         [[component]]\nname = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"python\"\n",
+        "schema_version: 1\
+         \ncomponent:\
+         \n  - name: wallet\
+         \n    kind: domain\
+         \n    language: rust\
+         \n  - name: pmg-buyin\
+         \n    kind: domain\
+         \n    language: python\
+         \n",
     )
     .unwrap();
     app_into(&out, &config, BUYIN, &[&fixtures()]).unwrap();
@@ -238,11 +245,18 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_command_and_eve
 #[test]
 fn app_without_domain_into_writes_the_layer_but_the_wire_types_and_domain_layer() {
     let out = empty_dir();
-    let config = out.join("angzarr.toml");
+    let config = out.join("angzarr.yaml");
     std::fs::write(
         &config,
-        "[[component]]\nname = \"wallet\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
-         [[component]]\nname = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"python\"\n",
+        "schema_version: 1\
+         \ncomponent:\
+         \n  - name: wallet\
+         \n    kind: domain\
+         \n    language: rust\
+         \n  - name: pmg-buyin\
+         \n    kind: domain\
+         \n    language: python\
+         \n",
     )
     .unwrap();
     app_without_domain_into(&out, &config, BUYIN, &[&fixtures()]).unwrap();
@@ -273,7 +287,7 @@ fn rescaffolding_follows_the_domain_crate_the_manifest_on_disk_names() {
         actions(&root, &done),
         [
             ("Cargo.toml".to_string(), "kept"),
-            ("angzarr.toml".to_string(), "kept"),
+            ("angzarr.yaml".to_string(), "kept"),
             ("build.rs".to_string(), "regenerated"),
             ("src/driver.rs".to_string(), "kept"),
             ("src/main.rs".to_string(), "regenerated"),
@@ -298,7 +312,7 @@ fn rescaffolding_follows_the_domain_crate_the_manifest_on_disk_names() {
 #[test]
 fn a_config_that_cannot_be_read_is_an_error_not_a_new_config() {
     let root = empty_dir();
-    std::fs::create_dir_all(root.join("angzarr.toml")).unwrap();
+    std::fs::create_dir_all(root.join("angzarr.yaml")).unwrap();
     let refused = app_scaffold_into(&root, SHOP, &[&fixtures()], &seed());
     assert!(matches!(refused, Err(BuildError::Io { .. })), "{refused:?}");
     std::fs::remove_dir_all(&root).unwrap();

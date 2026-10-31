@@ -85,7 +85,7 @@ fn a_users_existing_file_is_headed_once() {
     let shop = &["shop/v1/shop.proto"];
     let set = descriptors(shop);
     let first = app(&set, shop, &seed, None, None).unwrap();
-    let config = first.iter().find(|f| f.path == "angzarr.toml").unwrap();
+    let config = first.iter().find(|f| f.path == "angzarr.yaml").unwrap();
     let manifest = first.iter().find(|f| f.path == "Cargo.toml").unwrap();
     let again = app(
         &set,
