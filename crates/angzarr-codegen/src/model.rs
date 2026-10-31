@@ -252,13 +252,18 @@ pub(crate) fn refuse_reserved<'a>(
     Ok(())
 }
 
+/// `descriptor_set` decoded, refused when it is not a descriptor set.
+pub(crate) fn decode(descriptor_set: &[u8]) -> Result<DescriptorPool, CodegenError> {
+    DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
+        detail: e.to_string(),
+    })
+}
+
 /// Every marked-up component of every file in the descriptor set, so a
 /// scaffold finds the owners of a policy's domains declared outside the
 /// files it scaffolds.
 pub(crate) fn pool_components(descriptor_set: &[u8]) -> Result<Vec<Component>, CodegenError> {
-    let pool = DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
-        detail: e.to_string(),
-    })?;
+    let pool = decode(descriptor_set)?;
     let names: Vec<String> = pool.files().map(|f| f.name().to_string()).collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     components(descriptor_set, &names, WRITE_KINDS)
@@ -301,9 +306,7 @@ pub(crate) fn components(
     files: &[&str],
     kinds: &[ComponentKind],
 ) -> Result<Vec<Component>, CodegenError> {
-    let pool = DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
-        detail: e.to_string(),
-    })?;
+    let pool = decode(descriptor_set)?;
     let mut messages = Vec::new();
     for file in files {
         let found = pool
@@ -324,276 +327,323 @@ pub(crate) fn components(
         }
     }
     // A set that never imported options.proto declares no component.
-    let Some(component_ext) = pool.get_extension_by_name(COMPONENT) else {
+    let Some(markup) = Markup::of(&pool) else {
         return Ok(Vec::new());
     };
-    let command_ext = pool.get_extension_by_name(COMMAND);
-    let event_ext = pool.get_extension_by_name(EVENT);
-
-    let mut components: Vec<Component> = Vec::new();
-    // Each component's listed sources (a projector's input_domains or
-    // input_domain), by index: what its (event) entries are held to.
-    let mut listed: Vec<Option<Vec<String>>> = Vec::new();
+    let mut declared = Vec::new();
     for message in &messages {
-        if let Some((component, sources)) =
-            declared_component(&pool, &component_ext, message, kinds)?
-        {
-            components.push(component);
-            listed.push(sources);
-        }
+        declared.extend(markup.declared(message, kinds)?);
     }
-
     // Events first, so a command's `emits` can be checked against them.
-    let seen = match &event_ext {
-        Some(event_ext) => attach_events(&mut components, &listed, &declaring, event_ext)?,
-        None => vec![Vec::new(); components.len()],
-    };
-    check_projected(&components, &listed, &seen)?;
-    if let Some(command_ext) = &command_ext {
-        for message in &declaring {
-            let options = message.options();
-            if !options.has_extension(command_ext) {
-                continue;
-            }
-            let Some(declared) = message_value(&options, command_ext) else {
-                continue;
-            };
-            let named = string_field(&declared, "component");
-            let Some(component) = owner(&mut components, &pool, &component_ext, message, &named)?
-            else {
-                continue;
-            };
-            let input = command_input(&pool, component, message, &declared)?;
-            component.inputs.push(input);
+    for message in &declaring {
+        for consumer in markup.consumers(message) {
+            attach_event(&mut declared, message, &consumer)?;
         }
     }
-    check_refusal_statuses(&pool, files, &declaring, command_ext.as_ref())?;
-    Ok(components)
-}
-
-/// A declared component, with its listed sources.
-type Declared = (Component, Option<Vec<String>>);
-
-/// The component `message` declares, with its listed sources (see
-/// [`projector_sources`]): `None` when it declares none, or is a projector
-/// and `kinds` takes none.
-fn declared_component(
-    pool: &DescriptorPool,
-    component_ext: &ExtensionDescriptor,
-    message: &MessageDescriptor,
-    kinds: &[ComponentKind],
-) -> Result<Option<Declared>, CodegenError> {
-    let options = message.options();
-    if !options.has_extension(component_ext) {
-        return Ok(None);
+    for component in &declared {
+        component.check_projected()?;
     }
-    let Some(declared) = message_value(&options, component_ext) else {
-        return Ok(None);
-    };
-    let number = enum_field(&declared, "kind");
-    // The markup is the write side: a projector beside it is skipped,
-    // not refused.
-    if number == PROJECTOR && !kinds.contains(&ComponentKind::Projector) {
-        return Ok(None);
-    }
-    let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
-        return Err(CodegenError::UnsupportedKind {
-            component: message.full_name().to_string(),
-            kind: number,
-        });
-    };
-    let resolutions = resolutions(pool, &options, message)?;
-    let name = match string_field(&declared, "name") {
-        n if n.is_empty() => message.name().to_string(),
-        n => n,
-    };
-    let (domain, input_domain, output_domain) = (
-        string_field(&declared, "domain"),
-        string_field(&declared, "input_domain"),
-        string_field(&declared, "output_domain"),
-    );
-    let input_domains = projector_sources(message, kind, &declared, &input_domain)?;
-    let component_name = crate::names::unchecked(&crate::names::NameOf {
-        kind: kind.name_kind(),
-        component_name: &string_field(&declared, "component_name"),
-        domain: &domain,
-        input_domain: &input_domain,
-        output_domain: &output_domain,
-        anchor: message.name(),
-    });
-    if !crate::names::well_formed(&component_name) {
-        return Err(CodegenError::ComponentName {
-            component: message.full_name().to_string(),
-            name: component_name,
-        });
-    }
-    let component = Component {
-        anchor: message.clone(),
-        kind,
-        name,
-        component_name,
-        domain,
-        input_domain,
-        output_domain,
-        inputs: Vec::new(),
-        events: Vec::new(),
-        sources: input_domains.clone().unwrap_or_default(),
-        resolutions,
-    };
-    Ok(Some((component, input_domains)))
-}
-
-/// A component's state's conflict resolutions, refusing COMMUTATIVE, which
-/// is not generated yet.
-fn resolutions(
-    pool: &DescriptorPool,
-    options: &DynamicMessage,
-    message: &MessageDescriptor,
-) -> Result<Vec<i32>, CodegenError> {
-    let commutative = pool
-        .get_enum_by_name(RESOLUTION)
-        .and_then(|e| e.get_value_by_name(COMMUTATIVE))
-        .map(|v| v.number());
-    let resolutions: Vec<i32> = pool
-        .get_extension_by_name(STATE)
-        .and_then(|state_ext| message_value(options, &state_ext))
-        .map(|state| list_field(&state, "conflict_resolutions"))
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|v| v.as_enum_number())
-        .collect();
-    if commutative.is_some_and(|c| resolutions.contains(&c)) {
-        return Err(CodegenError::Commutative {
-            component: message.full_name().to_string(),
-        });
-    }
-    Ok(resolutions)
-}
-
-/// Each `(event)` entry's message added to the events of the component it
-/// names, and its source domain to that component's sources (or held to
-/// its listed ones). Returns each component's sources its entries named,
-/// by index.
-fn attach_events(
-    components: &mut [Component],
-    listed: &[Option<Vec<String>>],
-    declaring: &[MessageDescriptor],
-    event_ext: &ExtensionDescriptor,
-) -> Result<Vec<Vec<String>>, CodegenError> {
-    let mut seen: Vec<Vec<String>> = vec![Vec::new(); components.len()];
-    for message in declaring {
-        let options = message.options();
-        if !options.has_extension(event_ext) {
-            continue;
-        }
-        for consumer in options.get_extension(event_ext).as_list().unwrap_or(&[]) {
-            let Value::Message(consumer) = consumer else {
-                continue;
-            };
-            let named = string_field(consumer, "component");
-            // A consumer outside the set is a reference to a component
-            // generated elsewhere (decision 14.50), skipped.
-            let Some(index) = components
-                .iter()
-                .position(|c| c.anchor.full_name() == named)
-            else {
-                continue;
-            };
-            let component = &mut components[index];
-            if !component.events.contains(message) {
-                component.events.push(message.clone());
-            }
-            let source = string_field(consumer, "domain");
-            match &listed[index] {
-                // A projector listing its sources: each entry names one
-                // of them (an entry of one input_domain may leave it
-                // unset).
-                Some(list) => {
-                    let unset_of_one = source.is_empty() && component.input_domain == list[0];
-                    if !unset_of_one && !list.contains(&source) {
-                        return Err(CodegenError::UnlistedSource {
-                            component: component.anchor.full_name().to_string(),
-                            event: message.full_name().to_string(),
-                            domain: source,
-                        });
-                    }
-                    seen[index].push(source);
-                }
-                None => {
-                    if !source.is_empty() && !component.sources.contains(&source) {
-                        component.sources.push(source);
-                    }
-                }
-            }
+    for message in &declaring {
+        if let Some(command) = markup.command(message) {
+            markup.attach_input(&mut declared, message, &command)?;
         }
     }
-    Ok(seen)
+    check_refusal_statuses(&markup, files, &declaring)?;
+    Ok(declared.into_iter().map(|d| d.component).collect())
 }
 
-/// Refuses a projector listing its sources in input_domains one of which
-/// no `(event)` entry for it names (`seen`, by index).
-fn check_projected(
-    components: &[Component],
-    listed: &[Option<Vec<String>>],
-    seen: &[Vec<String>],
-) -> Result<(), CodegenError> {
-    for ((component, list), seen) in components.iter().zip(listed).zip(seen) {
-        let Some(list) = list.as_ref().filter(|_| component.input_domain.is_empty()) else {
-            continue;
+/// angzarr's declaration options as a descriptor set has them:
+/// `(component)`, and `(command)`, `(event)` and `(state)` where its
+/// options.proto declares them.
+struct Markup<'a> {
+    pool: &'a DescriptorPool,
+    component: ExtensionDescriptor,
+    command: Option<ExtensionDescriptor>,
+    event: Option<ExtensionDescriptor>,
+    state: Option<ExtensionDescriptor>,
+}
+
+impl<'a> Markup<'a> {
+    /// `None` for a set that never imported options.proto.
+    fn of(pool: &'a DescriptorPool) -> Option<Markup<'a>> {
+        Some(Markup {
+            pool,
+            component: pool.get_extension_by_name(COMPONENT)?,
+            command: pool.get_extension_by_name(COMMAND),
+            event: pool.get_extension_by_name(EVENT),
+            state: pool.get_extension_by_name(STATE),
+        })
+    }
+
+    /// The `(component)` `message` declares.
+    fn component(&self, message: &MessageDescriptor) -> Option<DynamicMessage> {
+        values(message, Some(&self.component)).pop()
+    }
+
+    /// The `(command)` `message` declares: it is an input.
+    fn command(&self, message: &MessageDescriptor) -> Option<DynamicMessage> {
+        values(message, self.command.as_ref()).pop()
+    }
+
+    /// The `(event)` entries of `message`: each a component consuming it.
+    fn consumers(&self, message: &MessageDescriptor) -> Vec<DynamicMessage> {
+        values(message, self.event.as_ref())
+    }
+
+    /// The `(state)` `message` declares.
+    fn state(&self, message: &MessageDescriptor) -> Option<DynamicMessage> {
+        values(message, self.state.as_ref()).pop()
+    }
+
+    /// The component `message` declares, refusing a kind outside `kinds`;
+    /// `None` when it declares none, or is a projector and `kinds` takes
+    /// none.
+    fn declared(
+        &self,
+        message: &MessageDescriptor,
+        kinds: &[ComponentKind],
+    ) -> Result<Option<Declared>, CodegenError> {
+        let Some(declared) = self.component(message) else {
+            return Ok(None);
         };
-        if let Some(unnamed) = list.iter().find(|d| !seen.contains(d)) {
-            return Err(CodegenError::UnprojectedSource {
-                component: component.anchor.full_name().to_string(),
-                domain: unnamed.clone(),
+        let number = enum_field(&declared, "kind");
+        // The markup is the write side: a projector beside it is skipped,
+        // not refused.
+        if number == PROJECTOR && !kinds.contains(&ComponentKind::Projector) {
+            return Ok(None);
+        }
+        let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
+            return Err(CodegenError::UnsupportedKind {
+                component: message.full_name().to_string(),
+                kind: number,
+            });
+        };
+        let resolutions = self.resolutions(message)?;
+        let name = match string_field(&declared, "name") {
+            n if n.is_empty() => message.name().to_string(),
+            n => n,
+        };
+        let (domain, input_domain, output_domain) = (
+            string_field(&declared, "domain"),
+            string_field(&declared, "input_domain"),
+            string_field(&declared, "output_domain"),
+        );
+        let listed = projector_sources(message, kind, &declared, &input_domain)?;
+        let component_name = crate::names::unchecked(&crate::names::NameOf {
+            kind: kind.name_kind(),
+            component_name: &string_field(&declared, "component_name"),
+            domain: &domain,
+            input_domain: &input_domain,
+            output_domain: &output_domain,
+            anchor: message.name(),
+        });
+        if !crate::names::well_formed(&component_name) {
+            return Err(CodegenError::ComponentName {
+                component: message.full_name().to_string(),
+                name: component_name,
             });
         }
+        Ok(Some(Declared {
+            listed: listed.is_some(),
+            named: Vec::new(),
+            component: Component {
+                anchor: message.clone(),
+                kind,
+                name,
+                component_name,
+                domain,
+                input_domain,
+                output_domain,
+                inputs: Vec::new(),
+                events: Vec::new(),
+                sources: listed.unwrap_or_default(),
+                resolutions,
+            },
+        }))
     }
-    Ok(())
+
+    /// A component's state's conflict resolutions (its `(state)` option's),
+    /// refusing COMMUTATIVE, which is not generated yet.
+    fn resolutions(&self, message: &MessageDescriptor) -> Result<Vec<i32>, CodegenError> {
+        let commutative = self
+            .pool
+            .get_enum_by_name(RESOLUTION)
+            .and_then(|e| e.get_value_by_name(COMMUTATIVE))
+            .map(|v| v.number());
+        let resolutions: Vec<i32> = self
+            .state(message)
+            .iter()
+            .flat_map(|state| list_field(state, "conflict_resolutions"))
+            .filter_map(|v| v.as_enum_number())
+            .collect();
+        if commutative.is_some_and(|c| resolutions.contains(&c)) {
+            return Err(CodegenError::Commutative {
+                component: message.full_name().to_string(),
+            });
+        }
+        Ok(resolutions)
+    }
+
+    /// The input the `(command)` `message` declares (`declared`) added to
+    /// the component it names, when that is generated here; refused when
+    /// nothing declares it.
+    fn attach_input(
+        &self,
+        components: &mut [Declared],
+        message: &MessageDescriptor,
+        declared: &DynamicMessage,
+    ) -> Result<(), CodegenError> {
+        let named = string_field(declared, "component");
+        if let Some(owner) = Declared::named(components, &named) {
+            let input = command_input(self.pool, &owner.component, message, declared)?;
+            owner.component.inputs.push(input);
+            return Ok(());
+        }
+        // Declared, but outside the files: generated elsewhere.
+        match self.pool.get_message_by_name(&named) {
+            Some(m) if m.options().has_extension(&self.component) => Ok(()),
+            _ => Err(CodegenError::UnknownComponent {
+                message: message.full_name().to_string(),
+                component: named,
+            }),
+        }
+    }
+}
+
+/// The values `message` sets of the message option `ext`: one for a
+/// singular option, each entry of a repeated one; none when it is unset, or
+/// the set lacks the option.
+fn values(message: &MessageDescriptor, ext: Option<&ExtensionDescriptor>) -> Vec<DynamicMessage> {
+    let options = message.options();
+    let Some(ext) = ext.filter(|ext| options.has_extension(ext)) else {
+        return Vec::new();
+    };
+    match options.get_extension(ext).into_owned() {
+        Value::Message(m) => vec![m],
+        Value::List(entries) => entries
+            .into_iter()
+            .filter_map(|v| match v {
+                Value::Message(m) => Some(m),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A component as it is declared: its `(event)` entries' source domains
+/// held to the ones it lists, when it lists them.
+struct Declared {
+    component: Component,
+    /// A projector listing its sources (`input_domains`, or its one
+    /// `input_domain`): they are its `sources`, and every entry names one.
+    listed: bool,
+    /// The listed sources its entries named.
+    named: Vec<String>,
+}
+
+impl Declared {
+    /// The one of `components` whose anchor is `full_name`.
+    fn named<'d>(components: &'d mut [Declared], full_name: &str) -> Option<&'d mut Declared> {
+        components
+            .iter_mut()
+            .find(|d| d.component.anchor.full_name() == full_name)
+    }
+
+    /// `event`, of an `(event)` entry for this component naming `source`
+    /// (empty: unset), added to its events, and `source` to its sources or
+    /// held to its listed ones (an entry of one input_domain may leave it
+    /// unset).
+    fn attach(&mut self, event: &MessageDescriptor, source: String) -> Result<(), CodegenError> {
+        let component = &mut self.component;
+        if !component.events.contains(event) {
+            component.events.push(event.clone());
+        }
+        if !self.listed {
+            if !source.is_empty() && !component.sources.contains(&source) {
+                component.sources.push(source);
+            }
+            return Ok(());
+        }
+        let unset_of_one = source.is_empty() && component.input_domain == component.sources[0];
+        if !unset_of_one && !component.sources.contains(&source) {
+            return Err(CodegenError::UnlistedSource {
+                component: component.anchor.full_name().to_string(),
+                event: event.full_name().to_string(),
+                domain: source,
+            });
+        }
+        self.named.push(source);
+        Ok(())
+    }
+
+    /// Refuses a projector listing its sources in input_domains one of
+    /// which no `(event)` entry for it names.
+    fn check_projected(&self) -> Result<(), CodegenError> {
+        let component = &self.component;
+        if !self.listed || !component.input_domain.is_empty() {
+            return Ok(());
+        }
+        match component.sources.iter().find(|d| !self.named.contains(d)) {
+            Some(unnamed) => Err(CodegenError::UnprojectedSource {
+                component: component.anchor.full_name().to_string(),
+                domain: unnamed.clone(),
+            }),
+            None => Ok(()),
+        }
+    }
+}
+
+/// The `(event)` entry `consumer` of `event` attached to the component it
+/// names. A consumer outside the set is a reference to a component
+/// generated elsewhere (decision 14.50), skipped.
+fn attach_event(
+    components: &mut [Declared],
+    event: &MessageDescriptor,
+    consumer: &DynamicMessage,
+) -> Result<(), CodegenError> {
+    match Declared::named(components, &string_field(consumer, "component")) {
+        Some(component) => component.attach(event, string_field(consumer, "domain")),
+        None => Ok(()),
+    }
 }
 
 /// The input the `(command)` `message` declares (`declared`) of
 /// `component`: its emits, held to the component's events, their
-/// cardinality, and its refusals.
+/// cardinality, and its refusals, each a message of `pool`.
 fn command_input(
     pool: &DescriptorPool,
     component: &Component,
     message: &MessageDescriptor,
     declared: &DynamicMessage,
 ) -> Result<Input, CodegenError> {
-    let mut emits = Vec::new();
-    for emitted in list_field(declared, "emits") {
-        let Value::String(event) = emitted else {
-            continue;
-        };
-        let Some(event) = component.events.iter().find(|e| e.full_name() == event) else {
-            return Err(CodegenError::UnknownEmit {
-                command: message.full_name().to_string(),
-                event: event.clone(),
-            });
-        };
-        emits.push(event.clone());
-    }
+    let command = || message.full_name().to_string();
+    let emits = strings_field(declared, "emits")
+        .into_iter()
+        .map(|event| {
+            let found = component.events.iter().find(|e| e.full_name() == event);
+            found.cloned().ok_or_else(|| CodegenError::UnknownEmit {
+                command: command(),
+                event,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let cardinality = cardinality(message, declared, emits.len())?;
     let fact = bool_field(declared, "fact");
-    let refused = list_field(declared, "refuses");
+    let refused = strings_field(declared, "refuses");
     if fact && !refused.is_empty() {
-        return Err(CodegenError::RefusesOnFact {
-            message: message.full_name().to_string(),
-        });
+        return Err(CodegenError::RefusesOnFact { message: command() });
     }
-    let mut refuses = Vec::new();
-    for refusal in refused {
-        let Value::String(refusal) = refusal else {
-            continue;
-        };
-        let found =
+    let refuses = refused
+        .into_iter()
+        .map(|refusal| {
             pool.get_message_by_name(&refusal)
                 .ok_or_else(|| CodegenError::UnknownRefusal {
-                    command: message.full_name().to_string(),
-                    refusal: refusal.clone(),
-                })?;
-        refuses.push(found);
-    }
+                    command: command(),
+                    refusal,
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(Input {
         message: message.clone(),
         emits,
@@ -655,27 +705,19 @@ pub(crate) fn refusal_status(value: &EnumValueDescriptor) -> i32 {
 /// `refusal_status` checked (C-0746): it must be a non-zero value of the
 /// nested `Reason` of a message some command of the set refuses with.
 fn check_refusal_statuses(
-    pool: &DescriptorPool,
+    markup: &Markup,
     files: &[&str],
     declaring: &[MessageDescriptor],
-    command_ext: Option<&ExtensionDescriptor>,
 ) -> Result<(), CodegenError> {
+    let pool = markup.pool;
     let Some(status_ext) = pool.get_extension_by_name(REFUSAL_STATUS) else {
         return Ok(());
     };
-    let mut refused: BTreeSet<String> = BTreeSet::new();
-    if let Some(command_ext) = command_ext {
-        for message in declaring {
-            if let Some(declared) = message_value(&message.options(), command_ext) {
-                refused.extend(list_field(&declared, "refuses").into_iter().filter_map(
-                    |v| match v {
-                        Value::String(s) => Some(s),
-                        _ => None,
-                    },
-                ));
-            }
-        }
-    }
+    let refused: BTreeSet<String> = declaring
+        .iter()
+        .filter_map(|message| markup.command(message))
+        .flat_map(|declared| strings_field(&declared, "refuses"))
+        .collect();
     fn nested(message: MessageDescriptor, out: &mut Vec<EnumDescriptor>) {
         out.extend(message.child_enums());
         for child in message.child_messages() {
@@ -718,13 +760,7 @@ fn projector_sources(
     input_domain: &str,
 ) -> Result<Option<Vec<String>>, CodegenError> {
     let component = || message.full_name().to_string();
-    let domains: Vec<String> = list_field(declared, "input_domains")
-        .into_iter()
-        .filter_map(|v| match v {
-            Value::String(s) => Some(s),
-            _ => None,
-        })
-        .collect();
+    let domains = strings_field(declared, "input_domains");
     if !domains.is_empty() && kind != ComponentKind::Projector {
         return Err(CodegenError::InputDomainsOnNonProjector {
             component: component(),
@@ -748,31 +784,6 @@ fn projector_sources(
         (ComponentKind::Projector, true, false) => Some(vec![input_domain.to_string()]),
         _ => None,
     })
-}
-
-/// The component a `(command)` names: `Some` when it is generated here,
-/// `None` when it is declared but outside `files`, and a refusal when
-/// nothing declares it.
-fn owner<'a>(
-    components: &'a mut [Component],
-    pool: &DescriptorPool,
-    component_ext: &ExtensionDescriptor,
-    message: &MessageDescriptor,
-    named: &str,
-) -> Result<Option<&'a mut Component>, CodegenError> {
-    if let Some(i) = components
-        .iter()
-        .position(|c| c.anchor.full_name() == named)
-    {
-        return Ok(components.get_mut(i));
-    }
-    match pool.get_message_by_name(named) {
-        Some(m) if m.options().has_extension(component_ext) => Ok(None),
-        _ => Err(CodegenError::UnknownComponent {
-            message: message.full_name().to_string(),
-            component: named.to_string(),
-        }),
-    }
 }
 
 /// The messages and enums reachable from a component's roots.
@@ -849,14 +860,6 @@ impl Reach {
     }
 }
 
-/// A message-typed option's value, as a dynamic message.
-fn message_value(options: &DynamicMessage, ext: &ExtensionDescriptor) -> Option<DynamicMessage> {
-    match options.get_extension(ext).into_owned() {
-        Value::Message(m) => Some(m),
-        _ => None,
-    }
-}
-
 fn string_field(message: &DynamicMessage, name: &str) -> String {
     match message.get_field_by_name(name).as_deref() {
         Some(Value::String(s)) => s.clone(),
@@ -876,6 +879,17 @@ fn enum_field(message: &DynamicMessage, name: &str) -> i32 {
         Some(Value::EnumNumber(n)) => *n,
         _ => 0,
     }
+}
+
+/// A repeated string field's values.
+fn strings_field(message: &DynamicMessage, name: &str) -> Vec<String> {
+    list_field(message, name)
+        .into_iter()
+        .filter_map(|v| match v {
+            Value::String(s) => Some(s),
+            _ => None,
+        })
+        .collect()
 }
 
 fn list_field(message: &DynamicMessage, name: &str) -> Vec<Value> {

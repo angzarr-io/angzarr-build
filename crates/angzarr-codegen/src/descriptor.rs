@@ -57,9 +57,7 @@ pub(crate) fn build(
     rules_version: &str,
 ) -> Result<Vec<(Component, Descriptor)>, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
-    let pool = DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
-        detail: e.to_string(),
-    })?;
+    let pool = model::decode(descriptor_set)?;
     components
         .into_iter()
         .map(|component| {
