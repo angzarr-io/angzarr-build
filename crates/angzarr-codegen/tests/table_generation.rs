@@ -198,10 +198,8 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
 
 // ------------------------------------------------------------- policies
 
-/// RED, and blocked on angzarr-embedded: the adapters carry a private
-/// `source_root` helper today, which a hand-written policy must copy. The
-/// trigger's root is the context's (`PolicyContext::source_root`, an
-/// angzarr-embedded change), so nothing is generated for it.
+/// The trigger's root is the context's (`PolicyContext::source_root`),
+/// which a hand-written policy calls too, so nothing is generated for it.
 #[test]
 fn test_policy_adapters_read_the_trigger_root_from_the_context() {
     let files = &[

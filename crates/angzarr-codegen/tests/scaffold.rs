@@ -406,7 +406,7 @@ fn test_adapters_forward_each_handlers_context() {
     );
     assert!(
         text(&reaction.block).starts_with(
-            "{letorders=crate::buy_in_wallet::BuyInWallet::buy_in_started(&self.0,&source_root(ctx),event,ctx,)?;"
+            "{letorders=crate::buy_in_wallet::BuyInWallet::buy_in_started(&self.0,&ctx.source_root().value,event,ctx,)?;"
         ),
         "{}",
         text(&reaction.block)

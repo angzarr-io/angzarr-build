@@ -738,19 +738,6 @@ pub fn adapters(
         };
         items.extend(tokens);
     }
-    if has_policy {
-        items.extend(quote! {
-            /// The root of the stream a policy's trigger was recorded on.
-            fn source_root(ctx: &PolicyContext) -> Vec<u8> {
-                ctx.trigger()
-                    .stream
-                    .as_ref()
-                    .and_then(|cover| cover.root.as_ref())
-                    .map(|root| root.value.to_vec())
-                    .unwrap_or_default()
-            }
-        });
-    }
     markup.sort();
     markup.dedup();
     macros.sort();
@@ -1125,7 +1112,7 @@ fn policy_adapter(
                 event: &#ty,
                 ctx: &PolicyContext,
             ) -> ::core::result::Result<Commands<#target_ty>, Bug> {
-                let orders = #interface::#m(&self.0, &source_root(ctx), event, ctx)?;
+                let orders = #interface::#m(&self.0, &ctx.source_root().value, event, ctx)?;
                 ::core::result::Result::Ok(orders
                     .into_iter()
                     .fold(Commands::none(), |commands, (root, command)| {
