@@ -193,23 +193,10 @@ pub fn scaffold_python(
         .map(|c| unit(c, &pool, translate))
         .collect::<Result<Vec<_>, _>>()?;
     refuse_python_names(&units)?;
-    let package = app.package();
-    let src = format!("src/{package}");
-    let served = served(app, &units[0]);
-    let mut out = project_files(app, &served, descriptor_set, files, &units)?;
-    let mut packages = BTreeSet::new();
-    for unit in &units {
-        out.extend(unit_files(app, &served, &src, unit, &mut packages));
-    }
-    let anchor = units[0].component.anchor.full_name();
-    for dir in packages {
-        out.push(ScaffoldFile {
-            component: anchor.to_string(),
-            path: format!("{src}/{dir}/__init__.py"),
-            source: GENERATED.to_string(),
-            owner: Owner::Generated,
-        });
-    }
+    let project = Project::new(app, &units);
+    let mut out = project.files(descriptor_set, files)?;
+    out.extend(units.iter().flat_map(|unit| project.unit_files(unit)));
+    out.extend(project.package_markers());
     out.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(crate::headed_files(out))
 }
@@ -242,107 +229,140 @@ fn refuse_python_names(units: &[Unit]) -> Result<(), CodegenError> {
     Ok(())
 }
 
-/// The project's files, one per project: its manifest, buf config, entry
-/// points and descriptor module, and the packages' markers.
-fn project_files(
-    app: &PythonApp,
-    served: &str,
-    descriptor_set: &[u8],
-    files: &[&str],
-    units: &[Unit],
-) -> Result<Vec<ScaffoldFile>, CodegenError> {
-    let package = app.package();
-    let src = format!("src/{package}");
-    let anchor = units[0].component.anchor.full_name().to_string();
-    let file = |path: String, source: String, owner: Owner| ScaffoldFile {
-        component: anchor.clone(),
-        path,
-        source,
-        owner,
-    };
-    Ok(vec![
-        file(
-            "pyproject.toml".to_string(),
-            pyproject(app, served, units),
-            Owner::User,
-        ),
-        file(
-            "buf.gen.yaml".to_string(),
-            buf_gen(app, served, units),
-            Owner::Generated,
-        ),
-        file(format!("{src}/__init__.py"), String::new(), Owner::User),
-        file(
-            format!("{src}/__main__.py"),
-            format!("{GENERATED}\nfrom {package}.main import main\n\nmain()\n"),
-            Owner::Generated,
-        ),
-        file(
-            format!("{src}/_version.py"),
-            format!(
-                "{GENERATED}\"\"\"The build version {served} reports as its rules_version.\"\"\"\n\n__version__ = {:?}\n",
-                app.rules_version
-            ),
-            Owner::Generated,
-        ),
-        file(
-            format!("{src}/main.py"),
-            main_py(app, served, units),
-            Owner::Generated,
-        ),
-        file(
-            format!("{src}/_descriptor.py"),
-            descriptor_py(app, served, descriptor_set, files, &units[0])?,
-            Owner::Generated,
-        ),
-        file("tests/__init__.py".to_string(), String::new(), Owner::User),
-    ])
+/// The project being written: its app, its units (the first the one it
+/// is named for) and what every file of it shares.
+struct Project<'a> {
+    app: &'a PythonApp,
+    units: &'a [Unit],
+    /// What it serves, for the docs ([`served`]).
+    served: String,
+    /// Its package's directory, `src/<package>`.
+    src: String,
 }
 
-/// A unit's own files: its logic interface and implementation, its plain
-/// types and its dispatch, the dispatch's packages added to `packages`.
-fn unit_files(
-    app: &PythonApp,
-    served: &str,
-    src: &str,
-    unit: &Unit,
-    packages: &mut BTreeSet<String>,
-) -> Vec<ScaffoldFile> {
-    let component = &unit.component;
-    let dir = module_dir(&component.anchor);
-    let mut path = String::new();
-    for part in std::iter::once("_gen").chain(dir.split('/')) {
-        if !path.is_empty() {
-            path.push('/');
+impl<'a> Project<'a> {
+    fn new(app: &'a PythonApp, units: &'a [Unit]) -> Project<'a> {
+        Project {
+            app,
+            units,
+            served: served(app, &units[0]),
+            src: format!("src/{}", app.package()),
         }
-        path.push_str(part);
-        packages.insert(path.clone());
     }
-    let stem = snake(&component.name);
-    let own = |path: String, source: String, owner: Owner| ScaffoldFile {
-        component: component.anchor.full_name().to_string(),
-        path,
-        source,
-        owner,
-    };
-    vec![
-        own(format!("{src}/logic.py"), interface(app, unit), Owner::User),
-        own(
-            format!("{src}/logic_impl.py"),
-            implementation(app, unit),
-            Owner::User,
-        ),
-        own(
-            format!("{src}/domain.py"),
-            domain_py(served, unit),
-            Owner::Generated,
-        ),
-        own(
-            format!("{src}/_gen/{dir}/{stem}_angzarr.py"),
-            dispatch(app, unit),
-            Owner::Generated,
-        ),
-    ]
+
+    /// A file of the project, of `unit`'s component.
+    fn file(&self, unit: &Unit, path: String, source: String, owner: Owner) -> ScaffoldFile {
+        ScaffoldFile {
+            component: unit.component.anchor.full_name().to_string(),
+            path,
+            source,
+            owner,
+        }
+    }
+
+    /// The files of the project as a whole: its manifest, buf config, entry
+    /// points and descriptor module.
+    fn files(
+        &self,
+        descriptor_set: &[u8],
+        files: &[&str],
+    ) -> Result<Vec<ScaffoldFile>, CodegenError> {
+        let (app, served, src, units) = (self.app, self.served.as_str(), &self.src, self.units);
+        let package = app.package();
+        let file =
+            |path: String, source: String, owner: Owner| self.file(&units[0], path, source, owner);
+        Ok(vec![
+            file(
+                "pyproject.toml".to_string(),
+                pyproject(app, served, units),
+                Owner::User,
+            ),
+            file(
+                "buf.gen.yaml".to_string(),
+                buf_gen(app, served, units),
+                Owner::Generated,
+            ),
+            file(format!("{src}/__init__.py"), String::new(), Owner::User),
+            file(
+                format!("{src}/__main__.py"),
+                format!("{GENERATED}\nfrom {package}.main import main\n\nmain()\n"),
+                Owner::Generated,
+            ),
+            file(
+                format!("{src}/_version.py"),
+                format!(
+                    "{GENERATED}\"\"\"The build version {served} reports as its rules_version.\"\"\"\n\n__version__ = {:?}\n",
+                    app.rules_version
+                ),
+                Owner::Generated,
+            ),
+            file(
+                format!("{src}/main.py"),
+                main_py(app, served, units),
+                Owner::Generated,
+            ),
+            file(
+                format!("{src}/_descriptor.py"),
+                descriptor_py(app, served, descriptor_set, files, &units[0])?,
+                Owner::Generated,
+            ),
+            file("tests/__init__.py".to_string(), String::new(), Owner::User),
+        ])
+    }
+
+    /// A unit's own files: its logic interface and implementation, its
+    /// plain types and its dispatch.
+    fn unit_files(&self, unit: &Unit) -> Vec<ScaffoldFile> {
+        let (app, src) = (self.app, &self.src);
+        let dir = module_dir(&unit.component.anchor);
+        let stem = snake(&unit.component.name);
+        let file =
+            |path: String, source: String, owner: Owner| self.file(unit, path, source, owner);
+        vec![
+            file(format!("{src}/logic.py"), interface(app, unit), Owner::User),
+            file(
+                format!("{src}/logic_impl.py"),
+                implementation(app, unit),
+                Owner::User,
+            ),
+            file(
+                format!("{src}/domain.py"),
+                domain_py(&self.served, unit),
+                Owner::Generated,
+            ),
+            file(
+                format!("{src}/_gen/{dir}/{stem}_angzarr.py"),
+                dispatch(app, unit),
+                Owner::Generated,
+            ),
+        ]
+    }
+
+    /// The `__init__.py` of every package the dispatches are in: `_gen` and
+    /// each directory down to a unit's module, each once.
+    fn package_markers(&self) -> Vec<ScaffoldFile> {
+        let mut packages = BTreeSet::new();
+        for unit in self.units {
+            let mut path = "_gen".to_string();
+            packages.insert(path.clone());
+            for part in module_dir(&unit.component.anchor).split('/') {
+                path = format!("{path}/{part}");
+                packages.insert(path.clone());
+            }
+        }
+        packages
+            .into_iter()
+            .map(|dir| {
+                let path = format!("{}/{dir}/__init__.py", self.src);
+                self.file(
+                    &self.units[0],
+                    path,
+                    GENERATED.to_string(),
+                    Owner::Generated,
+                )
+            })
+            .collect()
+    }
 }
 
 /// `component` with what its kind needs beside it, from the descriptor
