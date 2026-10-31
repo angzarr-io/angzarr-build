@@ -1,0 +1,26 @@
+// A command refusing one type named as a choice would be (BookRefuses):
+// with one refusal there is no choice, so nothing collides.
+syntax = "proto3";
+package lone.v1;
+import "io/angzarr/v1/options.proto";
+
+message SlotState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "slots"
+  };
+}
+
+message Book {
+  option (io.angzarr.v1.command) = {
+    component: "lone.v1.SlotState"
+    refuses: "lone.v1.BookRefuses"
+  };
+}
+
+message BookRefuses {}
+
+// A projector of no source: nothing names it.
+message SlotView {
+  option (io.angzarr.v1.component) = {kind: COMPONENT_KIND_PROJECTOR};
+}

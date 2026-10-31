@@ -63,8 +63,56 @@ fn test_markup_domain_into_reports_a_proto_protoc_cannot_find() {
 #[test]
 fn test_every_error_has_a_catalog_message_with_its_args() {
     let ftl = include_str!("../locales/en-US/angzarr-build.ftl");
-    let problems = angzarr_fmt::check(ftl, &angzarr_build::diagnostic_samples());
+    let samples = angzarr_build::diagnostic_samples();
+    let problems = angzarr_fmt::check(ftl, &samples);
     assert!(problems.is_empty(), "{problems:#?}");
+    // A sample of every message the catalog has.
+    let mut codes: Vec<&str> = samples.iter().map(|d| d.code()).collect();
+    codes.sort_unstable();
+    let mut messages: Vec<&str> = ftl
+        .lines()
+        .filter_map(|l| l.split_once(" = ").map(|(id, _)| id))
+        .collect();
+    messages.sort_unstable();
+    assert_eq!(codes, messages);
+}
+
+#[test]
+fn test_a_warnings_english_names_the_missing_interface() {
+    let warning = angzarr_build::BuildWarning::InterfaceMissing {
+        path: "src/buy_in_wallet.rs".to_string(),
+    };
+    assert_eq!(
+        warning.to_string(),
+        "src/buy_in_wallet.rs, a policy's interface, is not there: its adapter translates no \
+         refusal; scaffold it, or move it back"
+    );
+}
+
+#[test]
+fn test_component_names_are_the_protos_with_their_application_names() {
+    let names: Vec<(String, String)> = angzarr_build::component_names(
+        &[
+            "buyin/v1/wallet.proto",
+            "buyin/v1/buy_in.proto",
+            "buyin/v1/policies.proto",
+        ],
+        &[&fixtures()],
+    )
+    .unwrap()
+    .into_iter()
+    .map(|c| (c.component, c.name))
+    .collect();
+    let s = |a: &str, b: &str| (a.to_string(), b.to_string());
+    assert_eq!(
+        names,
+        [
+            s("buyin.v1.WalletState", "wallet"),
+            s("buyin.v1.BuyInState", "pmg-buyin"),
+            s("buyin.v1.BuyInWalletPolicy", "policy-buyin-wallet"),
+            s("buyin.v1.WalletBuyInPolicy", "policy-wallet-buyin"),
+        ]
+    );
 }
 
 #[test]

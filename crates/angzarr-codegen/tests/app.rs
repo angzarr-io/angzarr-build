@@ -485,3 +485,74 @@ fn remote_domains_are_the_domains_not_in_rust_or_given_a_launch() {
         ["player".to_string(), "dealer".to_string()]
     );
 }
+
+#[test]
+fn a_projector_is_listed_when_its_sources_all_run_in_process() {
+    const WITH_LEDGER: &[&str] = &[
+        "io/angzarr/examples/v1/table.proto",
+        "io/angzarr/examples/v1/wallet.proto",
+        "io/angzarr/examples/v1/ledger.proto",
+    ];
+    let set = descriptors(WITH_LEDGER);
+    let listed = |seed: &AppSeed| {
+        let files = app(&set, WITH_LEDGER, seed, None).unwrap();
+        file(&files, "angzarr.toml")
+            .source
+            .contains("name = \"projector-wallet-table-ledger\"\nkind = \"projector\"")
+    };
+    assert!(listed(&seed("ledger")));
+    // The wallet a Python child: the projector would have a remote source.
+    let python = AppSeed {
+        python: vec!["wallet".to_string()],
+        ..seed("ledger")
+    };
+    assert!(!listed(&python));
+    // A projector of no source is not listed.
+    const LONE: &[&str] = &["lone/v1/lone.proto"];
+    let files = app(&descriptors(LONE), LONE, &seed("lone"), None).unwrap();
+    assert!(
+        !file(&files, "angzarr.toml").source.contains("projector"),
+        "{}",
+        file(&files, "angzarr.toml").source
+    );
+}
+
+#[test]
+fn an_exposure_lands_on_its_component_alone_and_one_naming_none_is_a_lint() {
+    let seeded = AppSeed {
+        expose: vec![("table".to_string(), Exposure::Ip)],
+        ..blackjack()
+    };
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None).unwrap();
+    let config = &file(&files, "angzarr.toml").source;
+    assert_eq!(config.matches("expose = ").count(), 1, "{config}");
+    let nowhere = AppSeed {
+        expose: vec![("nowhere".to_string(), Exposure::Ip)],
+        ..blackjack()
+    };
+    assert_eq!(
+        app(&descriptors(BLACKJACK), BLACKJACK, &nowhere, None),
+        Err(CodegenError::AppRefused {
+            lints: vec![AppLint::UnknownComponent {
+                name: "nowhere".to_string(),
+                kind: "domain".to_string(),
+            }]
+        })
+    );
+}
+
+#[test]
+fn the_manifests_package_is_the_apps_name_as_a_crate_name() {
+    for (name, package) in [
+        ("shop", "shop"),
+        ("  My Shop!!  App ", "my-shop-app"),
+        ("-x", "x"),
+    ] {
+        let files = app(&descriptors(SHOP), SHOP, &seed(name), None).unwrap();
+        let manifest = &file(&files, "Cargo.toml").source;
+        assert!(
+            manifest.contains(&format!("\nname = \"{package}\"\n")),
+            "{name}: {manifest}"
+        );
+    }
+}

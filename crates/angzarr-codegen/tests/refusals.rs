@@ -101,3 +101,15 @@ fn test_markup_domain_refuses_a_type_named_as_a_refusal_choice() {
         }
     );
 }
+
+#[test]
+fn test_a_command_refusing_one_type_has_no_choice_to_collide_with() {
+    const FILE: &str = "lone/v1/lone.proto";
+    let generated = markup_domain(
+        &descriptors(&[FILE]),
+        &[FILE],
+        &[("lone.v1", "crate::wire")],
+    )
+    .unwrap();
+    assert!(generated[0].source.contains("pub struct BookRefuses"));
+}

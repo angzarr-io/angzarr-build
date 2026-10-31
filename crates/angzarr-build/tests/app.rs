@@ -213,9 +213,26 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_contracts() {
     }
     let register = std::fs::read_to_string(out.join("angzarr-register.rs")).unwrap();
     assert!(register.contains("adapters::Wallet"), "{register}");
+    // The Python child's process manager, listed by its name, is its
+    // domain's contract.
+    let adapters = std::fs::read_to_string(out.join("angzarr-adapters.rs")).unwrap();
+    assert!(
+        adapters.contains("#[process_manager(domain = \"buyin\")]")
+            && adapters.contains("served by a child process"),
+        "{adapters}"
+    );
     assert!(
         !register.contains("adapters::BuyIn>"),
         "the buy-in is the Python child's: {register}"
     );
     std::fs::remove_dir_all(&out).unwrap();
+}
+
+#[test]
+fn a_config_that_cannot_be_read_is_an_error_not_a_new_config() {
+    let root = empty_dir();
+    std::fs::create_dir_all(root.join("angzarr.toml")).unwrap();
+    let refused = app_scaffold_into(&root, SHOP, &[&fixtures()], &seed());
+    assert!(matches!(refused, Err(BuildError::Io { .. })), "{refused:?}");
+    std::fs::remove_dir_all(&root).unwrap();
 }
