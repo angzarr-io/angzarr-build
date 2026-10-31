@@ -427,6 +427,24 @@ fn test_scaffold_gives_a_policy_reaction_its_context_and_a_result() {
     );
 }
 
+/// A domain's handlers fail with the generated layer's `Failed`, larger
+/// than clippy's `result_large_err` allows; the generated impl allows it,
+/// so the application need not.
+#[test]
+fn test_adapters_allow_a_domains_large_failure() {
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[], &golden_interface).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    for ty in ["Wallet", "BuyIn"] {
+        let imp = inherent_impl(&file, ty);
+        assert!(
+            imp.attrs
+                .iter()
+                .any(|a| text(a) == "#[allow(clippy::result_large_err)]"),
+            "{ty}: {source}"
+        );
+    }
+}
+
 /// A domain served by a child process is no aggregate here: a policy
 /// names it by its command set (`CommandTarget`, with `Decides` of each
 /// command) and its event set (`EventSource`, with `Ingests` of each

@@ -3,7 +3,9 @@
 // The adapter layer: each component's angzarr-embedded markup, every
 // handler delegating to the component's interface (the user's trait) on its
 // implementation. Regenerated every build; the interface and implementation
-// are the user's and are never touched.
+// are the user's and are never touched. A domain's handlers fail with the
+// generated layer's `Failed`, whose size is not the application's to
+// choose: its impl allows `clippy::result_large_err`.
 
 #[allow(unused_imports)]
 use ::angzarr_embedded::next::markup::{
@@ -25,6 +27,7 @@ impl std::ops::Deref for Wallet {
     }
 }
 #[aggregate(domain = "wallet")]
+#[allow(clippy::result_large_err)]
 impl Wallet {
     #[handles_cmd(Deposit)]
     fn deposit(
@@ -63,6 +66,7 @@ impl std::ops::Deref for BuyIn {
     }
 }
 #[process_manager(domain = "buyin")]
+#[allow(clippy::result_large_err)]
 impl BuyIn {
     #[handles_cmd(StartBuyIn, starts)]
     fn start_buy_in(

@@ -52,6 +52,10 @@ fn test_the_adapter_hands_the_markup_each_cardinality() {
         "Ok::<_,Failed<Refuses<Self,Batch>>,>(event)",
         "Ok::<_,Failed<Rejection>,>(event)",
         "LedgerStateEvent::Noted(event)=>{emit.then(move|_:&Self,_:&Context|event)}",
+        // A fact's closure is bound, then called: never called where it is
+        // declared (clippy's redundant_closure_call).
+        "letrecord=|events:Option<(Posted,Noted)>|",
+        "record(crate::ledger_state::LedgerState::arrived(&self.0,&fact,ctx))",
     ] {
         assert!(flat.contains(expected), "{expected}:\n{source}");
     }

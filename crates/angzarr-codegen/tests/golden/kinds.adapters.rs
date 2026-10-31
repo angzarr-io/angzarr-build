@@ -3,7 +3,9 @@
 // The adapter layer: each component's angzarr-embedded markup, every
 // handler delegating to the component's interface (the user's trait) on its
 // implementation. Regenerated every build; the interface and implementation
-// are the user's and are never touched.
+// are the user's and are never touched. A domain's handlers fail with the
+// generated layer's `Failed`, whose size is not the application's to
+// choose: its impl allows `clippy::result_large_err`.
 
 #[allow(unused_imports)]
 use ::angzarr_embedded::next::markup::{
@@ -25,6 +27,7 @@ impl std::ops::Deref for LedgerState {
     }
 }
 #[aggregate(domain = "ledger")]
+#[allow(clippy::result_large_err)]
 impl LedgerState {
     #[handles_cmd(Post, refuses(PostRefused, Unreasoned, Listed, Elsewhere, Mislabeled))]
     fn post(
@@ -141,14 +144,15 @@ impl LedgerState {
     }
     #[handles_fact(Arrived)]
     fn arrived(&self, fact: Arrived, ctx: &Context) -> Record<Self> {
-        (|events: Option<(Posted, Noted)>| match events {
+        let record = |events: Option<(Posted, Noted)>| match events {
             Some(events) => Record::of(events),
             None => Record::of(None::<Posted>),
-        })(crate::ledger_state::LedgerState::arrived(&self.0, &fact, ctx))
+        };
+        record(crate::ledger_state::LedgerState::arrived(&self.0, &fact, ctx))
     }
     #[handles_fact(Swept)]
     fn swept(&self, fact: Swept, ctx: &Context) -> Record<Self> {
-        (|events: Vec<LedgerStateEvent>| {
+        let record = |events: Vec<LedgerStateEvent>| {
             events
                 .into_iter()
                 .fold(
@@ -168,7 +172,8 @@ impl LedgerState {
                         }
                     },
                 )
-        })(crate::ledger_state::LedgerState::swept(&self.0, &fact, ctx))
+        };
+        record(crate::ledger_state::LedgerState::swept(&self.0, &fact, ctx))
     }
     #[applies(Posted)]
     fn posted(&mut self, event: Posted) {
@@ -197,6 +202,7 @@ impl std::ops::Deref for AuditState {
     }
 }
 #[aggregate(domain = "audit")]
+#[allow(clippy::result_large_err)]
 impl AuditState {
     #[handles_cmd(Audit)]
     fn audit(&self, cmd: Audit, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {

@@ -773,7 +773,9 @@ pub fn adapters(
          // The adapter layer: each component's angzarr-embedded markup, every\n\
          // handler delegating to the component's interface (the user's trait) on its\n\
          // implementation. Regenerated every build; the interface and implementation\n\
-         // are the user's and are never touched.\n\n{source}",
+         // are the user's and are never touched. A domain's handlers fail with the\n\
+         // generated layer's `Failed`, whose size is not the application's to\n\
+         // choose: its impl allows `clippy::result_large_err`.\n\n{source}",
         files.join(", ")
     ))
 }
@@ -874,7 +876,12 @@ fn domain_adapter(component: &Component) -> TokenStream {
             let body = if is_of(input) {
                 quote!(Record::of(#call))
             } else {
-                quote!((#emit)(#call))
+                // Bound first: a closure called where it is declared is
+                // clippy's `redundant_closure_call`.
+                quote! {
+                    let record = #emit;
+                    record(#call)
+                }
             };
             methods.push(quote! {
                 #[handles_fact(#ty)]
@@ -945,6 +952,7 @@ fn domain_adapter(component: &Component) -> TokenStream {
         }
 
         #[#markup(domain = #domain)]
+        #[allow(clippy::result_large_err)]
         impl #name {
             #(#methods)*
         }
