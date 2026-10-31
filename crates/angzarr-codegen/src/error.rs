@@ -113,6 +113,11 @@ pub enum CodegenError {
     /// `angzarr scaffold app` refused the host config: it has lints
     /// ([`crate::AppLint`]), each reported on its own.
     AppRefused { lints: Vec<crate::AppLint> },
+    /// An application's manifest (`Cargo.toml`) that does not read as one,
+    /// or whose `[package.metadata.angzarr.domain]` is malformed.
+    AppManifest { detail: String },
+    /// A domain crate's path, or its wire types', that is no Rust path.
+    AppDomainPath { path: String },
 }
 
 impl fmt::Display for CodegenError {
@@ -271,6 +276,13 @@ impl fmt::Display for CodegenError {
                 "the host config has {} lints; nothing is written",
                 lints.len()
             ),
+            CodegenError::AppManifest { detail } => {
+                write!(f, "the manifest does not read as one: {detail}")
+            }
+            CodegenError::AppDomainPath { path } => write!(
+                f,
+                "the domain crate's {path} is no Rust path: name it as Rust does (examples_proto, not examples-proto)"
+            ),
         }
     }
 }
@@ -325,6 +337,8 @@ impl Diagnostic for CodegenError {
             CodegenError::PythonNoDomain { .. } => "angzarr-codegen-python-no-domain",
             CodegenError::AppConfig { .. } => "angzarr-codegen-app-config",
             CodegenError::AppRefused { .. } => "angzarr-codegen-app-refused",
+            CodegenError::AppManifest { .. } => "angzarr-codegen-app-manifest",
+            CodegenError::AppDomainPath { .. } => "angzarr-codegen-app-domain-path",
         }
     }
 
@@ -436,7 +450,10 @@ impl Diagnostic for CodegenError {
                 ("found", s(found)),
             ],
             CodegenError::PythonNoDomain { domain } => vec![("domain", s(domain))],
-            CodegenError::AppConfig { detail } => vec![("detail", s(detail))],
+            CodegenError::AppConfig { detail } | CodegenError::AppManifest { detail } => {
+                vec![("detail", s(detail))]
+            }
+            CodegenError::AppDomainPath { path } => vec![("path", s(path))],
             CodegenError::AppRefused { lints } => {
                 vec![(
                     "count",
@@ -555,6 +572,8 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         }),
         Box::new(CodegenError::AppConfig { detail: s() }),
         Box::new(CodegenError::AppRefused { lints: Vec::new() }),
+        Box::new(CodegenError::AppManifest { detail: s() }),
+        Box::new(CodegenError::AppDomainPath { path: s() }),
     ];
     errors
         .into_iter()

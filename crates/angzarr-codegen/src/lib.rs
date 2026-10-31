@@ -16,8 +16,8 @@ mod rust;
 mod scaffold;
 
 pub use app::{
-    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, Exposure,
-    RetrySeed, app, app_lint_samples, in_process_components, lint_app, remote_domains,
+    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate,
+    Exposure, RetrySeed, app, app_lint_samples, in_process_components, lint_app, remote_domains,
 };
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
 pub use error::{CodegenError, diagnostic_samples};

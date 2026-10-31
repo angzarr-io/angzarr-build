@@ -7,9 +7,11 @@
 //!   user's to edit from then on; `Cargo.toml`, the crate's manifest, with
 //!   angzarr-embedded pinned at [`ANGZARR_EMBEDDED_REV`]; and
 //!   `src/driver.rs`, what the application does once it is up;
-//! - the CLI's, rewritten on every run from the protos and the host config
-//!   as it is on disk: `build.rs` (one call, `angzarr_build::app`) and
-//!   `src/main.rs` (the generated layer's modules, a module per in-process
+//! - the CLI's, rewritten on every run from the protos, the host config
+//!   and the manifest as they are on disk: `build.rs` (one call,
+//!   `angzarr_build::app`, or `app_without_domain` when the manifest names
+//!   a [`DomainCrate`]) and `src/main.rs` (the generated layer's modules or
+//!   the domain crate's, a module per in-process
 //!   component's interface and implementation, the driver, and an async
 //!   `main` running the host with the generated `register()`, which
 //!   registers the in-process components the config lists).
@@ -89,20 +91,49 @@ pub struct AppSeed {
     /// The manifest's angzarr-build build-dependency, a TOML value (`{ path
     /// = ".." }`); `None` is [`ANGZARR_BUILD_GIT`]'s default branch.
     pub angzarr_build: Option<String>,
+    /// The library crate whose domain layer the application uses, written
+    /// into the manifest (`[package.metadata.angzarr.domain]`); `None`, the
+    /// application generates its own.
+    pub domain: Option<DomainCrate>,
+}
+
+/// A domain layer another crate generates (its build script running
+/// angzarr-build's `wire` and `markup_domain`), which an application uses
+/// instead of generating its own: the manifest's
+/// `[package.metadata.angzarr.domain]`, `crate` and `wire`. Its main.rs
+/// names `<path>::domain` as `crate::domain` and `wire` as `crate::wire`,
+/// and its build script generates the adapters, descriptors and
+/// `register()` alone (`angzarr_build::app_without_domain`). The crate must
+/// be a dependency of the application, and generated from the same protos.
+#[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DomainCrate {
+    /// The crate's path, as Rust names it (`examples_proto`): its `domain`
+    /// module is the domain layer.
+    #[serde(rename = "crate")]
+    pub path: String,
+    /// Its wire types' module (`examples_proto::v1`), as the application's
+    /// `crate::wire`; `None`, the application has no `crate::wire`.
+    pub wire: Option<String>,
 }
 
 /// The startup of the application declared in `files`, paths relative to
 /// the crate root: `angzarr.toml`, `Cargo.toml` and `src/driver.rs` (the
-/// user's) and `build.rs` and `src/main.rs` (the CLI's). `config` is the
-/// host config on disk, when there is one: the generated files are derived
-/// from it, and the seed's config is unused. Refused
+/// user's) and `build.rs` and `src/main.rs` (the CLI's). `config` and
+/// `manifest` are the host config and the manifest on disk, when there are
+/// ones: the generated files are derived from them (the manifest's
+/// [`DomainCrate`]), and the seed's are unused. Refused
 /// ([`CodegenError::AppRefused`]) when the config, the seed's or the
-/// user's, has lints ([`lint_app`]).
+/// user's, has lints ([`lint_app`]); a manifest that does not read, or
+/// whose domain crate is malformed, is [`CodegenError::AppManifest`], and a
+/// domain crate's path that is no Rust path
+/// [`CodegenError::AppDomainPath`].
 pub fn app(
     descriptor_set: &[u8],
     files: &[&str],
     seed: &AppSeed,
     config: Option<&str>,
+    manifest: Option<&str>,
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
     let components = model::components(descriptor_set, files, model::ALL_KINDS)?;
     let config_text = match config {
@@ -114,6 +145,17 @@ pub fn app(
         return Err(CodegenError::AppRefused { lints });
     }
     let host = read(&config_text)?;
+    let (manifest_text, domain) = match manifest {
+        Some(text) => (text.to_string(), manifest_domain(text)?),
+        None => (self::manifest(seed), seed.domain.clone()),
+    };
+    if let Some(domain) = &domain {
+        for path in std::iter::once(&domain.path).chain(&domain.wire) {
+            if syn::parse_str::<syn::Path>(path).is_err() {
+                return Err(CodegenError::AppDomainPath { path: path.clone() });
+            }
+        }
+    }
     let user = |path: &str, source: String| ScaffoldFile {
         component: String::new(),
         path: path.to_string(),
@@ -128,11 +170,45 @@ pub fn app(
     };
     Ok(vec![
         user("angzarr.toml", config_text),
-        user("Cargo.toml", manifest(seed)),
-        generated("build.rs", build_script(files, &seed.includes)),
+        user("Cargo.toml", manifest_text),
+        generated(
+            "build.rs",
+            build_script(files, &seed.includes, domain.as_ref()),
+        ),
         user("src/driver.rs", driver(&seed.name)),
-        generated("src/main.rs", main_rs(&seed.name, &components, &host)),
+        generated(
+            "src/main.rs",
+            main_rs(&seed.name, &components, &host, domain.as_ref()),
+        ),
     ])
+}
+
+/// The manifest's `[package.metadata.angzarr.domain]`, if it has one.
+fn manifest_domain(text: &str) -> Result<Option<DomainCrate>, CodegenError> {
+    #[derive(Deserialize)]
+    struct Manifest {
+        package: Option<Package>,
+    }
+    #[derive(Deserialize)]
+    struct Package {
+        metadata: Option<Metadata>,
+    }
+    #[derive(Deserialize)]
+    struct Metadata {
+        angzarr: Option<Angzarr>,
+    }
+    #[derive(Deserialize)]
+    struct Angzarr {
+        domain: Option<DomainCrate>,
+    }
+    let manifest: Manifest = toml::from_str(text).map_err(|e| CodegenError::AppManifest {
+        detail: e.message().to_string(),
+    })?;
+    Ok(manifest
+        .package
+        .and_then(|p| p.metadata)
+        .and_then(|m| m.angzarr)
+        .and_then(|a| a.domain))
 }
 
 /// The domains a host config serves from a child process: every
@@ -713,6 +789,7 @@ fn manifest(seed: &AppSeed) -> String {
          version = \"0.1.0\"\n\
          edition = \"2024\"\n\
          publish = false\n\
+         {domain}\
          \n\
          [dependencies]\n\
          angzarr-embedded = {embedded}\n\
@@ -727,11 +804,29 @@ fn manifest(seed: &AppSeed) -> String {
          angzarr-build = {build}\n",
         name = seed.name,
         package = package_name(&seed.name),
+        domain = seed.domain.as_ref().map(domain_table).unwrap_or_default(),
     )
 }
 
-/// The generated build script: one call.
-fn build_script(files: &[&str], includes: &[String]) -> String {
+/// The manifest's table naming `domain`, a blank line before it.
+fn domain_table(domain: &DomainCrate) -> String {
+    let wire = domain
+        .wire
+        .as_ref()
+        .map(|w| format!("wire = {w:?}\n"))
+        .unwrap_or_default();
+    format!(
+        "\n# The domain layer is {path}'s (its `domain` module), not generated\n\
+         # here: add {path} to [dependencies].\n\
+         [package.metadata.angzarr.domain]\n\
+         crate = {path:?}\n{wire}",
+        path = domain.path
+    )
+}
+
+/// The generated build script: one call, `angzarr_build::app`, or over a
+/// domain crate `angzarr_build::app_without_domain`.
+fn build_script(files: &[&str], includes: &[String], domain: Option<&DomainCrate>) -> String {
     let list = |items: &[String]| -> String {
         let one = format!(
             "&[{}]",
@@ -748,11 +843,27 @@ fn build_script(files: &[&str], includes: &[String]) -> String {
         format!("&[\n{lines}]")
     };
     let files: Vec<String> = files.iter().map(|f| f.to_string()).collect();
+    let (doc, call) = match domain {
+        None => (
+            "//! The application's generated layer, into OUT_DIR: the wire types, the\n\
+             //! markup domain layer, the adapters, the descriptors and `register()`,\n"
+                .to_string(),
+            "app",
+        ),
+        Some(domain) => (
+            format!(
+                "//! The application's generated layer, into OUT_DIR, over {}'s wire\n\
+                 //! types and domain layer (Cargo.toml's [package.metadata.angzarr.domain]):\n\
+                 //! the adapters, the descriptors and `register()`,\n",
+                domain.path
+            ),
+            "app_without_domain",
+        ),
+    };
     format!(
         "// @generated by `angzarr scaffold app`. Do not edit: every run rewrites it.\n\
          \n\
-         //! The application's generated layer, into OUT_DIR: the wire types, the\n\
-         //! markup domain layer, the adapters, the descriptors and `register()`,\n\
+         {doc}\
          //! from the protos and angzarr.toml; a domain angzarr.toml serves from a\n\
          //! child process is its command and event sets, and `register()`\n\
          //! registers the in-process components angzarr.toml lists.\n\
@@ -761,7 +872,7 @@ fn build_script(files: &[&str], includes: &[String]) -> String {
          const INCLUDES: &[&str] = {};\n\
          \n\
          fn main() -> Result<(), angzarr_build::BuildError> {{\n    \
-             angzarr_build::app(\"angzarr.toml\", PROTOS, INCLUDES)\n\
+             angzarr_build::{call}(\"angzarr.toml\", PROTOS, INCLUDES)\n\
          }}\n",
         list(&files),
         list(includes)
@@ -784,10 +895,16 @@ fn driver(name: &str) -> String {
     )
 }
 
-/// The generated main: the generated layer's modules, a module per
+/// The generated main: the generated layer's modules (over a domain crate,
+/// its domain layer and wire types named in their place), a module per
 /// in-process component's interface and implementation (each listed one
 /// the protos declare), the driver, and an async `main`.
-fn main_rs(name: &str, components: &[Component], config: &HostConfig) -> String {
+fn main_rs(
+    name: &str,
+    components: &[Component],
+    config: &HostConfig,
+    domain: Option<&DomainCrate>,
+) -> String {
     let mut packages: Vec<&str> = components.iter().map(|c| c.anchor.package_name()).collect();
     packages.sort_unstable();
     packages.dedup();
@@ -814,6 +931,21 @@ fn main_rs(name: &str, components: &[Component], config: &HostConfig) -> String 
     modules.sort_unstable();
     modules.dedup();
     let modules: String = modules.iter().map(|m| format!("pub mod {m};\n")).collect();
+    let layer = match domain {
+        None => format!(
+            "pub mod wire {{\n{}}}\npub mod domain {{\n{}}}\n",
+            include(".rs"),
+            include(".domain.rs")
+        ),
+        Some(domain) => {
+            let wire = domain
+                .wire
+                .as_ref()
+                .map(|w| format!("pub use {w} as wire;\n"))
+                .unwrap_or_default();
+            format!("pub use {}::domain;\n{wire}", domain.path)
+        }
+    };
     format!(
         "// @generated by `angzarr scaffold app` from angzarr.toml and the protos.\n\
          // Do not edit: every run rewrites it.\n\
@@ -823,8 +955,7 @@ fn main_rs(name: &str, components: &[Component], config: &HostConfig) -> String 
          //! the in-process ones it lists registered by the generated `register()`,\n\
          //! then the driver (`src/driver.rs`, yours).\n\
          \n\
-         pub mod wire {{\n{wire}}}\n\
-         pub mod domain {{\n{domain}}}\n\
+         {layer}\
          pub mod adapters {{\n    include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-adapters.rs\"));\n}}\n\
          include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-register.rs\"));\n\
          \n\
@@ -837,7 +968,5 @@ fn main_rs(name: &str, components: &[Component], config: &HostConfig) -> String 
              let app = angzarr_embedded_host::run(\"angzarr.toml\", register).await?;\n    \
              driver::drive(&app).await\n\
          }}\n",
-        wire = include(".rs"),
-        domain = include(".domain.rs"),
     )
 }

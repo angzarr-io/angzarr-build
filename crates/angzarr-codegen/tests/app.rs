@@ -11,8 +11,8 @@
 mod common;
 
 use angzarr_codegen::{
-    AppLint, AppSeed, CodegenError, Exposure, Owner, RetrySeed, ScaffoldFile, app, lint_app,
-    remote_domains,
+    AppLint, AppSeed, CodegenError, DomainCrate, Exposure, Owner, RetrySeed, ScaffoldFile, app,
+    lint_app, remote_domains,
 };
 use common::*;
 
@@ -36,6 +36,7 @@ fn seed(name: &str) -> AppSeed {
         retry: RetrySeed::default(),
         in_memory: false,
         angzarr_build: None,
+        domain: None,
     }
 }
 
@@ -99,14 +100,144 @@ fn assert_golden(app: &str, files: &[ScaffoldFile]) {
 
 #[test]
 fn a_single_aggregate_rust_app_is_its_golden_config_build_script_main_and_driver() {
-    let files = app(&descriptors(SHOP), SHOP, &seed("shop"), None).unwrap();
+    let files = app(&descriptors(SHOP), SHOP, &seed("shop"), None, None).unwrap();
     assert_golden("shop", &files);
 }
 
 #[test]
 fn the_mixed_blackjack_app_is_its_golden_rust_table_python_player_and_policies() {
-    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None, None).unwrap();
     assert_golden("blackjack", &files);
+}
+
+/// examples-rust's layout: the domain layer is a library crate's
+/// (examples-proto runs `wire` and `markup_domain`), so the app generates
+/// none of its own.
+fn examples_proto() -> DomainCrate {
+    DomainCrate {
+        path: "examples_proto".to_string(),
+        wire: Some("examples_proto::v1".to_string()),
+    }
+}
+
+#[test]
+fn an_app_over_a_domain_crate_reuses_its_domain_layer_and_generates_none() {
+    let seeded = AppSeed {
+        domain: Some(examples_proto()),
+        ..blackjack()
+    };
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None).unwrap();
+    assert_golden("blackjack-domain-crate", &files);
+    let main = &file(&files, "src/main.rs").source;
+    assert!(
+        main.contains("\npub use examples_proto::domain;\n"),
+        "{main}"
+    );
+    assert!(
+        main.contains("\npub use examples_proto::v1 as wire;\n"),
+        "{main}"
+    );
+    assert!(
+        !main.contains(".domain.rs") && !main.contains("examples.v1.rs"),
+        "no generated wire types or domain layer: {main}"
+    );
+    let build = &file(&files, "build.rs").source;
+    assert!(
+        build.contains("angzarr_build::app_without_domain(\"angzarr.toml\", PROTOS, INCLUDES)"),
+        "{build}"
+    );
+    let manifest = &file(&files, "Cargo.toml").source;
+    assert!(
+        manifest.contains(
+            "\n[package.metadata.angzarr.domain]\ncrate = \"examples_proto\"\nwire = \"examples_proto::v1\"\n"
+        ),
+        "{manifest}"
+    );
+}
+
+#[test]
+fn a_domain_crate_with_no_wire_path_has_no_wire_module() {
+    let seeded = AppSeed {
+        domain: Some(DomainCrate {
+            wire: None,
+            ..examples_proto()
+        }),
+        ..blackjack()
+    };
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None).unwrap();
+    let main = &file(&files, "src/main.rs").source;
+    assert!(
+        main.contains("\npub use examples_proto::domain;\n"),
+        "{main}"
+    );
+    assert!(!main.contains("wire"), "{main}");
+    let manifest = &file(&files, "Cargo.toml").source;
+    assert!(
+        manifest.contains("\n[package.metadata.angzarr.domain]\ncrate = \"examples_proto\"\n\n"),
+        "{manifest}"
+    );
+}
+
+#[test]
+fn the_manifest_on_disk_names_the_domain_crate_not_the_seed() {
+    let set = descriptors(BLACKJACK);
+    let seeded = AppSeed {
+        domain: Some(examples_proto()),
+        ..blackjack()
+    };
+    let over = app(&set, BLACKJACK, &seeded, None, None).unwrap();
+    let manifest = file(&over, "Cargo.toml").source.clone();
+    // The user's manifest names the crate: the seed (none) is unused.
+    let files = app(&set, BLACKJACK, &blackjack(), None, Some(&manifest)).unwrap();
+    assert_eq!(file(&files, "Cargo.toml").source, manifest);
+    assert_eq!(
+        file(&files, "src/main.rs").source,
+        file(&over, "src/main.rs").source
+    );
+    assert_eq!(
+        file(&files, "build.rs").source,
+        file(&over, "build.rs").source
+    );
+    // And a manifest naming none generates the layer, whatever the seed.
+    let plain = app(&set, BLACKJACK, &blackjack(), None, None).unwrap();
+    let mine = file(&plain, "Cargo.toml").source.clone();
+    let files = app(&set, BLACKJACK, &seeded, None, Some(&mine)).unwrap();
+    assert_eq!(
+        file(&files, "src/main.rs").source,
+        file(&plain, "src/main.rs").source
+    );
+}
+
+#[test]
+fn a_domain_crate_that_is_no_rust_path_or_a_manifest_that_does_not_read_is_refused() {
+    let set = descriptors(BLACKJACK);
+    for (path, wire) in [("examples-proto", None), ("examples_proto", Some("v1 x"))] {
+        let seeded = AppSeed {
+            domain: Some(DomainCrate {
+                path: path.to_string(),
+                wire: wire.map(str::to_string),
+            }),
+            ..blackjack()
+        };
+        let bad = wire.unwrap_or(path).to_string();
+        assert_eq!(
+            app(&set, BLACKJACK, &seeded, None, None),
+            Err(CodegenError::AppDomainPath { path: bad })
+        );
+    }
+    for manifest in [
+        "[package\n",
+        "[package]\nname = \"x\"\n[package.metadata.angzarr.domain]\nwire = \"x\"\n",
+        "[package]\nname = \"x\"\n[package.metadata.angzarr.domain]\ncrate = \"x\"\nwires = \"x\"\n",
+    ] {
+        assert!(
+            matches!(
+                app(&set, BLACKJACK, &blackjack(), None, Some(manifest)),
+                Err(CodegenError::AppManifest { .. })
+            ),
+            "{manifest}"
+        );
+    }
 }
 
 /// The config, its comments and blank lines dropped.
@@ -119,7 +250,7 @@ fn settings(toml: &str) -> Vec<&str> {
 
 #[test]
 fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
-    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None, None).unwrap();
     // What the e2e hand-wrote, now with every component listed, each with
     // its kind (the owner's config rulings): the table, the player a
     // Python child, the two policies between them in process; the wallet
@@ -147,7 +278,7 @@ fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
 
 #[test]
 fn the_generated_main_registers_only_the_in_process_components_and_their_policies() {
-    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None, None).unwrap();
     let main = &file(&files, "src/main.rs").source;
     for module in [
         "pub mod table_aggregate;",
@@ -173,7 +304,7 @@ fn expose_and_the_retry_settings_seeded_are_emitted_and_the_unseeded_are_not() {
         },
         ..blackjack()
     };
-    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None).unwrap();
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None).unwrap();
     let config = &file(&files, "angzarr.toml").source;
     assert!(
         config.contains(
@@ -189,7 +320,7 @@ fn expose_and_the_retry_settings_seeded_are_emitted_and_the_unseeded_are_not() {
         expose: vec![("table".to_string(), Exposure::Ip)],
         ..blackjack()
     };
-    let files = app(&descriptors(BLACKJACK), BLACKJACK, &ip, None).unwrap();
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &ip, None, None).unwrap();
     let config = &file(&files, "angzarr.toml").source;
     assert!(config.contains("expose = \"ip\"\n"), "{config}");
     assert!(
@@ -197,7 +328,7 @@ fn expose_and_the_retry_settings_seeded_are_emitted_and_the_unseeded_are_not() {
         "no retry key seeded, no table: the host's defaults: {config}"
     );
 
-    let plain = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    let plain = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None, None).unwrap();
     let config = &file(&plain, "angzarr.toml").source;
     assert!(
         !config.contains("expose") && !config.contains("[retry]"),
@@ -212,7 +343,14 @@ fn an_existing_config_is_the_input_the_generated_files_follow_not_the_seed() {
     let mine = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"go\"\n\
                 launch = [\"./bin/table\"]\n\n\
                 [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"rust\"\n";
-    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), Some(mine)).unwrap();
+    let files = app(
+        &descriptors(BLACKJACK),
+        BLACKJACK,
+        &blackjack(),
+        Some(mine),
+        None,
+    )
+    .unwrap();
     let config = file(&files, "angzarr.toml");
     assert_eq!(config.owner, Owner::User);
     assert_eq!(config.source, mine, "the config on disk is passed through");
@@ -224,9 +362,9 @@ fn an_existing_config_is_the_input_the_generated_files_follow_not_the_seed() {
 #[test]
 fn generating_twice_from_the_same_inputs_is_byte_identical() {
     let set = descriptors(BLACKJACK);
-    let first = app(&set, BLACKJACK, &blackjack(), None).unwrap();
+    let first = app(&set, BLACKJACK, &blackjack(), None, None).unwrap();
     let config = file(&first, "angzarr.toml").source.clone();
-    let second = app(&set, BLACKJACK, &blackjack(), Some(&config)).unwrap();
+    let second = app(&set, BLACKJACK, &blackjack(), Some(&config), None).unwrap();
     assert!(!first.is_empty());
     assert_eq!(first, second);
 }
@@ -238,7 +376,7 @@ fn a_seed_naming_a_python_domain_the_protos_lack_is_refused() {
         ..blackjack()
     };
     assert_eq!(
-        app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None),
+        app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None),
         Err(CodegenError::AppRefused {
             lints: vec![AppLint::UnknownComponent {
                 name: "dealer".to_string(),
@@ -256,7 +394,7 @@ fn a_seed_exposing_a_process_manager_is_refused() {
         ..seed("buyin")
     };
     assert_eq!(
-        app(&descriptors(BUYIN), BUYIN, &buyin, None),
+        app(&descriptors(BUYIN), BUYIN, &buyin, None, None),
         Err(CodegenError::AppRefused {
             lints: vec![AppLint::NotExposable {
                 name: "pmg-buyin".to_string(),
@@ -269,7 +407,13 @@ fn a_seed_exposing_a_process_manager_is_refused() {
 #[test]
 fn an_existing_config_with_lints_is_refused() {
     let mine = "[[component]]\nname = \"dealer\"\nkind = \"domain\"\nlanguage = \"rust\"\n";
-    let refused = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), Some(mine));
+    let refused = app(
+        &descriptors(BLACKJACK),
+        BLACKJACK,
+        &blackjack(),
+        Some(mine),
+        None,
+    );
     assert!(
         matches!(&refused, Err(CodegenError::AppRefused { lints }) if !lints.is_empty()),
         "{refused:?}"
@@ -496,7 +640,7 @@ fn a_projector_is_listed_when_its_sources_are_all_the_applications() {
     ];
     let set = descriptors(WITH_LEDGER);
     let listed = |seed: &AppSeed| {
-        let files = app(&set, WITH_LEDGER, seed, None).unwrap();
+        let files = app(&set, WITH_LEDGER, seed, None, None).unwrap();
         file(&files, "angzarr.toml")
             .source
             .contains("name = \"projector-wallet-table-ledger\"\nkind = \"projector\"")
@@ -518,7 +662,7 @@ fn a_projector_is_listed_when_its_sources_are_all_the_applications() {
     // A source no component of the application owns (the wallet's protos
     // not generated) leaves it unlisted.
     let alone = [WITH_LEDGER[0], WITH_LEDGER[2]];
-    let files = app(&set, &alone, &seed("ledger"), None).unwrap();
+    let files = app(&set, &alone, &seed("ledger"), None, None).unwrap();
     assert!(
         !file(&files, "angzarr.toml")
             .source
@@ -528,7 +672,7 @@ fn a_projector_is_listed_when_its_sources_are_all_the_applications() {
     );
     // A projector of no source is not listed.
     const LONE: &[&str] = &["lone/v1/lone.proto"];
-    let files = app(&descriptors(LONE), LONE, &seed("lone"), None).unwrap();
+    let files = app(&descriptors(LONE), LONE, &seed("lone"), None, None).unwrap();
     assert!(
         !file(&files, "angzarr.toml").source.contains("projector"),
         "{}",
@@ -542,7 +686,7 @@ fn an_exposure_lands_on_its_component_alone_and_one_naming_none_is_a_lint() {
         expose: vec![("table".to_string(), Exposure::Ip)],
         ..blackjack()
     };
-    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None).unwrap();
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None).unwrap();
     let config = &file(&files, "angzarr.toml").source;
     assert_eq!(config.matches("expose = ").count(), 1, "{config}");
     let nowhere = AppSeed {
@@ -550,7 +694,7 @@ fn an_exposure_lands_on_its_component_alone_and_one_naming_none_is_a_lint() {
         ..blackjack()
     };
     assert_eq!(
-        app(&descriptors(BLACKJACK), BLACKJACK, &nowhere, None),
+        app(&descriptors(BLACKJACK), BLACKJACK, &nowhere, None, None),
         Err(CodegenError::AppRefused {
             lints: vec![AppLint::UnknownComponent {
                 name: "nowhere".to_string(),
@@ -567,7 +711,7 @@ fn the_manifests_package_is_the_apps_name_as_a_crate_name() {
         ("  My Shop!!  App ", "my-shop-app"),
         ("-x", "x"),
     ] {
-        let files = app(&descriptors(SHOP), SHOP, &seed(name), None).unwrap();
+        let files = app(&descriptors(SHOP), SHOP, &seed(name), None, None).unwrap();
         let manifest = &file(&files, "Cargo.toml").source;
         assert!(
             manifest.contains(&format!("\nname = \"{package}\"\n")),

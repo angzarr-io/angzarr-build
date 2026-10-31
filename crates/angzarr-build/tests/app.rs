@@ -6,7 +6,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use angzarr_build::{AppSeed, BuildError, RetrySeed, Scaffolded, app_into, app_scaffold_into};
+use angzarr_build::{
+    AppSeed, BuildError, DomainCrate, RetrySeed, Scaffolded, app_into, app_scaffold_into,
+    app_without_domain_into,
+};
 use angzarr_codegen::CodegenError;
 
 const BUYIN: &[&str] = &[
@@ -51,6 +54,7 @@ fn seed() -> AppSeed {
         retry: RetrySeed::default(),
         in_memory: true,
         angzarr_build: None,
+        domain: None,
     }
 }
 
@@ -229,6 +233,66 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_command_and_eve
         "the buy-in is the Python child's: {register}"
     );
     std::fs::remove_dir_all(&out).unwrap();
+}
+
+#[test]
+fn app_without_domain_into_writes_the_layer_but_the_wire_types_and_domain_layer() {
+    let out = empty_dir();
+    let config = out.join("angzarr.toml");
+    std::fs::write(
+        &config,
+        "[[component]]\nname = \"wallet\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+         [[component]]\nname = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"python\"\n",
+    )
+    .unwrap();
+    app_without_domain_into(&out, &config, BUYIN, &[&fixtures()]).unwrap();
+    for file in [
+        "angzarr-adapters.rs",
+        "angzarr-descriptors.rs",
+        "angzarr-register.rs",
+    ] {
+        assert!(out.join(file).exists(), "{file}");
+    }
+    for file in ["buyin.v1.rs", "buyin.v1.domain.rs"] {
+        assert!(!out.join(file).exists(), "{file} is the domain crate's");
+    }
+    std::fs::remove_dir_all(&out).unwrap();
+}
+
+#[test]
+fn rescaffolding_follows_the_domain_crate_the_manifest_on_disk_names() {
+    let root = empty_dir();
+    scaffold(&root, SHOP, &seed());
+    let manifest = read(&root, "Cargo.toml").replace(
+        "\n[dependencies]\n",
+        "\n[package.metadata.angzarr.domain]\ncrate = \"shop_proto\"\n\n[dependencies]\n",
+    );
+    std::fs::write(root.join("Cargo.toml"), &manifest).unwrap();
+    let done = scaffold(&root, SHOP, &seed());
+    assert_eq!(
+        actions(&root, &done),
+        [
+            ("Cargo.toml".to_string(), "kept"),
+            ("angzarr.toml".to_string(), "kept"),
+            ("build.rs".to_string(), "regenerated"),
+            ("src/driver.rs".to_string(), "kept"),
+            ("src/main.rs".to_string(), "regenerated"),
+        ]
+    );
+    assert!(read(&root, "src/main.rs").contains("\npub use shop_proto::domain;\n"));
+    assert!(read(&root, "build.rs").contains("angzarr_build::app_without_domain("));
+    assert_eq!(read(&root, "Cargo.toml"), manifest);
+    // A seed's domain crate does not rewrite the user's manifest.
+    let over = AppSeed {
+        domain: Some(DomainCrate {
+            path: "other".to_string(),
+            wire: None,
+        }),
+        ..seed()
+    };
+    scaffold(&root, SHOP, &over);
+    assert!(read(&root, "src/main.rs").contains("\npub use shop_proto::domain;\n"));
+    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
