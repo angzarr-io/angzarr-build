@@ -1,8 +1,8 @@
 syntax = "proto3";
 
 // One aggregate whose names exercise the case conversions (an acronym, a
-// digit, several words), with a command and a fact each emitting either of
-// two events; policy.proto holds a policy from its domain.
+// digit, several words), with a command and a fact each emitting any number
+// of two events (MANY); policy.proto holds a policy from its domain.
 package naming.v1;
 
 import "io/angzarr/v1/options.proto";
@@ -26,6 +26,7 @@ message AssignTrackingID {
   option (io.angzarr.v1.command) = {
     component: "naming.v1.OrderBookState"
     emits: ["naming.v1.TrackingIDAssigned", "naming.v1.Level2Reached"]
+    emits_cardinality: EMITS_CARDINALITY_MANY
   };
 }
 
@@ -34,6 +35,7 @@ message ShipmentNoted {
     component: "naming.v1.OrderBookState"
     emits: ["naming.v1.TrackingIDAssigned", "naming.v1.Level2Reached"]
     fact: true
+    emits_cardinality: EMITS_CARDINALITY_MANY
   };
 }
 

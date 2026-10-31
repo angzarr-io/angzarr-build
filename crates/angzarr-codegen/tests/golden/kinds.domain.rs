@@ -325,6 +325,110 @@ impl TryFrom<crate::wire::Mislabeled> for Mislabeled {
     }
 }
 #[derive(Clone, Debug, PartialEq)]
+pub struct Open {}
+impl From<Open> for crate::wire::Open {
+    fn from(_value: Open) -> Self {
+        crate::wire::Open {}
+    }
+}
+impl TryFrom<crate::wire::Open> for Open {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Open) -> Result<Self, Self::Error> {
+        Ok(Open {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Four {}
+impl From<Four> for crate::wire::Four {
+    fn from(_value: Four) -> Self {
+        crate::wire::Four {}
+    }
+}
+impl TryFrom<crate::wire::Four> for Four {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Four) -> Result<Self, Self::Error> {
+        Ok(Four {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Maybe {}
+impl From<Maybe> for crate::wire::Maybe {
+    fn from(_value: Maybe) -> Self {
+        crate::wire::Maybe {}
+    }
+}
+impl TryFrom<crate::wire::Maybe> for Maybe {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Maybe) -> Result<Self, Self::Error> {
+        Ok(Maybe {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct MaybeBoth {}
+impl From<MaybeBoth> for crate::wire::MaybeBoth {
+    fn from(_value: MaybeBoth) -> Self {
+        crate::wire::MaybeBoth {}
+    }
+}
+impl TryFrom<crate::wire::MaybeBoth> for MaybeBoth {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::MaybeBoth) -> Result<Self, Self::Error> {
+        Ok(MaybeBoth {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Batch {}
+impl From<Batch> for crate::wire::Batch {
+    fn from(_value: Batch) -> Self {
+        crate::wire::Batch {}
+    }
+}
+impl TryFrom<crate::wire::Batch> for Batch {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Batch) -> Result<Self, Self::Error> {
+        Ok(Batch {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Raw {}
+impl From<Raw> for crate::wire::Raw {
+    fn from(_value: Raw) -> Self {
+        crate::wire::Raw {}
+    }
+}
+impl TryFrom<crate::wire::Raw> for Raw {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Raw) -> Result<Self, Self::Error> {
+        Ok(Raw {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Arrived {}
+impl From<Arrived> for crate::wire::Arrived {
+    fn from(_value: Arrived) -> Self {
+        crate::wire::Arrived {}
+    }
+}
+impl TryFrom<crate::wire::Arrived> for Arrived {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Arrived) -> Result<Self, Self::Error> {
+        Ok(Arrived {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Swept {}
+impl From<Swept> for crate::wire::Swept {
+    fn from(_value: Swept) -> Self {
+        crate::wire::Swept {}
+    }
+}
+impl TryFrom<crate::wire::Swept> for Swept {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Swept) -> Result<Self, Self::Error> {
+        Ok(Swept {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
 pub struct Posted {}
 impl From<Posted> for crate::wire::Posted {
     fn from(_value: Posted) -> Self {
@@ -335,6 +439,45 @@ impl TryFrom<crate::wire::Posted> for Posted {
     type Error = ::angzarr_embedded::next::WireError;
     fn try_from(_value: crate::wire::Posted) -> Result<Self, Self::Error> {
         Ok(Posted {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Noted {}
+impl From<Noted> for crate::wire::Noted {
+    fn from(_value: Noted) -> Self {
+        crate::wire::Noted {}
+    }
+}
+impl TryFrom<crate::wire::Noted> for Noted {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Noted) -> Result<Self, Self::Error> {
+        Ok(Noted {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Cleared {}
+impl From<Cleared> for crate::wire::Cleared {
+    fn from(_value: Cleared) -> Self {
+        crate::wire::Cleared {}
+    }
+}
+impl TryFrom<crate::wire::Cleared> for Cleared {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Cleared) -> Result<Self, Self::Error> {
+        Ok(Cleared {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Closed {}
+impl From<Closed> for crate::wire::Closed {
+    fn from(_value: Closed) -> Self {
+        crate::wire::Closed {}
+    }
+}
+impl TryFrom<crate::wire::Closed> for Closed {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Closed) -> Result<Self, Self::Error> {
+        Ok(Closed {})
     }
 }
 /// Why a command is rejected: a business "no", never a fault, the
@@ -450,20 +593,74 @@ impl ::core::convert::From<Bug> for Failed<Rejection> {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedgerStateCommand {
     Post(Post),
+    Open(Open),
+    Four(Four),
+    Maybe(Maybe),
+    MaybeBoth(MaybeBoth),
+    Batch(Batch),
+    Raw(Raw),
 }
 impl From<Post> for LedgerStateCommand {
     fn from(value: Post) -> Self {
         LedgerStateCommand::Post(value)
     }
 }
+impl From<Open> for LedgerStateCommand {
+    fn from(value: Open) -> Self {
+        LedgerStateCommand::Open(value)
+    }
+}
+impl From<Four> for LedgerStateCommand {
+    fn from(value: Four) -> Self {
+        LedgerStateCommand::Four(value)
+    }
+}
+impl From<Maybe> for LedgerStateCommand {
+    fn from(value: Maybe) -> Self {
+        LedgerStateCommand::Maybe(value)
+    }
+}
+impl From<MaybeBoth> for LedgerStateCommand {
+    fn from(value: MaybeBoth) -> Self {
+        LedgerStateCommand::MaybeBoth(value)
+    }
+}
+impl From<Batch> for LedgerStateCommand {
+    fn from(value: Batch) -> Self {
+        LedgerStateCommand::Batch(value)
+    }
+}
+impl From<Raw> for LedgerStateCommand {
+    fn from(value: Raw) -> Self {
+        LedgerStateCommand::Raw(value)
+    }
+}
 /// An event of LedgerState, for a decision recording any number of them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedgerStateEvent {
     Posted(Posted),
+    Noted(Noted),
+    Cleared(Cleared),
+    Closed(Closed),
 }
 impl From<Posted> for LedgerStateEvent {
     fn from(value: Posted) -> Self {
         LedgerStateEvent::Posted(value)
+    }
+}
+impl From<Noted> for LedgerStateEvent {
+    fn from(value: Noted) -> Self {
+        LedgerStateEvent::Noted(value)
+    }
+}
+impl From<Cleared> for LedgerStateEvent {
+    fn from(value: Cleared) -> Self {
+        LedgerStateEvent::Cleared(value)
+    }
+}
+impl From<Closed> for LedgerStateEvent {
+    fn from(value: Closed) -> Self {
+        LedgerStateEvent::Closed(value)
     }
 }
 /// A bug of the handler refusing with this, as it fails:
@@ -854,6 +1051,94 @@ impl ::angzarr_embedded::next::markup::DomainMessage for Mislabeled {
         Mislabeled::try_from(wire)
     }
 }
+impl ::angzarr_embedded::next::markup::DomainMessage for Open {
+    type Wire = crate::wire::Open;
+    fn to_wire(&self) -> crate::wire::Open {
+        crate::wire::Open::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Open,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Open::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Four {
+    type Wire = crate::wire::Four;
+    fn to_wire(&self) -> crate::wire::Four {
+        crate::wire::Four::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Four,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Four::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Maybe {
+    type Wire = crate::wire::Maybe;
+    fn to_wire(&self) -> crate::wire::Maybe {
+        crate::wire::Maybe::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Maybe,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Maybe::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for MaybeBoth {
+    type Wire = crate::wire::MaybeBoth;
+    fn to_wire(&self) -> crate::wire::MaybeBoth {
+        crate::wire::MaybeBoth::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::MaybeBoth,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        MaybeBoth::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Batch {
+    type Wire = crate::wire::Batch;
+    fn to_wire(&self) -> crate::wire::Batch {
+        crate::wire::Batch::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Batch,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Batch::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Raw {
+    type Wire = crate::wire::Raw;
+    fn to_wire(&self) -> crate::wire::Raw {
+        crate::wire::Raw::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Raw,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Raw::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Arrived {
+    type Wire = crate::wire::Arrived;
+    fn to_wire(&self) -> crate::wire::Arrived {
+        crate::wire::Arrived::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Arrived,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Arrived::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Swept {
+    type Wire = crate::wire::Swept;
+    fn to_wire(&self) -> crate::wire::Swept {
+        crate::wire::Swept::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Swept,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Swept::try_from(wire)
+    }
+}
 impl ::angzarr_embedded::next::markup::DomainMessage for Posted {
     type Wire = crate::wire::Posted;
     fn to_wire(&self) -> crate::wire::Posted {
@@ -863,5 +1148,38 @@ impl ::angzarr_embedded::next::markup::DomainMessage for Posted {
         wire: crate::wire::Posted,
     ) -> Result<Self, ::angzarr_embedded::next::WireError> {
         Posted::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Noted {
+    type Wire = crate::wire::Noted;
+    fn to_wire(&self) -> crate::wire::Noted {
+        crate::wire::Noted::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Noted,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Noted::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Cleared {
+    type Wire = crate::wire::Cleared;
+    fn to_wire(&self) -> crate::wire::Cleared {
+        crate::wire::Cleared::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Cleared,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Cleared::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Closed {
+    type Wire = crate::wire::Closed;
+    fn to_wire(&self) -> crate::wire::Closed {
+        crate::wire::Closed::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Closed,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Closed::try_from(wire)
     }
 }

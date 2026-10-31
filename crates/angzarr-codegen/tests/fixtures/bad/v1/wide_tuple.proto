@@ -1,0 +1,38 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+}
+
+// Five emits as ONE (unset): wider than the markup's widest tuple.
+message Poke {
+  option (io.angzarr.v1.command) = {
+    component: "bad.v1.ThingState"
+    emits: ["bad.v1.E1", "bad.v1.E2", "bad.v1.E3", "bad.v1.E4", "bad.v1.E5"]
+  };
+}
+
+message E1 {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+}
+
+message E2 {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+}
+
+message E3 {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+}
+
+message E4 {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+}
+
+message E5 {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+}

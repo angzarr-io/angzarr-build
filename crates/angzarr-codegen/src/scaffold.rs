@@ -20,11 +20,10 @@
 //! writing files is angzarr-build's.
 
 use proc_macro2::TokenStream;
-use prost_reflect::MessageDescriptor;
 use quote::{format_ident, quote};
 
 use crate::error::CodegenError;
-use crate::model::{self, Component, ComponentKind, MARKUP_KINDS};
+use crate::model::{self, Cardinality, Component, ComponentKind, Input, MARKUP_KINDS};
 use crate::rust::{RUNTIME, ident, next, refusal_choice_name, runtime_macros, snake};
 use crate::{Generated, generate};
 
@@ -186,22 +185,22 @@ fn method(message: &str) -> String {
     ident(&snake(message)).to_string()
 }
 
-/// What a decision returns for `emits`: its one event, else the
-/// component's event enum, any number of any of its events (a command
-/// declaring several emits may emit any subset of them: Hit emits its card
-/// and then a turn or the dealer's play and the settlement). The user may
-/// change the one event to any shape angzarr-embedded takes (`Option<E>`,
-/// `Vec<E>`); the adapter takes them all.
-fn decided(component: &Component, emits: &[MessageDescriptor]) -> String {
-    match emits {
-        [one] => one.name().to_string(),
-        _ => format!("Vec<{}Event>", component.name),
+/// What a decision returns for `input` (decision 14.50): ONE its one event,
+/// or a tuple of one of each type in order; OPTIONAL that or `None`; MANY
+/// any number of the component's events, as its event enum.
+fn decided(component: &Component, input: &Input) -> String {
+    let one = match input.emits.as_slice() {
+        [single] => single.name().to_string(),
+        several => {
+            let names: Vec<&str> = several.iter().map(|e| e.name()).collect();
+            format!("({})", names.join(", "))
+        }
+    };
+    match input.cardinality {
+        Cardinality::One => one,
+        Cardinality::Optional => format!("Option<{one}>"),
+        Cardinality::Many => format!("Vec<{}Event>", component.name),
     }
-}
-
-/// Whether [`decided`] is the event enum.
-fn is_open(emits: &[MessageDescriptor]) -> bool {
-    emits.len() != 1
 }
 
 fn interface_methods(
@@ -257,7 +256,7 @@ fn interface_methods(
     }
     for input in &component.inputs {
         let ty = input.message.name();
-        let out = decided(component, &input.emits);
+        let out = decided(component, input);
         if input.fact {
             methods.push(Method {
                 name: method(ty),
@@ -735,28 +734,62 @@ fn user_paths(component: &Component) -> (TokenStream, TokenStream) {
     )
 }
 
-/// What a decision's `Ok` becomes for the markup: `Emit::of` it, or, for
-/// the component's event enum, one continuation step per event.
-fn emitted(component: &Component, emits: &[MessageDescriptor], open: &str) -> TokenStream {
-    let open = format_ident!("{open}");
-    if !is_open(emits) {
-        return quote!(#open::of);
-    }
+/// What a decision's `Ok` becomes for the markup, `Emit` for a command and
+/// `Record` for a fact: ONE `of` it (the markup takes an event or a tuple
+/// as is); OPTIONAL of one type the same (it takes an `Option`), of
+/// several the tuple or no event; MANY one continuation step per event of
+/// the event enum, each returning it (a command's step as `Ok` of the
+/// handler's own failure, `failed`).
+/// Whether the markup takes `input`'s decision as is, by `of`: ONE (an
+/// event or a tuple), or OPTIONAL of one type (an `Option`).
+fn is_of(input: &Input) -> bool {
+    input.cardinality == Cardinality::One
+        || (input.cardinality == Cardinality::Optional && input.emits.len() == 1)
+}
+
+fn emitted(component: &Component, input: &Input, failed: &TokenStream) -> TokenStream {
+    let open = if input.fact {
+        format_ident!("Record")
+    } else {
+        format_ident!("Emit")
+    };
     let first = component
         .events
         .first()
         .map(|e| ident(e.name()))
         .unwrap_or_else(|| format_ident!("Rejection"));
-    let enum_name = format_ident!("{}Event", component.name);
-    let arms = component.events.iter().map(|e| {
-        let v = ident(e.name());
-        quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, Rejection>(event)))
-    });
-    quote! {
-        |events: Vec<#enum_name>| {
-            events.into_iter().fold(#open::of(None::<#first>), |emit, event| match event {
-                #(#arms,)*
-            })
+    if is_of(input) {
+        return quote!(#open::of);
+    }
+    match input.cardinality {
+        // OPTIONAL of several types: the tuple, or no event.
+        Cardinality::One | Cardinality::Optional => {
+            let ty: syn::Type =
+                syn::parse_str(&decided(component, input)).expect("a decided type parses");
+            quote! {
+                |events: #ty| match events {
+                Some(events) => #open::of(events),
+                    None => #open::of(None::<#first>),
+                }
+            }
+        }
+        Cardinality::Many => {
+            let enum_name = format_ident!("{}Event", component.name);
+            let arms = component.events.iter().map(|e| {
+                let v = ident(e.name());
+                if input.fact {
+                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| event))
+                } else {
+                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, #failed>(event)))
+                }
+            });
+            quote! {
+                |events: Vec<#enum_name>| {
+                    events.into_iter().fold(#open::of(None::<#first>), |emit, event| match event {
+                        #(#arms,)*
+                    })
+                }
+            }
         }
     }
 }
@@ -780,11 +813,12 @@ fn domain_adapter(component: &Component) -> TokenStream {
         let ty = ident(input.message.name());
         let m = format_ident!("{}", method(input.message.name()));
         if input.fact {
-            let emit = emitted(component, &input.emits, "Record");
-            let body = if is_open(&input.emits) {
-                quote!((#emit)(#interface::#m(&self.0, &fact, ctx)))
+            let emit = emitted(component, input, &quote!());
+            let call = quote!(#interface::#m(&self.0, &fact, ctx));
+            let body = if is_of(input) {
+                quote!(Record::of(#call))
             } else {
-                quote!(Record::of(#interface::#m(&self.0, &fact, ctx)))
+                quote!((#emit)(#call))
             };
             methods.push(quote! {
                 #[handles_fact(#ty)]
@@ -799,15 +833,18 @@ fn domain_adapter(component: &Component) -> TokenStream {
         } else {
             quote!()
         };
-        let emit = emitted(component, &input.emits, "Emit");
         match input.refuses.as_slice() {
-            [] => methods.push(quote! {
-                #[handles_cmd(#ty #starts)]
-                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
-                    #interface::#m(&self.0, &cmd, ctx).map(#emit)
-                }
-            }),
+            [] => {
+                let emit = emitted(component, input, &quote!(Failed<Rejection>));
+                methods.push(quote! {
+                    #[handles_cmd(#ty #starts)]
+                    fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+                        #interface::#m(&self.0, &cmd, ctx).map(#emit)
+                    }
+                });
+            }
             refusals => {
+                let emit = emitted(component, input, &quote!(Failed<Refuses<Self, #ty>>));
                 // One type widens by its own `Into`; several, by their
                 // domain-layer choice's `widen`.
                 let widen = match refusals {

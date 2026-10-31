@@ -2,7 +2,12 @@
 //! generated from the kinds fixture proto into OUT_DIR.
 
 const PROTOS: &[&str] = &["kinds/v1/kinds.proto"];
-const INCLUDES: &[&str] = &["../../../../angzarr-codegen/tests/fixtures"];
+/// The fixtures, then the spec's protos, whose options.proto (decision
+/// 14.50's emits_cardinality) angzarr-proto's copy can trail.
+const INCLUDES: &[&str] = &[
+    "../../../../angzarr-codegen/tests/fixtures",
+    "../../../../../angzarr-project/proto",
+];
 
 fn main() -> Result<(), angzarr_build::BuildError> {
     angzarr_build::wire(PROTOS, INCLUDES)?;

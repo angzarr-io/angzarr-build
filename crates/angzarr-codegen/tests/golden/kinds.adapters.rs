@@ -31,8 +31,154 @@ impl LedgerState {
             .map(Emit::of)
             .map_err(PostRefuses::widen)
     }
+    #[handles_cmd(Open)]
+    fn open(&self, cmd: Open, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+        crate::ledger_state::LedgerState::open(&self.0, &cmd, ctx).map(Emit::of)
+    }
+    #[handles_cmd(Four)]
+    fn four(&self, cmd: Four, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+        crate::ledger_state::LedgerState::four(&self.0, &cmd, ctx).map(Emit::of)
+    }
+    #[handles_cmd(Maybe)]
+    fn maybe(&self, cmd: Maybe, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+        crate::ledger_state::LedgerState::maybe(&self.0, &cmd, ctx).map(Emit::of)
+    }
+    #[handles_cmd(MaybeBoth)]
+    fn maybe_both(
+        &self,
+        cmd: MaybeBoth,
+        ctx: &Context,
+    ) -> Result<Emit<Self>, Failed<Rejection>> {
+        crate::ledger_state::LedgerState::maybe_both(&self.0, &cmd, ctx)
+            .map(|events: Option<(Posted, Noted)>| match events {
+                Some(events) => Emit::of(events),
+                None => Emit::of(None::<Posted>),
+            })
+    }
+    #[handles_cmd(Batch, refuses(PostRefused))]
+    fn batch(
+        &self,
+        cmd: Batch,
+        ctx: &Context,
+    ) -> Result<Emit<Self>, Failed<Refuses<Self, Batch>>> {
+        crate::ledger_state::LedgerState::batch(&self.0, &cmd, ctx)
+            .map(|events: Vec<LedgerStateEvent>| {
+                events
+                    .into_iter()
+                    .fold(
+                        Emit::of(None::<Posted>),
+                        |emit, event| match event {
+                            LedgerStateEvent::Posted(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Refuses<Self, Batch>>,
+                                >(event))
+                            }
+                            LedgerStateEvent::Noted(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Refuses<Self, Batch>>,
+                                >(event))
+                            }
+                            LedgerStateEvent::Cleared(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Refuses<Self, Batch>>,
+                                >(event))
+                            }
+                            LedgerStateEvent::Closed(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Refuses<Self, Batch>>,
+                                >(event))
+                            }
+                        },
+                    )
+            })
+            .map_err(Failed::widen)
+    }
+    #[handles_cmd(Raw)]
+    fn raw(&self, cmd: Raw, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+        crate::ledger_state::LedgerState::raw(&self.0, &cmd, ctx)
+            .map(|events: Vec<LedgerStateEvent>| {
+                events
+                    .into_iter()
+                    .fold(
+                        Emit::of(None::<Posted>),
+                        |emit, event| match event {
+                            LedgerStateEvent::Posted(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Rejection>,
+                                >(event))
+                            }
+                            LedgerStateEvent::Noted(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Rejection>,
+                                >(event))
+                            }
+                            LedgerStateEvent::Cleared(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Rejection>,
+                                >(event))
+                            }
+                            LedgerStateEvent::Closed(event) => {
+                                emit.then(move |_: &Self, _: &Context| Ok::<
+                                    _,
+                                    Failed<Rejection>,
+                                >(event))
+                            }
+                        },
+                    )
+            })
+    }
+    #[handles_fact(Arrived)]
+    fn arrived(&self, fact: Arrived, ctx: &Context) -> Record<Self> {
+        (|events: Option<(Posted, Noted)>| match events {
+            Some(events) => Record::of(events),
+            None => Record::of(None::<Posted>),
+        })(crate::ledger_state::LedgerState::arrived(&self.0, &fact, ctx))
+    }
+    #[handles_fact(Swept)]
+    fn swept(&self, fact: Swept, ctx: &Context) -> Record<Self> {
+        (|events: Vec<LedgerStateEvent>| {
+            events
+                .into_iter()
+                .fold(
+                    Record::of(None::<Posted>),
+                    |emit, event| match event {
+                        LedgerStateEvent::Posted(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        LedgerStateEvent::Noted(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        LedgerStateEvent::Cleared(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        LedgerStateEvent::Closed(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                    },
+                )
+        })(crate::ledger_state::LedgerState::swept(&self.0, &fact, ctx))
+    }
     #[applies(Posted)]
     fn posted(&mut self, event: Posted) {
         crate::ledger_state::LedgerState::apply_posted(&mut self.0, &event);
+    }
+    #[applies(Noted)]
+    fn noted(&mut self, event: Noted) {
+        crate::ledger_state::LedgerState::apply_noted(&mut self.0, &event);
+    }
+    #[applies(Cleared)]
+    fn cleared(&mut self, event: Cleared) {
+        crate::ledger_state::LedgerState::apply_cleared(&mut self.0, &event);
+    }
+    #[applies(Closed)]
+    fn closed(&mut self, event: Closed) {
+        crate::ledger_state::LedgerState::apply_closed(&mut self.0, &event);
     }
 }

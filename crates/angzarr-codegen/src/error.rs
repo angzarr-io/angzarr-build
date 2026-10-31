@@ -64,6 +64,12 @@ pub enum CodegenError {
     /// A translate selection's fact is an input of the policy's source, but
     /// a command, not a fact.
     TranslateNotAFact { policy: String, fact: String },
+    /// An input with no emits whose `emits_cardinality` is ONE (`optional`
+    /// false) or OPTIONAL: only MANY is accepted without emits.
+    CardinalityWithoutEmits { message: String, optional: bool },
+    /// A ONE or OPTIONAL input listing more emits than the markup's widest
+    /// tuple holds.
+    EmitsTuple { message: String, count: usize },
     /// A domain type taking the name the domain layer gives the choice of a
     /// command refusing several types (`<Command>Refuses`).
     RefusalChoiceName {
@@ -177,6 +183,15 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} is named {name}, which the generated domain layer gives the runtime's own {name}; rename it"
             ),
+            CodegenError::CardinalityWithoutEmits { message, optional } => write!(
+                f,
+                "{message} declares no emits and the emits cardinality {}; only MANY is accepted without emits",
+                if *optional { "OPTIONAL" } else { "ONE" }
+            ),
+            CodegenError::EmitsTuple { message, count } => write!(
+                f,
+                "{message} emits {count} types as one tuple, more than the markup's four; declare it MANY"
+            ),
             CodegenError::RefusalChoiceName {
                 message,
                 name,
@@ -249,6 +264,10 @@ impl Diagnostic for CodegenError {
             CodegenError::ReservedName { .. } => "angzarr-codegen-reserved-name",
             CodegenError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
             CodegenError::RefusalChoiceName { .. } => "angzarr-codegen-refusal-choice-name",
+            CodegenError::CardinalityWithoutEmits { .. } => {
+                "angzarr-codegen-cardinality-without-emits"
+            }
+            CodegenError::EmitsTuple { .. } => "angzarr-codegen-emits-tuple",
             CodegenError::InputMismatch { .. } => "angzarr-codegen-input-mismatch",
             CodegenError::PythonNoDomain { .. } => "angzarr-codegen-python-no-domain",
             CodegenError::PythonKind { .. } => "angzarr-codegen-python-kind",
@@ -313,6 +332,16 @@ impl Diagnostic for CodegenError {
             }
             CodegenError::TranslateNotAFact { policy, fact } => {
                 vec![("policy", s(policy)), ("fact", s(fact))]
+            }
+            CodegenError::CardinalityWithoutEmits { message, optional } => vec![
+                ("message", s(message)),
+                (
+                    "cardinality",
+                    Arg::from(if *optional { "OPTIONAL" } else { "ONE" }),
+                ),
+            ],
+            CodegenError::EmitsTuple { message, count } => {
+                vec![("message", s(message)), ("count", (*count).into())]
             }
             CodegenError::RefusalChoiceName {
                 message,
@@ -405,6 +434,14 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::TranslateNotAFact {
             policy: s(),
             fact: s(),
+        }),
+        Box::new(CodegenError::CardinalityWithoutEmits {
+            message: s(),
+            optional: true,
+        }),
+        Box::new(CodegenError::EmitsTuple {
+            message: s(),
+            count: 5,
         }),
         Box::new(CodegenError::RefusalChoiceName {
             message: s(),

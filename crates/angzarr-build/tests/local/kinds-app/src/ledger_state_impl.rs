@@ -36,5 +36,55 @@ impl LedgerState for LedgerStateImpl {
         }))
     }
 
+    fn open(&self, _cmd: &Open, _ctx: &Context) -> Result<(Posted, Noted), Failed<Rejection>> {
+        Ok((Posted {}, Noted {}))
+    }
+
+    fn four(
+        &self,
+        _cmd: &Four,
+        _ctx: &Context,
+    ) -> Result<(Posted, Noted, Cleared, Closed), Failed<Rejection>> {
+        Ok((Posted {}, Noted {}, Cleared {}, Closed {}))
+    }
+
+    fn maybe(&self, _cmd: &Maybe, _ctx: &Context) -> Result<Option<Posted>, Failed<Rejection>> {
+        Ok(None)
+    }
+
+    fn maybe_both(
+        &self,
+        _cmd: &MaybeBoth,
+        _ctx: &Context,
+    ) -> Result<Option<(Posted, Noted)>, Failed<Rejection>> {
+        Ok(Some((Posted {}, Noted {})))
+    }
+
+    fn batch(
+        &self,
+        _cmd: &Batch,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<PostRefused>> {
+        Ok(vec![Noted {}.into(), Posted {}.into()])
+    }
+
+    fn raw(&self, _cmd: &Raw, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+        Ok(Vec::new())
+    }
+
+    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Option<(Posted, Noted)> {
+        None
+    }
+
+    fn swept(&self, _fact: &Swept, _ctx: &Context) -> Vec<LedgerStateEvent> {
+        vec![Closed {}.into()]
+    }
+
     fn apply_posted(&mut self, _event: &Posted) {}
+
+    fn apply_noted(&mut self, _event: &Noted) {}
+
+    fn apply_cleared(&mut self, _event: &Cleared) {}
+
+    fn apply_closed(&mut self, _event: &Closed) {}
 }

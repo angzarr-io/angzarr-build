@@ -75,11 +75,33 @@ pub(crate) const DESCRIPTOR_KINDS: &[ComponentKind] = &[
     ComponentKind::Projector,
 ];
 
+/// How many events one handling of an input emits
+/// (`CommandOptions.emits_cardinality`, decision 14.50).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Cardinality {
+    /// One event of each emits type, in order: the one event, or a tuple.
+    One,
+    /// That, or nothing.
+    Optional,
+    /// Any number of events of the emits types, in any order.
+    Many,
+}
+
+/// `EmitsCardinality`'s numbers (options.proto).
+const CARDINALITY_ONE: i32 = 1;
+const CARDINALITY_OPTIONAL: i32 = 2;
+const CARDINALITY_MANY: i32 = 3;
+
+/// The most emits a ONE or OPTIONAL input may list: the markup's widest
+/// tuple.
+pub(crate) const MAX_TUPLE: usize = 4;
+
 /// One input of an aggregate or a process manager: a command, or a fact
 /// (`CommandOptions.fact`).
 pub(crate) struct Input {
     pub message: MessageDescriptor,
     pub emits: Vec<MessageDescriptor>,
+    pub cardinality: Cardinality,
     /// Its typed refusals; always empty for a fact.
     pub refuses: Vec<MessageDescriptor>,
     pub starts: bool,
@@ -402,6 +424,25 @@ pub(crate) fn components(
                 };
                 emits.push(event.clone());
             }
+            let cardinality = match enum_field(&declared, "emits_cardinality") {
+                CARDINALITY_MANY => Cardinality::Many,
+                // With no emits, the raw form is a list: unset is MANY.
+                0 if emits.is_empty() => Cardinality::Many,
+                n @ (CARDINALITY_ONE | CARDINALITY_OPTIONAL) if emits.is_empty() => {
+                    return Err(CodegenError::CardinalityWithoutEmits {
+                        message: message.full_name().to_string(),
+                        optional: n == CARDINALITY_OPTIONAL,
+                    });
+                }
+                CARDINALITY_OPTIONAL => Cardinality::Optional,
+                _ => Cardinality::One,
+            };
+            if cardinality != Cardinality::Many && emits.len() > MAX_TUPLE {
+                return Err(CodegenError::EmitsTuple {
+                    message: message.full_name().to_string(),
+                    count: emits.len(),
+                });
+            }
             let fact = bool_field(&declared, "fact");
             let refused = list_field(&declared, "refuses");
             if fact && !refused.is_empty() {
@@ -425,6 +466,7 @@ pub(crate) fn components(
             component.inputs.push(Input {
                 message: message.clone(),
                 emits,
+                cardinality,
                 refuses,
                 starts: bool_field(&declared, "starts"),
                 fact,

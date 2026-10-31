@@ -275,14 +275,19 @@ fn test_a_decision_returns_its_one_event_or_any_of_its_events() {
     const TABLE: &str = "io/angzarr/examples/v1/table.proto";
     let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
     let table = &file_at(&files, "table_aggregate.rs").source;
+    // Decision 14.50: the result follows the emits cardinality, and the
+    // table refuses with TableRefused.
     for expected in [
-        "fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Result<BetPlaced, Failed<Rejection>>;",
+        "fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Result<BetPlaced, Failed<TableRefused>>;",
         // Hit emits a variable subset of its four (the card, then a turn or
-        // the dealer and the settlement): any of its events, not a tuple.
-        "fn hit(&self, cmd: &Hit, ctx: &Context) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
-        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
-        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
-        "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<PlayerSeated, Failed<SeatNotConfirmable>>;",
+        // the dealer and the settlement), MANY: any of its events.
+        "        cmd: &Hit,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
+        // CreateTable is ONE of two: the tuple.
+        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<(TableCreated, ShoeShuffled), Failed<TableRefused>>;",
+        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
+        // ConfirmSeat is OPTIONAL: a repeat emits nothing.
+        "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<Option<PlayerSeated>, Failed<SeatNotConfirmable>>;",
+        "        cmd: &ReleaseSeat,\n        ctx: &Context,\n    ) -> Result<Option<SeatReleased>, Failed<Rejection>>;",
     ] {
         assert!(table.contains(expected), "{expected}:\n{table}");
     }
