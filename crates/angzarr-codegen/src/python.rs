@@ -714,8 +714,9 @@ fn element_kind(field: &prost_reflect::FieldDescriptor) -> Kind {
 }
 
 /// Every message and enum of the unit's plain types, every one its
-/// [`roots`] reach, in the order they are reached; angzarr's own and
-/// google's excepted.
+/// [`roots`] reach, in the order they are reached, each once by its full
+/// name (a policy's target commands are read from a pool of their own);
+/// angzarr's own and google's excepted.
 fn reached(unit: &Unit) -> (Vec<MessageDescriptor>, Vec<EnumDescriptor>) {
     let mut messages: Vec<MessageDescriptor> = Vec::new();
     let mut enums: Vec<EnumDescriptor> = Vec::new();
@@ -726,13 +727,22 @@ fn reached(unit: &Unit) -> (Vec<MessageDescriptor>, Vec<EnumDescriptor>) {
     while i < queue.len() {
         let message = queue[i].clone();
         i += 1;
-        if messages.contains(&message) || foreign(message.package_name()) {
+        if messages
+            .iter()
+            .any(|m| m.full_name() == message.full_name())
+            || foreign(message.package_name())
+        {
             continue;
         }
         for field in message.fields() {
             match element_kind(&field) {
                 Kind::Message(m) => queue.push(m),
-                Kind::Enum(e) if !foreign(e.package_name()) && !enums.contains(&e) => enums.push(e),
+                Kind::Enum(e)
+                    if !foreign(e.package_name())
+                        && !enums.iter().any(|known| known.full_name() == e.full_name()) =>
+                {
+                    enums.push(e)
+                }
                 _ => {}
             }
         }

@@ -216,6 +216,26 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
     );
 }
 
+/// A type its events and its target's commands both reach (`Card`, its
+/// `Suit`) is declared, and converted, once: the commands are read from
+/// the same protos as the events.
+#[test]
+fn test_a_policys_shared_types_are_declared_and_converted_once() {
+    let files = table_player();
+    let domain = source(&files, "/domain.py");
+    for class in ["class Card:", "class Suit(enum.IntEnum):"] {
+        assert_eq!(domain.matches(class).count(), 1, "{class}:\n{domain}");
+    }
+    let dispatch = source(&files, "table_player_policy_angzarr.py");
+    for converter in ["def _to_card(pb)", "def _from_card(value"] {
+        assert_eq!(
+            dispatch.matches(converter).count(),
+            1,
+            "{converter}:\n{dispatch}"
+        );
+    }
+}
+
 #[test]
 fn test_a_policys_dispatch_addresses_each_command_to_its_target() {
     let files = table_player();
