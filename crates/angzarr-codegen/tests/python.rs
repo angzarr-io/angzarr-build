@@ -28,7 +28,7 @@ fn player_app() -> PythonApp {
 /// blackjack protos are in the descriptor set (a policy and a projector
 /// name the player's events), not scaffolded.
 fn player() -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &player_app()).unwrap()
+    scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &player_app(), &[]).unwrap()
 }
 
 fn file<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
@@ -208,7 +208,7 @@ fn test_scaffold_python_refuses_a_message_named_as_a_reserved_name() {
         domain: "things".to_string(),
         ..player_app()
     };
-    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app);
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[]);
     assert!(
         matches!(&refused, Err(CodegenError::ReservedName { message, name })
             if message == "bad.v1.Context" && name == "Context"),
@@ -224,7 +224,7 @@ fn test_scaffold_python_refuses_a_message_named_bug() {
         domain: "things".to_string(),
         ..player_app()
     };
-    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app);
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[]);
     assert!(
         matches!(&refused, Err(CodegenError::ReservedName { message, name })
             if message == "bad.v1.Bug" && name == "Bug"),
@@ -256,7 +256,7 @@ fn test_scaffold_python_refuses_a_domain_the_protos_do_not_declare() {
         ..player_app()
     };
     assert_eq!(
-        scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app),
+        scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[]),
         Err(CodegenError::PythonNoDomain {
             domain: "nowhere".to_string()
         })
@@ -504,6 +504,7 @@ fn basket() -> Vec<ScaffoldFile> {
         &descriptors(BASKET),
         &["pyshop/v1/basket.proto"],
         &basket_app(),
+        &[],
     )
     .unwrap()
 }
@@ -621,7 +622,8 @@ fn test_scaffold_python_scaffolds_a_command_with_a_typed_refusal() {
         domain: "wallet".to_string(),
         ..basket_app()
     };
-    let files = scaffold_python(&descriptors(BUYIN), &["buyin/v1/wallet.proto"], &app).unwrap();
+    let files =
+        scaffold_python(&descriptors(BUYIN), &["buyin/v1/wallet.proto"], &app, &[]).unwrap();
     let logic = &file(&files, "src/angzarr_wallet/logic.py").source;
     assert!(
         logic.contains(") -> Held | InsufficientFunds: ..."),

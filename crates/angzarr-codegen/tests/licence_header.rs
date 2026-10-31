@@ -51,7 +51,7 @@ fn every_python_scaffold_file_is_headed() {
         },
         rules_version: "0.1.0".to_string(),
     };
-    assert_headed(&scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app).unwrap());
+    assert_headed(&scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[]).unwrap());
 }
 
 #[test]

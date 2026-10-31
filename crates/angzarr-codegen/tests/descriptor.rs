@@ -245,7 +245,7 @@ fn python_bytes(source: &str) -> Vec<u8> {
 // generated descriptor, unchanged.
 #[test]
 fn the_python_project_holds_its_components_generated_descriptor() {
-    let files = scaffold_python(&descriptors_set(), &[ORDERS], &order_app()).unwrap();
+    let files = scaffold_python(&descriptors_set(), &[ORDERS], &order_app(), &[]).unwrap();
     let file = files
         .iter()
         .find(|f| f.path == "src/angzarr_order/_descriptor.py")

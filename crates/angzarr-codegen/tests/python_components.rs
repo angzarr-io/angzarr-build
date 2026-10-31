@@ -8,7 +8,10 @@
 
 mod common;
 
-use angzarr_codegen::{Owner, ProtoInput, PythonApp, ScaffoldFile, refusal_key, scaffold_python};
+use angzarr_codegen::{
+    CodegenError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate, refusal_key,
+    scaffold_python,
+};
 use common::*;
 
 const LEDGER: &str = "io/angzarr/examples/v1/ledger.proto";
@@ -26,7 +29,7 @@ fn app(domain: &str) -> PythonApp {
 }
 
 fn blackjack(file: &str, domain: &str) -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BLACKJACK), &[file], &app(domain))
+    scaffold_python(&descriptors(BLACKJACK), &[file], &app(domain), &[])
         .unwrap_or_else(|e| panic!("{file} as {domain}: {e:?}"))
 }
 
@@ -187,6 +190,7 @@ fn test_a_command_with_no_emits_returns_a_list_of_any_of_its_domains_events() {
         &descriptors(&["kinds/v1/kinds.proto"]),
         &["kinds/v1/kinds.proto"],
         &app("ledger"),
+        &[],
     )
     .unwrap();
     assert_has(
@@ -206,6 +210,7 @@ fn test_a_command_with_no_emits_of_a_domain_with_no_events_returns_none() {
         &descriptors(&["lone/v1/lone.proto"]),
         &["lone/v1/lone.proto"],
         &app("slots"),
+        &[],
     )
     .unwrap();
     assert_has(
@@ -350,7 +355,7 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
 // ------------------------------------------------ refusals, cardinality
 
 fn till() -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(TILL), TILL, &app("till")).unwrap()
+    scaffold_python(&descriptors(TILL), TILL, &app("till"), &[]).unwrap()
 }
 
 /// A decision returns its events or one of its typed refusals, several to
@@ -456,7 +461,7 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
 #[test]
 fn test_a_refusals_key_is_the_same_in_python_as_in_rust() {
     const KINDS: &str = "kinds/v1/kinds.proto";
-    let files = scaffold_python(&descriptors(&[KINDS]), &[KINDS], &app("ledger")).unwrap();
+    let files = scaffold_python(&descriptors(&[KINDS]), &[KINDS], &app("ledger"), &[]).unwrap();
     let domain = source(&files, "/domain.py");
     let cases = [
         (
@@ -577,6 +582,7 @@ fn test_a_projectors_default_name_is_its_anchor_in_kebab_case() {
         &descriptors(&[FILE]),
         &[FILE],
         &app("projector-http-server-view"),
+        &[],
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
     let dispatch = source(&files, "_angzarr.py");
@@ -738,6 +744,7 @@ fn test_a_projectors_input_domain_is_its_one_source() {
         &descriptors(&[FILE]),
         &[FILE],
         &app("projector-page-counter"),
+        &[],
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
     let dispatch = source(&files, "_angzarr.py");
@@ -775,8 +782,13 @@ fn test_a_map_converts_each_value_by_its_kind() {
 #[test]
 fn test_a_policy_whose_target_takes_facts_only_sends_any_object() {
     const FILE: &str = "pyshop/v1/views.proto";
-    let files = scaffold_python(&descriptors(&[FILE]), &[FILE], &app("policy-pages-tally"))
-        .unwrap_or_else(|e| panic!("{e:?}"));
+    let files = scaffold_python(
+        &descriptors(&[FILE]),
+        &[FILE],
+        &app("policy-pages-tally"),
+        &[],
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
     let logic = source(&files, "/logic.py");
     assert_has(logic, &["-> list[tuple[bytes, object]]: ..."]);
 }
@@ -803,5 +815,176 @@ fn test_a_projectors_descriptor_lists_its_sources_in_order() {
     assert!(
         hex.contains(&format!("{}{}", input("table"), input("wallet"))),
         "{hex}"
+    );
+}
+
+// ------------------------------------------------------------- refusals
+
+/// The toy buy-in (`tests/fixtures/buyin`): the buy-in process manager is
+/// the source of the BuyInWallet policy, whose target, the wallet, takes
+/// Deposit and Hold, Hold refusing with InsufficientFunds.
+fn buyin_python(domain: &str, translate: &[Translate]) -> Vec<ScaffoldFile> {
+    scaffold_python(&descriptors(BUYIN), BUYIN, &app(domain), translate)
+        .unwrap_or_else(|e| panic!("{domain}: {e:?}"))
+}
+
+/// The refusal switch set to translate BuyInWallet's Hold into the
+/// buy-in's own HoldLost, as the Rust scaffold's tests set it.
+fn translate_hold() -> Translate {
+    Translate {
+        policy: "buyin.v1.BuyInWalletPolicy".to_string(),
+        command: "buyin.v1.Hold".to_string(),
+        fact: "buyin.v1.HoldLost".to_string(),
+    }
+}
+
+/// `source` parses as Python (python3's `ast`).
+fn assert_parses(path: &str, source: &str) {
+    let out = std::process::Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg("import ast, sys; ast.parse(sys.stdin.read())")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(source.as_bytes())?;
+            child.wait_with_output()
+        })
+        .expect("python3 on PATH");
+    assert!(
+        out.status.success(),
+        "{path}: {}\n{source}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A domain whose policies send commands handles the pass-through
+/// refusal of each (decision 14.31, the coordinator's `CommandRefused`)
+/// in `on_refused_<command>`: the refused command and, where it refuses
+/// with types, its typed refusal or None, the state and the context,
+/// returning the events that record it.
+#[test]
+fn test_a_domain_handles_the_pass_through_refusal_of_each_command_its_policies_send() {
+    let files = buyin_python("buyin", &[]);
+    let logic = source(&files, "/logic.py");
+    assert_has(
+        logic,
+        &[
+            "def on_refused_deposit(self, command: Deposit, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
+            "def on_refused_hold(self, command: Hold, refusal: InsufficientFunds | None, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
+        ],
+    );
+    assert_has(
+        source(&files, "/logic_impl.py"),
+        &["raise NotImplementedError  # TODO: record the refusal of Hold"],
+    );
+    let domain = source(&files, "/domain.py");
+    for plain in ["class Deposit:", "class Hold:", "class InsufficientFunds:"] {
+        assert!(domain.contains(plain), "{plain}:\n{domain}");
+    }
+    let dispatch = source(&files, "buy_in_angzarr.py");
+    assert_has(
+        dispatch,
+        &[
+            "_TYPED_REFUSALS = {\"buyin.v1.InsufficientFunds\": (_wallet.InsufficientFunds, _to_insufficient_funds),}",
+            "entry = _TYPED_REFUSALS.get(payload.type_url.rpartition(\"/\")[2])",
+            "def _on_refused_hold(refused, state, cctx):",
+            "command = _to_hold(_decode(_wallet.Hold(), refused.command.page.command.payload))",
+            "typed = _typed_refusal(refused.refusal)",
+            "flags = logic.on_refused_hold(command, typed, _to_buy_in_state(state), cctx)",
+            "return _az.FactRecord(refused, tuple(_wire(flags)))",
+            "if hasattr(logic, \"on_refused_hold\"): dispatch.on_refused(\"buyin.v1.Hold\", _on_refused_hold)",
+            "flags = logic.on_refused_deposit(command, _to_buy_in_state(state), cctx)",
+            "if hasattr(logic, \"on_refused_deposit\"): dispatch.on_refused(\"buyin.v1.Deposit\", _on_refused_deposit)",
+        ],
+    );
+    assert_parses("buy_in_angzarr.py", dispatch);
+    assert_parses("logic.py", logic);
+}
+
+/// A command the refusal switch translates reaches its source as the
+/// policy's fact, never as `CommandRefused`: the source's logic gets no
+/// `on_refused_<command>` for it; every other command keeps its own.
+#[test]
+fn test_translate_drops_the_sources_pass_through_of_the_command_it_translates() {
+    let files = buyin_python("buyin", &[translate_hold()]);
+    let logic = source(&files, "/logic.py");
+    assert!(!logic.contains("on_refused_hold"), "{logic}");
+    assert!(logic.contains("def on_refused_deposit("), "{logic}");
+}
+
+/// The refusal switch set to translate (`--translate`, as the Rust
+/// scaffold's): the policy's logic gets `<command>_refused`, taking the
+/// refused command, its typed refusal or None and the refused command's
+/// context, returning a fact of its source; its dispatch registers it with
+/// the client's `on_refused` when the logic has it.
+#[test]
+fn test_a_policy_translates_the_refused_command_the_switch_selects() {
+    let files = buyin_python("policy-buyin-wallet", &[translate_hold()]);
+    let logic = source(&files, "/logic.py");
+    assert_has(
+        logic,
+        &[
+            "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: ...",
+        ],
+    );
+    assert!(!logic.contains("deposit_refused"), "{logic}");
+    assert_has(
+        source(&files, "/logic_impl.py"),
+        &["raise NotImplementedError  # TODO: translate the refusal of Hold"],
+    );
+    let domain = source(&files, "/domain.py");
+    assert!(
+        domain.contains("from angzarr_client.router import CommandContext as CommandContext"),
+        "{domain}"
+    );
+    let dispatch = source(&files, "buy_in_wallet_angzarr.py");
+    assert_has(
+        dispatch,
+        &[
+            "_FACTS = {_d.HoldLost: _from_hold_lost,}",
+            "def _hold_refused(refusal, ctx):",
+            "command = _to_hold(_decode(_wallet.Hold(), refusal.command.page.command.payload))",
+            "typed = _typed_refusal(refusal.response.refusal)",
+            "return _fact(logic.hold_refused(command, typed, ctx))",
+            "if hasattr(logic, \"hold_refused\"): dispatch.on_refused(\"buyin.v1.Hold\", _hold_refused)",
+            "if hasattr(logic, \"deposit_refused\"): dispatch.on_refused(\"buyin.v1.Deposit\", _deposit_refused)",
+        ],
+    );
+    assert_parses("buy_in_wallet_angzarr.py", dispatch);
+    assert_parses("logic.py", logic);
+}
+
+/// What the switch leaves alone is passed through: the policy's logic has
+/// no `<command>_refused`, and the generated files are the same either way,
+/// so a run without `--translate` keeps a translation the user's logic has.
+#[test]
+fn test_a_policy_without_translate_passes_every_refusal_through() {
+    let plain = buyin_python("policy-buyin-wallet", &[]);
+    assert!(!source(&plain, "/logic.py").contains("_refused"));
+    let translated = buyin_python("policy-buyin-wallet", &[translate_hold()]);
+    for (a, b) in plain.iter().zip(&translated) {
+        if a.owner == Owner::Generated {
+            assert_eq!(a.source, b.source, "{}", a.path);
+        }
+    }
+}
+
+/// A translate selection the protos do not support is refused, as the
+/// Rust scaffold refuses it.
+#[test]
+fn test_scaffold_python_refuses_translate_for_an_unknown_policy() {
+    let selection = Translate {
+        policy: "buyin.v1.Nowhere".to_string(),
+        ..translate_hold()
+    };
+    assert_eq!(
+        scaffold_python(&descriptors(BUYIN), BUYIN, &app("buyin"), &[selection]),
+        Err(CodegenError::TranslateUnknownPolicy {
+            policy: "buyin.v1.Nowhere".to_string()
+        })
     );
 }

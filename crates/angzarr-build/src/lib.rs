@@ -420,7 +420,7 @@ pub fn scaffold_python_into(
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
     let files =
-        angzarr_codegen::scaffold_python(&bytes, protos, app).map_err(BuildError::Codegen)?;
+        angzarr_codegen::scaffold_python(&bytes, protos, app, &[]).map_err(BuildError::Codegen)?;
     write_scaffold(root, files, existing)
 }
 
