@@ -38,7 +38,7 @@ use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
 /// on, pinned by commit: every project this CLI scaffolds gets this one.
-pub const CLIENT_PYTHON_REV: &str = "361be4a389c72a78cf7ddd79b9766d9c8fafd0eb";
+pub const CLIENT_PYTHON_REV: &str = "c62dc8f1fa828193b0e5083b28bcb37444f6c655";
 /// Where [`CLIENT_PYTHON_REV`] is fetched from.
 pub const CLIENT_PYTHON_GIT: &str = "https://github.com/angzarr-io/angzarr-client-python";
 
@@ -423,7 +423,7 @@ fn descriptor_py(
         .find(|d| d.component == anchor)
         .map(|d| d.encoded)
         .unwrap_or_default();
-    let encoded = renamed(descriptor_set, &encoded, &unit.name)?;
+    let encoded = renamed(descriptor_set, &encoded, unit)?;
     let hex: String = encoded.iter().map(|b| format!("{b:02x}")).collect();
     let lines: String = hex
         .as_bytes()
@@ -442,16 +442,33 @@ fn descriptor_py(
     ))
 }
 
-/// `encoded`, a `ComponentDescriptor`, named `name`.
-fn renamed(descriptor_set: &[u8], encoded: &[u8], name: &str) -> Result<Vec<u8>, CodegenError> {
+/// `encoded`, a `ComponentDescriptor`, as the unit has it: named by its
+/// name in an application, a projector's inputs its sources in their
+/// order, as the dispatch's `for_domains` names them, so `describe` of the
+/// dispatch (angzarr-client-python's) gives the same descriptor.
+fn renamed(descriptor_set: &[u8], encoded: &[u8], unit: &Unit) -> Result<Vec<u8>, CodegenError> {
     let failed = |detail: String| CodegenError::Descriptors { detail };
     let pool = DescriptorPool::decode(descriptor_set).map_err(|e| failed(e.to_string()))?;
-    let descriptor = pool
-        .get_message_by_name(COMPONENT_DESCRIPTOR)
-        .ok_or_else(|| failed(format!("the set declares no {COMPONENT_DESCRIPTOR}")))?;
-    let mut message =
-        DynamicMessage::decode(descriptor, encoded).map_err(|e| failed(e.to_string()))?;
-    message.set_field_by_name("name", Value::String(name.to_string()));
+    let found = |name: &str| {
+        pool.get_message_by_name(name)
+            .ok_or_else(|| failed(format!("the set declares no {name}")))
+    };
+    let mut message = DynamicMessage::decode(found(COMPONENT_DESCRIPTOR)?, encoded)
+        .map_err(|e| failed(e.to_string()))?;
+    message.set_field_by_name("name", Value::String(unit.name.clone()));
+    if unit.kind() == ComponentKind::Projector {
+        let target = found("io.angzarr.v1.Target")?;
+        let inputs = unit
+            .sources
+            .iter()
+            .map(|domain| {
+                let mut input = DynamicMessage::new(target.clone());
+                input.set_field_by_name("domain", Value::String(domain.clone()));
+                Value::Message(input)
+            })
+            .collect();
+        message.set_field_by_name("inputs", Value::List(inputs));
+    }
     Ok(message.encode_to_vec())
 }
 

@@ -659,3 +659,28 @@ fn test_a_policy_whose_target_takes_facts_only_sends_any_object() {
     let logic = source(&files, "/logic.py");
     assert_has(logic, &["-> list[tuple[bytes, object]]: ..."]);
 }
+
+/// A projector's descriptor names its sources in its dispatch's order
+/// (`input_domains`'), so the client's `describe` of the dispatch is the
+/// same descriptor.
+#[test]
+fn test_a_projectors_descriptor_lists_its_sources_in_order() {
+    let files = ledger();
+    let descriptor = source(&files, "/_descriptor.py");
+    let hex: String = descriptor
+        .lines()
+        .filter_map(|l| l.strip_prefix("        \"")?.strip_suffix('"'))
+        .collect();
+    let input = |domain: &str| {
+        format!(
+            "1a{:02x}0a{:02x}{}",
+            domain.len() + 2,
+            domain.len(),
+            hex_of(domain)
+        )
+    };
+    assert!(
+        hex.contains(&format!("{}{}", input("table"), input("wallet"))),
+        "{hex}"
+    );
+}
