@@ -72,17 +72,14 @@ impl ComponentKind {
     }
 }
 
-/// The write side's kinds: what the Python scaffold emits, and what owns
-/// a policy's domains.
+/// The write side's kinds: what owns a policy's domains.
 pub(crate) const WRITE_KINDS: &[ComponentKind] = &[
     ComponentKind::Aggregate,
     ComponentKind::Policy,
     ComponentKind::ProcessManager,
 ];
-/// The kinds the Python scaffold reads: the write side's.
-pub(crate) const MARKUP_KINDS: &[ComponentKind] = WRITE_KINDS;
 /// Every kind: what the Rust markup (scaffold, adapters, register, domain
-/// layer) and the descriptors are generated for.
+/// layer), the Python scaffold and the descriptors are generated for.
 pub(crate) const ALL_KINDS: &[ComponentKind] = &[
     ComponentKind::Aggregate,
     ComponentKind::Policy,

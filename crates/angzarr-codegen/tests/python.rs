@@ -563,17 +563,19 @@ fn test_scaffold_python_wraps_the_interfaces_doc_at_79_columns() {
     assert!(logic.starts_with(first), "{logic}");
 }
 
+/// A command declaring a typed refusal is scaffolded: its decision returns
+/// its event or the refusal.
 #[test]
-fn test_scaffold_python_refuses_a_command_with_a_typed_refusal() {
+fn test_scaffold_python_scaffolds_a_command_with_a_typed_refusal() {
     let app = PythonApp {
         domain: "wallet".to_string(),
         ..basket_app()
     };
-    assert_eq!(
-        scaffold_python(&descriptors(BUYIN), &["buyin/v1/wallet.proto"], &app),
-        Err(CodegenError::PythonRefuses {
-            message: "buyin.v1.Hold".to_string()
-        })
+    let files = scaffold_python(&descriptors(BUYIN), &["buyin/v1/wallet.proto"], &app).unwrap();
+    let logic = &file(&files, "src/angzarr_wallet/logic.py").source;
+    assert!(
+        logic.contains(") -> Held | InsufficientFunds: ..."),
+        "{logic}"
     );
 }
 

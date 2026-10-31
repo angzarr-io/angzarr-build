@@ -27,7 +27,8 @@ fn descriptors_set() -> Vec<u8> {
     common::descriptors(FILES)
 }
 
-/// The descriptor of the component named `name`, decoded.
+/// The descriptor of the component named `name` (its name in an
+/// application, decision 14.50), decoded.
 fn descriptor(name: &str) -> ComponentDescriptor {
     let all = generated();
     let found = all
@@ -44,7 +45,7 @@ fn domains(inputs: &[Target]) -> Vec<&str> {
 // C-0715
 #[test]
 fn a_policy_descriptor_names_its_input_and_output_domain() {
-    let policy = descriptor("OrderToInventory");
+    let policy = descriptor("policy-order-inventory");
     assert_eq!(policy.kind, ComponentKind::Policy as i32);
     assert_eq!(domains(&policy.inputs), ["order"]);
     assert_eq!(policy.output_domain, "inventory");
@@ -82,7 +83,7 @@ fn the_generated_descriptor_carries_the_build_version_and_the_state_type() {
 #[test]
 fn a_listed_base_resolution_is_not_repeated() {
     // FulfillmentState lists STRICT, already in the base.
-    let state = descriptor("Fulfillment").state.expect("a PM's state");
+    let state = descriptor("pmg-fulfillment").state.expect("a PM's state");
     assert_eq!(state.type_url, "/fulfillment.FulfillmentState");
     assert_eq!(
         state
@@ -101,8 +102,8 @@ fn a_listed_base_resolution_is_not_repeated() {
 fn only_a_policy_descriptor_carries_an_output_domain() {
     for (name, kind) in [
         ("order", ComponentKind::Aggregate),
-        ("Fulfillment", ComponentKind::ProcessManager),
-        ("OrderSummary", ComponentKind::Projector),
+        ("pmg-fulfillment", ComponentKind::ProcessManager),
+        ("projector-order-summary-view", ComponentKind::Projector),
     ] {
         let d = descriptor(name);
         assert_eq!(d.kind, kind as i32, "{name}'s kind");
@@ -113,7 +114,7 @@ fn only_a_policy_descriptor_carries_an_output_domain() {
 // C-0607, with the bare type names of decision 14.41.
 #[test]
 fn a_process_manager_descriptor_lists_its_starting_type_names() {
-    let pm = descriptor("Fulfillment");
+    let pm = descriptor("pmg-fulfillment");
     assert_eq!(pm.starting_types, ["fulfillment.StartFulfillment"]);
     assert!(
         pm.inputs.is_empty(),
@@ -124,7 +125,7 @@ fn a_process_manager_descriptor_lists_its_starting_type_names() {
 
 #[test]
 fn a_projector_descriptor_subscribes_to_its_events_domains_and_has_no_state() {
-    let summary = descriptor("OrderSummary");
+    let summary = descriptor("projector-order-summary-view");
     assert_eq!(domains(&summary.inputs), ["order"]);
     assert_eq!(summary.state, None);
     assert!(summary.starting_types.is_empty());
@@ -132,7 +133,10 @@ fn a_projector_descriptor_subscribes_to_its_events_domains_and_has_no_state() {
 
 #[test]
 fn a_projector_descriptor_subscribes_to_its_input_domain_when_it_names_one() {
-    assert_eq!(domains(&descriptor("AuditTrail").inputs), ["audit"]);
+    assert_eq!(
+        domains(&descriptor("projector-audit-trail-view").inputs),
+        ["audit"]
+    );
 }
 
 #[test]
@@ -145,10 +149,10 @@ fn every_component_has_one_descriptor_in_declaration_order() {
         all,
         s(&[
             ("orders.v1.OrderState", "order"),
-            ("orders.v1.OrderToInventoryPolicy", "OrderToInventory"),
-            ("orders.v1.OrderSummaryView", "OrderSummary"),
-            ("orders.v1.AuditTrailView", "AuditTrail"),
-            ("fulfillment.FulfillmentState", "Fulfillment"),
+            ("orders.v1.OrderToInventoryPolicy", "policy-order-inventory"),
+            ("orders.v1.OrderSummaryView", "projector-order-summary-view"),
+            ("orders.v1.AuditTrailView", "projector-audit-trail-view"),
+            ("fulfillment.FulfillmentState", "pmg-fulfillment"),
         ])
     );
 }
@@ -209,10 +213,10 @@ fn the_rust_build_layer_leaves_a_remote_domain_to_its_process() {
     assert_eq!(
         names,
         [
-            "OrderToInventory",
-            "OrderSummary",
-            "AuditTrail",
-            "Fulfillment"
+            "policy-order-inventory",
+            "projector-order-summary-view",
+            "projector-audit-trail-view",
+            "pmg-fulfillment"
         ]
     );
 }

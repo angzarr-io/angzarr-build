@@ -1,5 +1,6 @@
 //! Each component's whole `ComponentDescriptor` (types.proto), generated
-//! at build time from its protos (decision 14.42): its name and kind, the
+//! at build time from its protos (decision 14.42): its name in an
+//! application (decision 14.50) and kind, the
 //! domains it subscribes to, its state's type and resolved conflict
 //! resolutions, a process manager's starting type names, a policy's output
 //! domain, and the build's version as its rules version. The business
@@ -29,7 +30,8 @@ const BASE_RESOLUTIONS: [i32; 2] = [2, 3];
 pub struct Descriptor {
     /// The component's anchor message, e.g. `orders.v1.OrderState`.
     pub component: String,
-    /// `ComponentDescriptor.name`: the component's name.
+    /// `ComponentDescriptor.name`: the component's name in an application
+    /// (`component_name`, else its kind's default, decision 14.50).
     pub name: String,
     /// The `ComponentDescriptor`, encoded.
     pub encoded: Vec<u8>,
@@ -64,7 +66,7 @@ pub(crate) fn build(
             let encoded = encode(&pool, &component, rules_version)?;
             let descriptor = Descriptor {
                 component: component.anchor.full_name().to_string(),
-                name: component.name.clone(),
+                name: component.component_name.clone(),
                 encoded,
             };
             Ok((component, descriptor))
@@ -82,7 +84,7 @@ fn encode(
     set(
         &mut descriptor,
         "name",
-        Value::String(component.name.clone()),
+        Value::String(component.component_name.clone()),
     )?;
     set(
         &mut descriptor,
@@ -141,9 +143,10 @@ fn encode(
     Ok(descriptor.encode_to_vec())
 }
 
-/// The domains a component subscribes to: its `input_domain`, else the
-/// source domains of its `(event)` entries. An aggregate or a process
-/// manager has neither.
+/// The domains a component subscribes to: its `input_domain`, else its
+/// sources (a projector's `input_domains`, else the domains of its
+/// `(event)` entries, in order). An aggregate or a process manager has
+/// neither.
 fn subscriptions(component: &Component) -> Vec<String> {
     if component.input_domain.is_empty() {
         component.sources.clone()

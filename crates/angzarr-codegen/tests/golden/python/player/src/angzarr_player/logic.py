@@ -1,9 +1,10 @@
 """PlayerLogic: the player domain's logic, for
 ``io.angzarr.examples.v1.PlayerState``. Written once by ``angzarr scaffold
 python`` and yours from then on: ``--missing`` adds the methods it lacks. It
-takes and returns the domain's plain types (:mod:`.domain`), each decision its
-``CommandContext`` too, raising ``Rejection`` to refuse its command (or ``Bug``
-for a defect), and imports nothing of angzarr directly; the generated dispatch
+takes and returns the plain types (:mod:`.domain`), each decision its
+``CommandContext`` too, returning its events or one of its typed refusals, or
+raising ``Rejection`` to refuse its command (or ``Bug`` for a defect), and
+imports nothing of angzarr directly; the generated dispatch
 (``_gen/.../player_aggregate_angzarr.py``) calls it.
 """
 

@@ -26,8 +26,8 @@ pub fn spec() -> PathBuf {
 
 /// protoc's descriptor set for `files` under `tests/fixtures` or the spec's
 /// protos ([`spec`]), with angzarr's protos importable: the spec's own
-/// `io/angzarr/v1` first, so its options are the submodule's (angzarr-proto's
-/// copy can trail the spec draft).
+/// first, so its options (the ones the generator reads) are the spec's,
+/// then angzarr-proto's for what the spec does not hold.
 pub fn descriptors(files: &[&str]) -> Vec<u8> {
     static RUN: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(

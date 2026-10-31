@@ -21,6 +21,6 @@ fn test_descriptors_writes_into_out_dir_with_the_crates_version() {
         source.contains(&format!("{:?}", env!("CARGO_PKG_VERSION"))),
         "{source}"
     );
-    assert!(source.contains("AuditTrail"), "{source}");
+    assert!(source.contains("projector-audit-trail-view"), "{source}");
     std::fs::remove_dir_all(&out).unwrap();
 }

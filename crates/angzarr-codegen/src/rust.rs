@@ -380,14 +380,8 @@ fn handler_context() -> TokenStream {
 /// [`field_arg`]).
 fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
     let name = ident(message.name());
-    let reason = message.fields().find(|f| {
-        f.name() == "reason"
-            && !f.is_list()
-            && matches!(f.kind(), Kind::Enum(e) if e.name() == "Reason"
-                && e.parent_message().as_ref() == Some(message))
-    });
-    let code = match reason.as_ref().map(FieldDescriptor::kind) {
-        Some(Kind::Enum(e)) => {
+    let code = match refusal_reason(message) {
+        Some(e) => {
             let ty = ident(&enum_name(&e));
             let arms = e.values().filter(|v| v.number() != 0).map(|v| {
                 let variant = ident(&camel(wire_name(&e, v.name())));
@@ -534,10 +528,25 @@ pub fn refusal_key(full_name: &str, reason: Option<&str>) -> String {
     key.replace(['.', '_'], "-").to_lowercase()
 }
 
+/// A typed refusal's rejection codes (decision 14.50): the nested `Reason`
+/// enum it declares as its singular `reason` field, which its diagnostic
+/// key reads; `None` for a refusal without one.
+pub(crate) fn refusal_reason(message: &MessageDescriptor) -> Option<EnumDescriptor> {
+    let field = message
+        .get_field_by_name("reason")
+        .filter(|f| !f.is_list())?;
+    match field.kind() {
+        Kind::Enum(e) if e.name() == "Reason" && e.parent_message().as_ref() == Some(message) => {
+            Some(e)
+        }
+        _ => None,
+    }
+}
+
 /// An enum value's wire name: its name without the enum's prefix
 /// (`REASON_ALREADY_BET` of `Reason` as `ALREADY_BET`), what ErrorInfo
 /// carries and an arg holds.
-fn wire_name<'a>(e: &EnumDescriptor, value: &'a str) -> &'a str {
+pub(crate) fn wire_name<'a>(e: &EnumDescriptor, value: &'a str) -> &'a str {
     let prefix = format!("{}_", screaming(e.name()));
     value.strip_prefix(&prefix).unwrap_or(value)
 }

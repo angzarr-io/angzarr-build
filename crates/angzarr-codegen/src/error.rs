@@ -105,16 +105,9 @@ pub enum CodegenError {
         expected: String,
         found: String,
     },
-    /// The protos declare no aggregate of the domain asked for.
+    /// The protos declare no component of the domain, or of the name,
+    /// asked for.
     PythonNoDomain { domain: String },
-    /// A component kind the Python scaffold does not emit yet: only
-    /// aggregates.
-    PythonKind { component: String },
-    /// A fact, which the Python scaffold does not emit yet.
-    PythonFact { message: String },
-    /// A command declaring typed refusals, which the Python scaffold does
-    /// not emit yet.
-    PythonRefuses { message: String },
     /// A host config (`angzarr.toml`) that does not read as one.
     AppConfig { detail: String },
     /// `angzarr scaffold app` refused the host config: it has lints
@@ -265,20 +258,11 @@ impl fmt::Display for CodegenError {
                 "{path} takes {message} as {found}, but the proto declares it a {expected}"
             ),
             CodegenError::PythonNoDomain { domain } => {
-                write!(f, "the protos declare no aggregate of the domain {domain}")
+                write!(
+                    f,
+                    "the protos declare no component of the domain, or named, {domain}"
+                )
             }
-            CodegenError::PythonKind { component } => write!(
-                f,
-                "{component} is not an aggregate; the Python scaffold emits aggregates only"
-            ),
-            CodegenError::PythonFact { message } => write!(
-                f,
-                "{message} is a fact, which the Python scaffold does not emit yet"
-            ),
-            CodegenError::PythonRefuses { message } => write!(
-                f,
-                "{message} declares refuses, which the Python scaffold does not emit yet"
-            ),
             CodegenError::AppConfig { detail } => {
                 write!(f, "the host config does not read as one: {detail}")
             }
@@ -339,9 +323,6 @@ impl Diagnostic for CodegenError {
             CodegenError::EmitsTuple { .. } => "angzarr-codegen-emits-tuple",
             CodegenError::InputMismatch { .. } => "angzarr-codegen-input-mismatch",
             CodegenError::PythonNoDomain { .. } => "angzarr-codegen-python-no-domain",
-            CodegenError::PythonKind { .. } => "angzarr-codegen-python-kind",
-            CodegenError::PythonFact { .. } => "angzarr-codegen-python-fact",
-            CodegenError::PythonRefuses { .. } => "angzarr-codegen-python-refuses",
             CodegenError::AppConfig { .. } => "angzarr-codegen-app-config",
             CodegenError::AppRefused { .. } => "angzarr-codegen-app-refused",
         }
@@ -455,10 +436,6 @@ impl Diagnostic for CodegenError {
                 ("found", s(found)),
             ],
             CodegenError::PythonNoDomain { domain } => vec![("domain", s(domain))],
-            CodegenError::PythonKind { component } => vec![("component", s(component))],
-            CodegenError::PythonFact { message } | CodegenError::PythonRefuses { message } => {
-                vec![("message", s(message))]
-            }
             CodegenError::AppConfig { detail } => vec![("detail", s(detail))],
             CodegenError::AppRefused { lints } => {
                 vec![(
@@ -572,13 +549,10 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             found: s(),
         }),
         Box::new(CodegenError::PythonNoDomain { domain: s() }),
-        Box::new(CodegenError::PythonKind { component: s() }),
-        Box::new(CodegenError::PythonFact { message: s() }),
         Box::new(CodegenError::ReservedName {
             message: s(),
             name: s(),
         }),
-        Box::new(CodegenError::PythonRefuses { message: s() }),
         Box::new(CodegenError::AppConfig { detail: s() }),
         Box::new(CodegenError::AppRefused { lints: Vec::new() }),
     ];
