@@ -412,7 +412,7 @@ fn test_each_component_takes_its_name_from_the_proto() {
         let descriptor = source(&files, "/_descriptor.py");
         let hex: String = descriptor
             .lines()
-            .filter_map(|l| l.trim().strip_prefix('"')?.strip_suffix('"'))
+            .filter_map(|l| l.strip_prefix("        \"")?.strip_suffix('"'))
             .collect();
         let named = format!("0a{:02x}{}", name.len(), hex_of(name));
         assert!(hex.starts_with(&named), "{name}: {hex}");
