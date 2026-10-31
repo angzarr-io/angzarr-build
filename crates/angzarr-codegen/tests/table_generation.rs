@@ -1,13 +1,13 @@
-//! red/table-generation: what generating the blackjack table (the spec's
-//! table.proto and the LedgerProjection beside it) needs that the generator
-//! does not do yet. The plan is
+//! What generating the blackjack table (the spec's table.proto and the
+//! LedgerProjection beside it) needs, decision 14.50 and the owner's
+//! generator rulings: table.proto generating alone, the projector of two
+//! domains, typed refusals' args and Reason codes, the trigger root from the
+//! policy context, the spec's policy names, and the generated register
+//! composing with a hand-written component. The plan is
 //! `rust-table-generation.plan.md` (session inept-sixth-stick). Every
 //! fixture is the spec submodule's protos ([`spec`]) except
 //! `refusals/v1/refusals.proto`, a declared rejection code's shape
 //! (decision 14.50) in small.
-//!
-//! Red today, each for the reason its doc says; the pins marked GREEN hold
-//! what the plan keeps.
 
 mod common;
 
@@ -212,7 +212,7 @@ fn test_policy_adapters_read_the_trigger_root_from_the_context() {
     assert!(source.contains("ctx.source_root()"), "{source}");
 }
 
-/// GREEN pin: a policy is named for its spec name, policy-<source>-<target>,
+/// A policy is named for its spec name, policy-<source>-<target>,
 /// with no hand edit (examples-rust's two HAND-EDITs went with the split
 /// scaffold).
 #[test]
@@ -230,7 +230,7 @@ fn test_policy_adapters_carry_the_spec_names() {
 
 // ----------------------------------------------------------- escape hatch
 
-/// GREEN pin of the escape hatch: the generated `register` is a plain
+/// The escape hatch: the generated `register` is a plain
 /// public function the application composes with components it writes by
 /// hand, registered through angzarr-embedded's own public API
 /// (`Registry::projector_handler`, which takes its source domains),
