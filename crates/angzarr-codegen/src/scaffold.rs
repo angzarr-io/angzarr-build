@@ -20,11 +20,12 @@
 //! writing files is angzarr-build's.
 
 use proc_macro2::TokenStream;
+use prost_reflect::MessageDescriptor;
 use quote::{format_ident, quote};
 
 use crate::common::{has_code_status, refusal_choice_name, snake};
 use crate::error::CodegenError;
-use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Input, owner};
+use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Decided, Input, owner};
 use crate::rust::{RUNTIME, ident, root, runtime_macros};
 use crate::{Generated, generate};
 
@@ -157,18 +158,18 @@ fn check_translate(components: &[Component], selection: &Translate) -> Result<()
     }
 }
 
-/// One method of a component's interface: its signature, the message it
-/// takes (by name) and the parameter it takes it as.
+/// One method of a component's interface: its name, receiver,
+/// parameters and what it returns.
 struct Method {
     name: String,
     receiver: &'static str,
     /// `(param, type)`, after the receiver.
     params: Vec<(String, String)>,
-    output: Option<String>,
-    /// An async method's output as its implementation's `async fn` returns
-    /// it, the interface's `output` being the future's
-    /// (`impl Future<Output = ..> + Send`).
-    awaited: Option<String>,
+    returns: Option<String>,
+    /// An async method: the interface's returns the future of `returns`
+    /// (`impl Future<Output = ..> + Send`), its implementation's is an
+    /// `async fn`.
+    asynchronous: bool,
 }
 
 impl Method {
@@ -177,11 +178,16 @@ impl Method {
     /// prefixes the parameters (`_` in an implementation, which writes an
     /// async method as an `async fn`: `implementation`).
     fn signature(&self, prefix: &str, end: &str, implementation: bool) -> String {
-        let (asyncness, output) = match (&self.awaited, implementation) {
-            (Some(awaited), true) => ("async ", Some(awaited)),
-            _ => ("", self.output.as_ref()),
+        let asyncness = if self.asynchronous && implementation {
+            "async "
+        } else {
+            ""
         };
-        let output = output.map(|o| format!(" -> {o}")).unwrap_or_default();
+        let output = match (&self.returns, self.asynchronous && !implementation) {
+            (Some(r), true) => format!(" -> impl std::future::Future<Output = {r}> + Send"),
+            (Some(r), false) => format!(" -> {r}"),
+            (None, _) => String::new(),
+        };
         let params: Vec<String> = std::iter::once(self.receiver.to_string())
             .chain(self.params.iter().map(|(p, t)| format!("{prefix}{p}: {t}")))
             .collect();
@@ -213,20 +219,36 @@ fn method(message: &str) -> String {
 /// or a tuple of one of each type in order; OPTIONAL that or `None`; MANY
 /// any number of the component's events, as its event enum.
 fn decided(component: &Component, input: &Input) -> String {
-    let one = match input.emits.as_slice() {
+    let one = |events: &[MessageDescriptor]| match events {
         [single] => single.name().to_string(),
         several => {
             let names: Vec<&str> = several.iter().map(|e| e.name()).collect();
             format!("({})", names.join(", "))
         }
     };
-    match input.cardinality {
-        Cardinality::One => one,
-        Cardinality::Optional => format!("Option<{one}>"),
-        Cardinality::Many => format!("Vec<{}Event>", component.name),
+    match input.decided(component) {
+        Decided::One(events) => one(events),
+        Decided::Optional(events) => format!("Option<{}>", one(events)),
+        Decided::Many(_) => format!("Vec<{}Event>", component.name),
     }
 }
 
+/// The typed refusal `input` refuses with, as the domain layer names it:
+/// its one type, or the choice of several; `None` when it names none.
+fn refusal_type(input: &Input) -> Option<String> {
+    match input.refuses.as_slice() {
+        [] => None,
+        [one] => Some(one.name().to_string()),
+        _ => Some(refusal_choice_name(&input.message)),
+    }
+}
+
+/// A `(name, type)` parameter.
+fn param(name: &str, ty: impl Into<String>) -> (String, String) {
+    (name.to_string(), ty.into())
+}
+
+/// A component's interface, by kind.
 fn interface_methods(
     component: &Component,
     pool: &[Component],
@@ -241,20 +263,17 @@ fn interface_methods(
 
 /// A projector's interface: a projection per event.
 fn projector_methods(component: &Component) -> Vec<Method> {
-    let mut methods = Vec::new();
-    for event in &component.events {
-        methods.push(Method {
-            name: method(event.name()),
-            receiver: "&mut self",
-            params: vec![
-                ("event".to_string(), format!("&{}", event.name())),
-                ("ctx".to_string(), "&ProjectionContext".to_string()),
-            ],
-            output: Some("impl std::future::Future<Output = Result<(), Bug>> + Send".to_string()),
-            awaited: Some("Result<(), Bug>".to_string()),
-        });
-    }
-    methods
+    let projections = component.events.iter().map(|event| Method {
+        name: method(event.name()),
+        receiver: "&mut self",
+        params: vec![
+            param("event", format!("&{}", event.name())),
+            param("ctx", "&ProjectionContext"),
+        ],
+        returns: Some("Result<(), Bug>".to_string()),
+        asynchronous: true,
+    });
+    projections.collect()
 }
 
 /// A policy's interface: a reaction per event, and a translating callback
@@ -264,98 +283,67 @@ fn policy_methods(
     pool: &[Component],
     translate: &[&Translate],
 ) -> Result<Vec<Method>, CodegenError> {
-    let mut methods = Vec::new();
     let target = component.target(pool)?;
-    for event in &component.events {
-        methods.push(Method {
-            name: method(event.name()),
-            receiver: "&self",
-            params: vec![
-                ("source".to_string(), "&[u8]".to_string()),
-                ("event".to_string(), format!("&{}", event.name())),
-                ("ctx".to_string(), "&PolicyContext".to_string()),
-            ],
-            output: Some(format!(
-                "Result<Vec<(Vec<u8>, {}Command)>, Bug>",
-                target.name
-            )),
-            awaited: None,
-        });
-    }
-    for selection in translate {
+    let reactions = component.events.iter().map(|event| Method {
+        name: method(event.name()),
+        receiver: "&self",
+        params: vec![
+            param("source", "&[u8]"),
+            param("event", format!("&{}", event.name())),
+            param("ctx", "&PolicyContext"),
+        ],
+        returns: Some(format!(
+            "Result<Vec<(Vec<u8>, {}Command)>, Bug>",
+            target.name
+        )),
+        asynchronous: false,
+    });
+    let callbacks = translate.iter().map(|selection| {
         let short = |full: &str| full.rsplit('.').next().unwrap_or(full).to_string();
         let (command, fact) = (short(&selection.command), short(&selection.fact));
-        let mut params = vec![("command".to_string(), format!("&{command}"))];
-        // The typed refusal: its one type, or the choice of several.
-        if let Some(refusal) =
-            target
-                .input(&selection.command)
-                .and_then(|i| match i.refuses.as_slice() {
-                    [] => None,
-                    [one] => Some(one.name().to_string()),
-                    _ => Some(refusal_choice_name(&i.message)),
-                })
-        {
-            params.push(("refusal".to_string(), format!("Option<{refusal}>")));
-        }
-        params.push(("ctx".to_string(), "&CommandContext".to_string()));
-        methods.push(Method {
+        let refusal = target.input(&selection.command).and_then(refusal_type);
+        let mut params = vec![param("command", format!("&{command}"))];
+        params.extend(refusal.map(|r| param("refusal", format!("Option<{r}>"))));
+        params.push(param("ctx", "&CommandContext"));
+        Method {
             name: format!("{}_refused", snake(&command)),
             receiver: "&self",
             params,
-            output: Some(format!("Result<{fact}, Bug>")),
-            awaited: None,
-        });
-    }
-    Ok(methods)
+            returns: Some(format!("Result<{fact}, Bug>")),
+            asynchronous: false,
+        }
+    });
+    Ok(reactions.chain(callbacks).collect())
 }
 
 /// An aggregate's or a process manager's interface: a decision per command,
 /// a record per fact, and a fold per event.
 fn domain_methods(component: &Component) -> Vec<Method> {
-    let mut methods = Vec::new();
-    for input in &component.inputs {
+    let decisions = component.inputs.iter().map(|input| {
         let ty = input.message.name();
         let out = decided(component, input);
-        if input.fact {
-            methods.push(Method {
-                name: method(ty),
-                receiver: "&self",
-                params: vec![
-                    ("fact".to_string(), format!("&{ty}")),
-                    ("ctx".to_string(), "&Context".to_string()),
-                ],
-                output: Some(out),
-                awaited: None,
-            });
-            continue;
-        }
-        let error = match input.refuses.as_slice() {
-            [] => "Failed<Rejection>".to_string(),
-            [one] => format!("Failed<{}>", one.name()),
-            _ => format!("Failed<{}>", refusal_choice_name(&input.message)),
+        let (arg, returns) = if input.fact {
+            ("fact", out)
+        } else {
+            let error = refusal_type(input).unwrap_or_else(|| "Rejection".to_string());
+            ("cmd", format!("Result<{out}, Failed<{error}>>"))
         };
-        methods.push(Method {
+        Method {
             name: method(ty),
             receiver: "&self",
-            params: vec![
-                ("cmd".to_string(), format!("&{ty}")),
-                ("ctx".to_string(), "&Context".to_string()),
-            ],
-            output: Some(format!("Result<{out}, {error}>")),
-            awaited: None,
-        });
-    }
-    for event in &component.events {
-        methods.push(Method {
-            name: format!("apply_{}", snake(event.name())),
-            receiver: "&mut self",
-            params: vec![("event".to_string(), format!("&{}", event.name()))],
-            output: None,
-            awaited: None,
-        });
-    }
-    methods
+            params: vec![param(arg, format!("&{ty}")), param("ctx", "&Context")],
+            returns: Some(returns),
+            asynchronous: false,
+        }
+    });
+    let folds = component.events.iter().map(|event| Method {
+        name: format!("apply_{}", snake(event.name())),
+        receiver: "&mut self",
+        params: vec![param("event", format!("&{}", event.name()))],
+        returns: None,
+        asynchronous: false,
+    });
+    decisions.chain(folds).collect()
 }
 
 fn interface_source(component: &Component, methods: &[Method]) -> String {
@@ -992,12 +980,10 @@ fn command_method(component: &Component, input: &Input, interface: &TokenStream)
             // One type widens by its own `Into`; several, by their
             // domain-layer choice's `widen`. A refusal with a Reason is
             // refused under its code's status first (decision 14.52).
-            let (refusal, widen) = match refusals {
-                [one] => (ident(one.name()), quote!(Failed::widen)),
-                _ => {
-                    let choice = format_ident!("{}", refusal_choice_name(&input.message));
-                    (choice.clone(), quote!(#choice::widen))
-                }
+            let refusal = ident(&refusal_type(input).expect("it refuses with types"));
+            let widen = match refusals {
+                [_] => quote!(Failed::widen),
+                _ => quote!(#refusal::widen),
             };
             let widen = if has_code_status(input) {
                 quote!(map_err(#refusal::with_code_status).map_err(#widen))

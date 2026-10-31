@@ -130,6 +130,33 @@ pub(crate) struct Input {
     pub fact: bool,
 }
 
+/// What one handling of an input returns (decision 14.50), for each
+/// emitter to write in its own types.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Decided<'a> {
+    /// One event of each type, in order: the one event, or a tuple.
+    One(&'a [MessageDescriptor]),
+    /// That, or nothing.
+    Optional(&'a [MessageDescriptor]),
+    /// Any number of events of these types, in any order: the input's
+    /// emits or, when it lists none, any of its component's events.
+    Many(&'a [MessageDescriptor]),
+}
+
+impl Input {
+    /// What a handling of this input, of `component`, returns: by its
+    /// cardinality, and an input listing no emits any number of the
+    /// component's events.
+    pub(crate) fn decided<'a>(&'a self, component: &'a Component) -> Decided<'a> {
+        match self.cardinality {
+            _ if self.emits.is_empty() => Decided::Many(&component.events),
+            Cardinality::Many => Decided::Many(&self.emits),
+            Cardinality::One => Decided::One(&self.emits),
+            Cardinality::Optional => Decided::Optional(&self.emits),
+        }
+    }
+}
+
 /// One component: its anchor message and what it handles.
 pub(crate) struct Component {
     pub anchor: MessageDescriptor,

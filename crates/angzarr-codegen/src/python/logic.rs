@@ -4,8 +4,10 @@
 
 use std::collections::BTreeSet;
 
+use prost_reflect::MessageDescriptor;
+
 use crate::common::snake;
-use crate::model::{Cardinality, Component, ComponentKind, Input};
+use crate::model::{Component, ComponentKind, Decided, Input};
 
 use super::layout::{head, wrap};
 use super::{PythonApp, Refusable, Unit};
@@ -48,16 +50,17 @@ pub(super) fn logic_name(app: &PythonApp, unit: &Unit) -> String {
 /// input declaring no emits, a list of any of `component`'s events, None
 /// when it has none), or one of its typed refusals.
 fn decided(component: &Component, input: &Input) -> String {
-    let names: Vec<&str> = input.emits.iter().map(|e| e.name()).collect();
-    let any: Vec<&str> = component.events.iter().map(|e| e.name()).collect();
-    let events = match (input.cardinality, names.as_slice()) {
-        (_, []) if any.is_empty() => "None".to_string(),
-        (_, []) => format!("list[{}]", any.join(" | ")),
-        (Cardinality::Many, _) => format!("list[{}]", names.join(" | ")),
-        (Cardinality::Optional, [one]) => format!("{one} | None"),
-        (Cardinality::Optional, _) => format!("tuple[{}] | None", names.join(", ")),
-        (Cardinality::One, [one]) => one.to_string(),
-        (Cardinality::One, _) => format!("tuple[{}]", names.join(", ")),
+    let names = |events: &[MessageDescriptor], by: &str| {
+        let names: Vec<&str> = events.iter().map(|e| e.name()).collect();
+        names.join(by)
+    };
+    let events = match input.decided(component) {
+        Decided::Many([]) => "None".to_string(),
+        Decided::Many(events) => format!("list[{}]", names(events, " | ")),
+        Decided::Optional([one]) => format!("{} | None", one.name()),
+        Decided::Optional(events) => format!("tuple[{}] | None", names(events, ", ")),
+        Decided::One([one]) => one.name().to_string(),
+        Decided::One(events) => format!("tuple[{}]", names(events, ", ")),
     };
     std::iter::once(events)
         .chain(input.refuses.iter().map(|r| r.name().to_string()))
@@ -105,130 +108,128 @@ fn any_events(component: &Component) -> String {
 /// event and its page's context, returning the next projection. All of it
 /// in the plain types (`domain.py`).
 fn methods(unit: &Unit) -> Vec<Method> {
-    let anchor = unit.component.anchor.name().to_string();
-    let mut out = Vec::new();
-    match unit.component.kind {
-        ComponentKind::Aggregate | ComponentKind::ProcessManager => {
-            domain_methods(&mut out, unit, &anchor);
-        }
-        ComponentKind::Policy => policy_methods(&mut out, unit),
-        ComponentKind::Projector => projector_methods(&mut out, unit, &anchor),
+    match unit.kind() {
+        ComponentKind::Aggregate | ComponentKind::ProcessManager => domain_methods(unit),
+        ComponentKind::Policy => policy_methods(unit),
+        ComponentKind::Projector => projector_methods(unit),
     }
-    out
+}
+
+/// A `(name, type)` parameter.
+fn param(name: &str, ty: &str) -> (String, String) {
+    (name.to_string(), ty.to_string())
 }
 
 /// An aggregate's or a process manager's methods (see [`methods`]).
-fn domain_methods(out: &mut Vec<Method>, unit: &Unit, anchor: &str) {
+fn domain_methods(unit: &Unit) -> Vec<Method> {
     let component = &unit.component;
-    let anchor = anchor.to_string();
-    for input in &component.inputs {
-        let ty = input.message.name().to_string();
-        let param = if input.fact { "fact" } else { "cmd" };
-        out.push(Method {
-            name: snake(&ty),
+    let state = component.anchor.name();
+    let decisions = component.inputs.iter().map(|input| {
+        let ty = input.message.name();
+        let (param_name, todo) = if input.fact {
+            ("fact", "record")
+        } else {
+            ("cmd", "decide")
+        };
+        Method {
+            name: snake(ty),
             asynchronous: false,
             params: vec![
-                (param.to_string(), ty.clone()),
-                ("state".to_string(), anchor.clone()),
-                ("ctx".to_string(), "CommandContext".to_string()),
+                param(param_name, ty),
+                param("state", state),
+                param("ctx", "CommandContext"),
             ],
             returns: decided(component, input),
-            todo: if input.fact {
-                format!("record {ty}")
-            } else {
-                format!("decide {ty}")
-            },
-        });
-    }
-    for refusable in &unit.refusable {
-        if unit.translation(&refusable.command).is_some() {
-            continue;
+            todo: format!("{todo} {ty}"),
         }
-        let ty = refusable.command.name().to_string();
-        let mut params = vec![("command".to_string(), ty.clone())];
-        params.extend(refusal_param(refusable));
-        params.push(("state".to_string(), anchor.clone()));
-        params.push(("ctx".to_string(), "CommandContext".to_string()));
-        out.push(Method {
-            name: format!("on_refused_{}", snake(&ty)),
-            asynchronous: false,
-            params,
-            returns: any_events(component),
-            todo: format!("record the refusal of {ty}"),
+    });
+    let refusals = unit
+        .refusable
+        .iter()
+        .filter(|r| unit.translation(&r.command).is_none())
+        .map(|refusable| {
+            let ty = refusable.command.name();
+            let mut params = vec![param("command", ty)];
+            params.extend(refusal_param(refusable));
+            params.push(param("state", state));
+            params.push(param("ctx", "CommandContext"));
+            Method {
+                name: format!("on_refused_{}", snake(ty)),
+                asynchronous: false,
+                params,
+                returns: any_events(component),
+                todo: format!("record the refusal of {ty}"),
+            }
         });
-    }
-    for event in &component.events {
-        let ty = event.name().to_string();
-        out.push(Method {
-            name: format!("apply_{}", snake(&ty)),
+    let folds = component.events.iter().map(|event| {
+        let ty = event.name();
+        Method {
+            name: format!("apply_{}", snake(ty)),
             asynchronous: false,
-            params: vec![
-                ("state".to_string(), anchor.clone()),
-                ("event".to_string(), ty.clone()),
-            ],
-            returns: anchor.clone(),
+            params: vec![param("state", state), param("event", ty)],
+            returns: state.to_string(),
             todo: format!("fold {ty} into the state"),
-        });
-    }
+        }
+    });
+    decisions.chain(refusals).chain(folds).collect()
 }
 
 /// A policy's methods (see [`methods`]).
-fn policy_methods(out: &mut Vec<Method>, unit: &Unit) {
-    let component = &unit.component;
+fn policy_methods(unit: &Unit) -> Vec<Method> {
     let commands: Vec<&str> = unit.commands.iter().map(|c| c.name()).collect();
     let command = match commands.as_slice() {
         [] => "object".to_string(),
         _ => commands.join(" | "),
     };
-    for event in &component.events {
-        let ty = event.name().to_string();
-        out.push(Method {
-            name: snake(&ty),
+    let reactions = unit.component.events.iter().map(|event| {
+        let ty = event.name();
+        Method {
+            name: snake(ty),
             asynchronous: false,
             params: vec![
-                ("event".to_string(), ty.clone()),
-                ("source".to_string(), "bytes".to_string()),
-                ("ctx".to_string(), "PageContext".to_string()),
+                param("event", ty),
+                param("source", "bytes"),
+                param("ctx", "PageContext"),
             ],
             returns: format!("list[tuple[bytes, {command}]]"),
             todo: format!("react to {ty}"),
-        });
-    }
-    for refusable in &unit.refusable {
-        let Some(fact) = unit.translation(&refusable.command) else {
-            continue;
-        };
-        let ty = refusable.command.name().to_string();
-        let mut params = vec![("command".to_string(), ty.clone())];
+        }
+    });
+    let translations = unit.refusable.iter().filter_map(|refusable| {
+        let fact = unit.translation(&refusable.command)?;
+        let ty = refusable.command.name();
+        let mut params = vec![param("command", ty)];
         params.extend(refusal_param(refusable));
-        params.push(("ctx".to_string(), "CommandContext".to_string()));
-        out.push(Method {
-            name: format!("{}_refused", snake(&ty)),
+        params.push(param("ctx", "CommandContext"));
+        Some(Method {
+            name: format!("{}_refused", snake(ty)),
             asynchronous: false,
             params,
             returns: fact.name().to_string(),
             todo: format!("translate the refusal of {ty}"),
-        });
-    }
+        })
+    });
+    reactions.chain(translations).collect()
 }
 
 /// A projector's methods (see [`methods`]).
-fn projector_methods(out: &mut Vec<Method>, unit: &Unit, anchor: &str) {
-    let anchor = anchor.to_string();
-    for event in &unit.component.events {
-        let ty = event.name().to_string();
-        out.push(Method {
-            name: format!("project_{}", snake(&ty)),
+fn projector_methods(unit: &Unit) -> Vec<Method> {
+    let projection = unit.component.anchor.name();
+    let projections = unit.component.events.iter().map(|event| {
+        let ty = event.name();
+        Method {
+            name: format!("project_{}", snake(ty)),
             asynchronous: true,
             params: vec![
-                ("projection".to_string(), anchor.clone()),
-                ("event".to_string(), ty.clone()),
-                ("ctx".to_string(), "PageContext".to_string()),
+                param("projection", projection),
+                param("event", ty),
+                param("ctx", "PageContext"),
             ],
-            returns: anchor.clone(),
+            returns: projection.to_string(),
             todo: format!("project {ty}"),
-        });
-    }
+        }
+    });
+    projections.collect()
 }
 
 /// The import of the plain types the interface names.
