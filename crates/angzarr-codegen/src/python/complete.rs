@@ -155,23 +155,81 @@ fn class(source: &str, name: Option<&str>) -> Option<Class> {
 
 /// The first parameter after `self` of a `def` but the state or the
 /// projection it folds into, as `(name, type)`, a leading `_` of the name
-/// dropped.
+/// dropped, the type its last dotted name, unquoted.
 fn first_param(def: &str) -> Option<(String, String)> {
-    let open = def.find('(')?;
-    let params = &def[open + 1..];
-    let close = params.find(')')?;
-    let mut parts = params[..close].split(',').map(str::trim);
-    let first = parts.next()?;
-    if first != "self" {
+    let mut parts = params(def)?.into_iter();
+    if parts.next()?.trim() != "self" {
         return None;
     }
-    let (name, ty) = parts
-        .find(|p| {
-            p.split_once(':').is_some_and(|(n, _)| {
-                !matches!(n.trim().trim_start_matches('_'), "state" | "projection")
-            })
-        })?
-        .split_once(':')?;
-    let ty = ty.trim().rsplit('.').next()?.to_string();
-    Some((name.trim().trim_start_matches('_').to_string(), ty))
+    parts.find_map(|part| {
+        let (name, ty) = split_top(&part, ':')?;
+        let name = name.trim().trim_start_matches('_');
+        // Unannotated, a default's `:` (a lambda's) is not its annotation.
+        if name.contains('=') || matches!(name, "state" | "projection") {
+            return None;
+        }
+        let ty = split_top(ty, '=').map_or(ty, |(ty, _)| ty);
+        let ty = ty.trim().trim_matches(['"', '\'']).rsplit('.').next()?;
+        Some((name.to_string(), ty.trim().to_string()))
+    })
+}
+
+/// The parameters of a `def`, each its text between the list's own
+/// commas: the list read by its brackets, a string's or a comment's text
+/// skipped, so no bracket or comma inside a default, a subscript, a string
+/// or a comment ends one; a comment dropped. `None` when the list does not
+/// close.
+fn params(def: &str) -> Option<Vec<String>> {
+    let open = def.find('(')?;
+    let mut parts = vec![String::new()];
+    let mut depth = 0usize;
+    let mut chars = def[open + 1..].chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '#' => {
+                for c in chars.by_ref() {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+                continue;
+            }
+            '"' | '\'' => {
+                let part = parts.last_mut()?;
+                part.push(c);
+                for d in chars.by_ref() {
+                    part.push(d);
+                    if d == c {
+                        break;
+                    }
+                }
+                continue;
+            }
+            '(' | '[' | '{' => depth += 1,
+            ')' if depth == 0 => return Some(parts),
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(String::new());
+                continue;
+            }
+            _ => {}
+        }
+        parts.last_mut()?.push(c);
+    }
+    None
+}
+
+/// `text` split at its first `at` outside brackets: a parameter's name and
+/// its annotation, or an annotation and its default.
+fn split_top(text: &str, at: char) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    for (i, c) in text.char_indices() {
+        match c {
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            c if c == at && depth == 0 => return Some((&text[..i], &text[i + 1..])),
+            _ => {}
+        }
+    }
+    None
 }
