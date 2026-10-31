@@ -389,22 +389,21 @@ fn has_default_launch(language: &str) -> bool {
     language == "python"
 }
 
-/// The aggregate or process manager of `components` named `name`.
-fn domain_named<'a>(components: &'a [Component], name: &str) -> Option<&'a Component> {
-    components
-        .iter()
-        .find(|c| c.kind.is_domain() && c.component_name == name)
+/// The kind a component of the protos is listed as in a host config.
+fn config_kind(kind: ComponentKind) -> Kind {
+    match kind {
+        ComponentKind::Aggregate | ComponentKind::ProcessManager => Kind::Domain,
+        ComponentKind::Policy => Kind::Policy,
+        ComponentKind::Projector => Kind::Projector,
+    }
 }
 
-/// The component of `kind` of `components` named `name`.
-fn named<'a>(
-    components: &'a [Component],
-    kind: ComponentKind,
-    name: &str,
-) -> Option<&'a Component> {
+/// The component of `components` a config entry of `kind` named `name`
+/// lists: none for an upcaster, which no proto declares.
+fn listed<'a>(components: &'a [Component], kind: Kind, name: &str) -> Option<&'a Component> {
     components
         .iter()
-        .find(|c| c.kind == kind && c.component_name == name)
+        .find(|c| config_kind(c.kind) == kind && c.component_name == name)
 }
 
 fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
@@ -415,7 +414,9 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
         .components
         .iter()
         .filter(|c| c.kind == Kind::Domain)
-        .map(|c| domain_named(components, &c.name).map_or(c.name.as_str(), |d| d.domain.as_str()))
+        .map(|c| {
+            listed(components, Kind::Domain, &c.name).map_or(c.name.as_str(), |d| d.domain.as_str())
+        })
         .collect();
     for (i, listed) in config.components.iter().enumerate() {
         if config.components[..i].iter().any(|c| c.name == listed.name) {
@@ -429,7 +430,7 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
             kind: listed.kind.as_str().to_string(),
         };
         match listed.kind {
-            Kind::Domain => match domain_named(components, &listed.name) {
+            Kind::Domain => match self::listed(components, Kind::Domain, &listed.name) {
                 None => lints.push(unknown()),
                 Some(pm)
                     if pm.kind == ComponentKind::ProcessManager
@@ -442,7 +443,7 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
                 }
                 Some(_) => {}
             },
-            Kind::Policy => match named(components, ComponentKind::Policy, &listed.name) {
+            Kind::Policy => match self::listed(components, Kind::Policy, &listed.name) {
                 None => lints.push(unknown()),
                 Some(policy) => {
                     if !domains.contains(&policy.input_domain.as_str()) {
@@ -497,24 +498,78 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
 
 // ----------------------------------------------------------- the seed
 
-/// One component's line of a seeded host config.
+/// One component's entry in a seeded host config.
 struct Entry {
     name: String,
-    kind: &'static str,
+    kind: Kind,
     language: String,
     /// A Python child's project: `dir` and `angzarr-<project>`.
     project: Option<String>,
 }
 
-/// The host config a seed makes for `components`: every aggregate and
-/// process manager (Rust, or a Python child for a domain the seed names),
-/// every policy whose two domains are among them and every projector all
-/// of whose sources are among them (a Python child's too: the host records
-/// its events), each in Rust; then `retry` with the keys seeded, and
-/// `store`; stamped at the current version.
+impl Entry {
+    /// `component`'s entry in its seeded language: by its name, a domain's
+    /// also by its domain; its Python project its domain's, else its name
+    /// (as `scaffold python --domain` names it).
+    fn of(component: &Component, seed: &AppSeed) -> Entry {
+        let kind = config_kind(component.kind);
+        let by = if kind == Kind::Domain {
+            &component.domain
+        } else {
+            &component.component_name
+        };
+        let language = seed
+            .languages
+            .iter()
+            .find(|(name, _)| name == &component.component_name || name == by)
+            .map_or("rust", |(_, language)| language.as_str());
+        Entry {
+            name: component.component_name.clone(),
+            kind,
+            language: language.to_string(),
+            project: (language == "python").then(|| by.clone()),
+        }
+    }
+
+    /// A domain the seed names that the protos lack, listed for the lint to
+    /// name.
+    fn unknown(name: &str, language: &str) -> Entry {
+        Entry {
+            name: name.to_string(),
+            kind: Kind::Domain,
+            language: language.to_string(),
+            project: None,
+        }
+    }
+
+    /// The entry as the config's `component` item, exposed as the seed
+    /// says.
+    fn value(&self, seed: &AppSeed) -> Value {
+        let mut fields = vec![
+            pair("name", Value::scalar(&self.name)),
+            pair("kind", Value::scalar(self.kind.as_str())),
+            pair("language", Value::scalar(&self.language)),
+        ];
+        if let Some(project) = &self.project {
+            fields.push(pair("dir", Value::scalar(project)));
+            let entry = Value::scalar(format!("angzarr-{project}"));
+            fields.push(pair("entry", Value::Seq(vec![entry])));
+        }
+        if let Some((_, exposure)) = seed.expose.iter().find(|(n, _)| *n == self.name) {
+            let how = match exposure {
+                Exposure::Loopback => Expose::Loopback,
+                Exposure::Ip => Expose::Ip,
+            };
+            fields.push(pair("expose", Value::scalar(how.as_str())));
+        }
+        Value::Map(fields)
+    }
+}
+
+/// The host config a seed makes for `components` ([`seeded_entries`]),
+/// then `retry` with the keys seeded, and `store`; stamped at the current
+/// version.
 fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
-    let entries = seeded_entries(components, seed);
-    let scalar = |text: &str| Value::scalar(text);
     let header = format!(
         "# The host config of {}: every component, its kind, the language it\n\
          # is written in and, for one served by a child process, how it is\n\
@@ -525,35 +580,31 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
          # `{KEY}`.\n",
         seed.name
     );
-    let components = entries
+    let entries = seeded_entries(components, seed)
         .iter()
-        .map(|entry| entry_value(entry, seed))
+        .map(|entry| entry.value(seed))
         .collect();
+    let current = angzarr_embedded_host_config::CURRENT.to_string();
     let mut root = vec![
-        pair(
-            KEY,
-            scalar(&angzarr_embedded_host_config::CURRENT.to_string()),
-        ),
-        pair("component", Value::Seq(components)),
+        pair(KEY, Value::scalar(&current)),
+        pair("component", Value::Seq(entries)),
     ];
     let retry: Vec<(String, Value)> = [
         ("max_retries", seed.retry.max_retries),
         ("max_race_runs", seed.retry.max_race_runs),
     ]
     .into_iter()
-    .filter_map(|(key, value)| value.map(|v| pair(key, scalar(&v.to_string()))))
+    .filter_map(|(key, value)| value.map(|v| pair(key, Value::scalar(v.to_string()))))
     .collect();
     if !retry.is_empty() {
         root.push(pair("retry", Value::Map(retry)));
     }
-    root.push(pair(
-        "store",
-        Value::Map(vec![if seed.in_memory {
-            pair("in_memory", scalar("true"))
-        } else {
-            pair("path", scalar("angzarr.db"))
-        }]),
-    ));
+    let store = if seed.in_memory {
+        pair("in_memory", Value::scalar("true"))
+    } else {
+        pair("path", Value::scalar("angzarr.db"))
+    };
+    root.push(pair("store", Value::Map(vec![store])));
     // Collections of scalars nested three deep (a component's `entry`) are
     // written on one line.
     header + &angzarr_yaml::write(&Value::Map(root), 3)
@@ -564,122 +615,47 @@ fn pair(key: &str, value: Value) -> (String, Value) {
     (key.to_string(), value)
 }
 
-/// A component's entry in its seeded language: by its name, a domain's
-/// also by its domain; its Python project its domain's, else its name
-/// (as `scaffold python --domain` names it).
-fn seeded_entry(component: &Component, kind: &'static str, seed: &AppSeed) -> Entry {
-    let named = |name: &String| {
-        *name == component.component_name || (kind == "domain" && *name == component.domain)
-    };
-    let language = seed
-        .languages
-        .iter()
-        .find(|(name, _)| named(name))
-        .map_or("rust", |(_, language)| language.as_str());
-    let project = if kind == "domain" {
-        &component.domain
-    } else {
-        &component.component_name
-    };
-    Entry {
-        name: component.component_name.clone(),
-        kind,
-        language: language.to_string(),
-        project: (language == "python").then(|| project.clone()),
-    }
-}
-
-/// The entries a seed makes for `components`, in the config's order:
-/// domains, policies, projectors, then what the seed names that the protos
-/// lack.
+/// The entries a seed makes for `components`, in the config's order: every
+/// aggregate and process manager (Rust, or a Python child for a domain the
+/// seed names); every policy both of whose domains are among them; every
+/// projector all of whose sources are (a Python child's too: the host
+/// records its events), each in Rust; then each name the seed gives that
+/// is none of them, and each exposure naming nothing listed, for the lint
+/// to name.
 fn seeded_entries(components: &[Component], seed: &AppSeed) -> Vec<Entry> {
-    let mut entries: Vec<Entry> = Vec::new();
-    let domains: Vec<&Component> = components
-        .iter()
-        .filter(|c| {
-            matches!(
-                c.kind,
-                ComponentKind::Aggregate | ComponentKind::ProcessManager
-            )
+    let runs = |c: &Component| match c.kind {
+        ComponentKind::Aggregate | ComponentKind::ProcessManager => true,
+        ComponentKind::Policy => c.is_connected(components),
+        ComponentKind::Projector => {
+            !c.sources.is_empty()
+                && c.sources
+                    .iter()
+                    .all(|s| model::owner(components, s).is_some())
+        }
+    };
+    let mut entries: Vec<Entry> = [Kind::Domain, Kind::Policy, Kind::Projector]
+        .into_iter()
+        .flat_map(|kind| {
+            components
+                .iter()
+                .filter(move |c| config_kind(c.kind) == kind)
         })
+        .filter(|c| runs(c))
+        .map(|c| Entry::of(c, seed))
         .collect();
-    for domain in &domains {
-        entries.push(seeded_entry(domain, "domain", seed));
-    }
-    let has = |domain: &str| domains.iter().any(|d| d.domain == domain);
-    for policy in components
-        .iter()
-        .filter(|c| c.kind == ComponentKind::Policy)
-    {
-        if has(&policy.input_domain) && has(&policy.output_domain) {
-            entries.push(seeded_entry(policy, "policy", seed));
-        }
-    }
-    for projector in components
-        .iter()
-        .filter(|c| c.kind == ComponentKind::Projector)
-    {
-        // A Python child's events are recorded by the host, so a projector
-        // of them runs in process as one of a Rust domain's does.
-        if !projector.sources.is_empty() && projector.sources.iter().all(|s| has(s)) {
-            entries.push(seeded_entry(projector, "projector", seed));
-        }
-    }
-    unknown_entries(&mut entries, &domains, seed);
-    entries
-}
-
-/// What the seed names that `entries` lacks, appended for the lint to
-/// name: a component the protos lack, and an exposure naming nothing
-/// listed.
-fn unknown_entries(entries: &mut Vec<Entry>, domains: &[&Component], seed: &AppSeed) {
     for (name, language) in &seed.languages {
         let known =
-            entries.iter().any(|e| &e.name == name) || domains.iter().any(|d| &d.domain == name);
+            entries.iter().any(|e| &e.name == name) || model::owner(components, name).is_some();
         if !known {
-            entries.push(Entry {
-                name: name.clone(),
-                kind: "domain",
-                language: language.clone(),
-                project: None,
-            });
+            entries.push(Entry::unknown(name, language));
         }
     }
     for (name, _) in &seed.expose {
         if !entries.iter().any(|e| &e.name == name) {
-            entries.push(Entry {
-                name: name.clone(),
-                kind: "domain",
-                language: "rust".to_string(),
-                project: None,
-            });
+            entries.push(Entry::unknown(name, "rust"));
         }
     }
-}
-
-/// An entry as the config's `component` item.
-fn entry_value(entry: &Entry, seed: &AppSeed) -> Value {
-    let scalar = |text: &str| Value::scalar(text);
-    let mut fields = vec![
-        pair("name", scalar(&entry.name)),
-        pair("kind", scalar(entry.kind)),
-        pair("language", scalar(&entry.language)),
-    ];
-    if let Some(project) = &entry.project {
-        fields.push(pair("dir", scalar(project)));
-        fields.push(pair(
-            "entry",
-            Value::Seq(vec![scalar(&format!("angzarr-{project}"))]),
-        ));
-    }
-    if let Some((_, exposure)) = seed.expose.iter().find(|(n, _)| *n == entry.name) {
-        let how = match exposure {
-            Exposure::Loopback => Expose::Loopback,
-            Exposure::Ip => Expose::Ip,
-        };
-        fields.push(pair("expose", scalar(how.as_str())));
-    }
-    Value::Map(fields)
+    entries
 }
 
 /// `name` as a Cargo package name: ASCII letters and digits kept, lower
@@ -840,13 +816,7 @@ fn main_rs(
     };
     let mut modules: Vec<String> = vec!["driver".to_string()];
     for listed in config.components.iter().filter(|c| in_process(c)) {
-        let component = match listed.kind {
-            Kind::Domain => domain_named(components, &listed.name),
-            Kind::Policy => named(components, ComponentKind::Policy, &listed.name),
-            Kind::Projector => named(components, ComponentKind::Projector, &listed.name),
-            Kind::Upcaster => None,
-        };
-        if let Some(component) = component {
+        if let Some(component) = self::listed(components, listed.kind, &listed.name) {
             let stem = snake(&component.name);
             modules.push(format!("{stem}_impl"));
             modules.push(stem);
