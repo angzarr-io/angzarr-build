@@ -988,3 +988,15 @@ fn test_scaffold_python_refuses_translate_for_an_unknown_policy() {
         })
     );
 }
+
+/// A policy whose source takes no facts can translate nothing: its
+/// `domain.py` re-exports no `CommandContext` and its dispatch has no
+/// translating callback.
+#[test]
+fn test_a_policy_whose_source_takes_no_facts_has_no_refusal_plumbing() {
+    let files = blackjack(POLICIES, "policy-player-table");
+    let domain = source(&files, "/domain.py");
+    assert!(!domain.contains("CommandContext"), "{domain}");
+    let dispatch = source(&files, "player_table_policy_angzarr.py");
+    assert!(!dispatch.contains("on_refused"), "{dispatch}");
+}

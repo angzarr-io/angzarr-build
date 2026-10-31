@@ -233,3 +233,63 @@ fn split_top(text: &str, at: char) -> Option<(&str, &str)> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{first_param, params, split_top};
+
+    fn trimmed(def: &str) -> Option<Vec<String>> {
+        params(def).map(|parts| parts.iter().map(|p| p.trim().to_string()).collect())
+    }
+
+    #[test]
+    fn a_parameter_list_is_split_at_its_own_commas_only() {
+        assert_eq!(
+            trimmed("def f(self, a: dict[str, int] = {1: (2, 3)}, b: X) -> Y:"),
+            Some(vec![
+                "self".to_string(),
+                "a: dict[str, int] = {1: (2, 3)}".to_string(),
+                "b: X".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_comment_is_dropped_to_its_line_end_and_a_strings_text_kept() {
+        assert_eq!(
+            trimmed("def f(\n    self,  # (it, its)\n    a: X = g(\"(,(\", '[,'),\n) -> Y:"),
+            Some(vec![
+                "self".to_string(),
+                "a: X = g(\"(,(\", '[,')".to_string(),
+                String::new(),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_list_that_never_closes_is_none() {
+        assert_eq!(params("def f(self, a: X"), None);
+        assert_eq!(params("def f self"), None);
+    }
+
+    #[test]
+    fn a_split_is_at_the_first_mark_outside_brackets() {
+        assert_eq!(
+            split_top("a: dict[str, int] = {1: 2}", '='),
+            Some(("a: dict[str, int] ", " {1: 2}"))
+        );
+        assert_eq!(split_top("x = f(a=1)", '='), Some(("x ", " f(a=1)")));
+        assert_eq!(split_top("f(a: b)[c: d]", ':'), None);
+        assert_eq!(split_top("(a)[b]{c}: d", ':'), Some(("(a)[b]{c}", " d")));
+    }
+
+    #[test]
+    fn the_first_input_is_named_and_typed_past_the_state() {
+        assert_eq!(
+            first_param("def f(self, _state: S, cmd: \"pkg.Cmd\" = None):"),
+            Some(("cmd".to_string(), "Cmd".to_string()))
+        );
+        assert_eq!(first_param("def f(this, cmd: Cmd):"), None);
+        assert_eq!(first_param("def f(self, cmd=lambda a: a):"), None);
+    }
+}

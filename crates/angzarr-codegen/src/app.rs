@@ -732,7 +732,7 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
                 name: name.clone(),
                 kind: "domain",
                 language: language.clone(),
-                project: (language == "python").then(|| name.clone()),
+                project: None,
             });
         }
     }
