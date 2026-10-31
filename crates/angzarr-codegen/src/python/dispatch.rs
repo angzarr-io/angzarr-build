@@ -64,15 +64,12 @@ const WIRE_EVENTS: &str = "\n\ndef _wire(result) -> list:\n    \
     book.pages.add().payload.CopyFrom(_az.pack(wire))\n    \
     return book\n";
 
-/// A decision's result refused, when it is a typed refusal: under its
-/// code's status (decision 14.52), the client's `Refused` being
-/// FAILED_PRECONDITION unless its public `grpc` says otherwise.
+/// A decision's result refused, when it is a typed refusal: the client's
+/// `Refused` under its code's status (decision 14.52).
 const DECIDED: &str = "\n\ndef _decided(result) -> _t.EventBook:\n    \
     to_wire = _REFUSALS.get(type(result))\n    \
     if to_wire is not None:\n        \
-    refused = _az.Refused(to_wire(result))\n        \
-    refused.grpc = result.status()\n        \
-    raise refused\n    \
+    raise _az.Refused(to_wire(result), result.status())\n    \
     return _book(result)\n";
 
 /// A translating callback's fact on the wire.
