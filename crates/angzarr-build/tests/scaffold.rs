@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use angzarr_build::{
-    BuildError, Existing, Scaffolded, Translate, adapters_into, markup_domain_into, register_into,
-    scaffold_into,
+    BuildError, BuildWarning, Existing, Scaffolded, Translate, adapters_from, adapters_into,
+    markup_domain_into, register_into, scaffold_into,
 };
 use angzarr_codegen::CodegenError;
 
@@ -215,5 +215,29 @@ fn test_scaffold_into_rescaffolded_leaves_every_users_file_byte_identical() {
         .map(|f| std::fs::read_to_string(src.join(f)).unwrap())
         .collect();
     assert_eq!(before, after);
+    std::fs::remove_dir_all(&src).unwrap();
+}
+
+/// A policy's interface the adapters read is not there: a warning naming
+/// it, not silence. With the interfaces in place, none.
+#[test]
+fn test_adapters_from_warns_of_a_policys_interface_that_is_not_there() {
+    let out = empty_dir();
+    let src = empty_dir();
+    let warnings = adapters_from(&out, &src, BUYIN, &[&fixtures()], &[]).unwrap();
+    let missing = |file: &str| BuildWarning::InterfaceMissing {
+        path: src.join(file).display().to_string(),
+    };
+    assert_eq!(
+        warnings,
+        [missing("buy_in_wallet.rs"), missing("wallet_buy_in.rs")]
+    );
+    assert!(out.join("angzarr-adapters.rs").exists());
+    scaffold(&src, Existing::Keep);
+    assert_eq!(
+        adapters_from(&out, &src, BUYIN, &[&fixtures()], &[]).unwrap(),
+        []
+    );
+    std::fs::remove_dir_all(&out).unwrap();
     std::fs::remove_dir_all(&src).unwrap();
 }

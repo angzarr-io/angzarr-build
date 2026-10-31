@@ -89,29 +89,88 @@ pub fn adapters(protos: &[&str], includes: &[&str], remote: &[&str]) -> Result<(
     adapters_into(&out_dir()?, protos, includes, remote)
 }
 
-/// [`adapters`], into `out`.
+/// [`adapters`], into `out`, the user's interfaces under the crate's `src`
+/// (`CARGO_MANIFEST_DIR`): each warning ([`adapters_from`]) is printed as
+/// a `cargo:warning`, its code and its English.
 pub fn adapters_into(
     out: &Path,
     protos: &[&str],
     includes: &[&str],
     remote: &[&str],
 ) -> Result<(), BuildError> {
-    let bytes = build_descriptors(out, protos, includes)?;
-    // The user's interfaces, under the crate's `src`: a policy's declares
-    // the commands it translates the refusals of.
     let src = std::env::var_os("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)
         .unwrap_or_default()
         .join("src");
+    for warning in adapters_from(out, &src, protos, includes, remote)? {
+        println!("cargo:warning={}: {warning}", warning.code());
+    }
+    Ok(())
+}
+
+/// [`adapters`], into `out`, reading the user's interfaces under `src`: a
+/// policy's declares the commands it translates the refusals of. A
+/// policy's interface that is not there (not scaffolded yet, or moved) is
+/// a [`BuildWarning::InterfaceMissing`], not silence: its adapter gets no
+/// refusal callbacks, and Cargo reruns the script when the file appears.
+pub fn adapters_from(
+    out: &Path,
+    src: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    remote: &[&str],
+) -> Result<Vec<BuildWarning>, BuildError> {
+    let bytes = build_descriptors(out, protos, includes)?;
+    let missing = std::cell::RefCell::new(Vec::new());
     let read = |path: &str| {
-        let path = src.join(path);
-        println!("cargo:rerun-if-changed={}", path.display());
-        std::fs::read_to_string(path).ok()
+        let full = src.join(path);
+        println!("cargo:rerun-if-changed={}", full.display());
+        let found = std::fs::read_to_string(&full).ok();
+        if found.is_none() {
+            missing.borrow_mut().push(BuildWarning::InterfaceMissing {
+                path: full.display().to_string(),
+            });
+        }
+        found
     };
     let source =
         angzarr_codegen::adapters(&bytes, protos, remote, &read).map_err(BuildError::Codegen)?;
     let path = out.join("angzarr-adapters.rs");
-    std::fs::write(&path, source).map_err(|e| io(&path, &e))
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))?;
+    Ok(missing.into_inner())
+}
+
+/// What generation went on past, reported to the build (`cargo:warning`).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum BuildWarning {
+    /// A policy's interface the adapters read for its refusal switch is not
+    /// at `path`: its adapter gets no refusal callbacks.
+    InterfaceMissing { path: String },
+}
+
+impl fmt::Display for BuildWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BuildWarning::InterfaceMissing { path } => write!(
+                f,
+                "{path}, a policy's interface, is not there: its adapter translates no refusal; scaffold it, or move it back"
+            ),
+        }
+    }
+}
+
+impl Diagnostic for BuildWarning {
+    fn code(&self) -> &'static str {
+        match self {
+            BuildWarning::InterfaceMissing { .. } => "angzarr-build-interface-missing",
+        }
+    }
+
+    fn args(&self) -> Vec<(&'static str, Arg)> {
+        match self {
+            BuildWarning::InterfaceMissing { path } => vec![("path", path.as_str().into())],
+        }
+    }
 }
 
 /// Each component's generated `ComponentDescriptor` in `protos`
@@ -576,5 +635,6 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(BuildError::Codegen(
             angzarr_codegen::CodegenError::NoWirePath { package: s() },
         )),
+        Box::new(BuildWarning::InterfaceMissing { path: s() }),
     ]
 }
