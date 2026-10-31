@@ -99,7 +99,7 @@ fn test_the_app_type_checks_against_angzarr_embedded() {
 }
 
 /// The generated register() is what angzarr_embedded_host::run takes: the
-/// app, run from its angzarr.toml, handles one command, a policy step each
+/// app, run from its angzarr.yaml, handles one command, a policy step each
 /// way, and a refusal its policy translates.
 #[test]
 #[ignore = "builds angzarr-embedded, angzarr-embedded-host and their dependencies, fetched from \
