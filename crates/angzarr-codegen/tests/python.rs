@@ -296,12 +296,20 @@ fn test_complete_adds_only_the_absent_methods_to_the_class() {
     let completed = complete(&fresh, USER_IMPL)
         .unwrap()
         .expect("apply_move_decided is absent");
-    // The method goes in at the end of the class body, and nothing of the
-    // user's text changes.
+    // The methods go in at the end of the class body, in the scaffold's
+    // order (the pass-through refusal handlers, then the fold), and nothing
+    // of the user's text changes.
+    let absent = &fresh.source[fresh.source.find("    def on_refused_").unwrap()..];
+    assert!(
+        absent.ends_with(
+            "\n    def apply_move_decided(self, state: PlayerState, event: MoveDecided) \
+             -> PlayerState:\n        raise NotImplementedError  # TODO: fold MoveDecided into the state\n"
+        ),
+        "{absent}"
+    );
     let expected = USER_IMPL.replace(
         "  # USER-WRITTEN\n",
-        "  # USER-WRITTEN\n\n    def apply_move_decided(self, state: PlayerState, event: MoveDecided) \
-         -> PlayerState:\n        raise NotImplementedError  # TODO: fold MoveDecided into the state\n",
+        &format!("  # USER-WRITTEN\n\n{absent}"),
     );
     assert_eq!(completed, expected);
     let helper = completed.find("def helper").unwrap();

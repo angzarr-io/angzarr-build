@@ -13,6 +13,7 @@ inputs:
     paths:
       - io/angzarr/examples/v1/cards.proto
       - io/angzarr/examples/v1/player.proto
+      - io/angzarr/examples/v1/table.proto
 plugins:
   - remote: buf.build/protocolbuffers/python:v35.1
     out: src/angzarr_player/_gen

@@ -15,9 +15,21 @@ from typing import Protocol
 
 from angzarr_player.domain import (
     CommandContext,
+    ConfirmSeat,
+    CreateTable,
+    DealRound,
     DecideMove,
+    DoubleDown,
+    Hit,
+    LeaveTable,
     MoveDecided,
+    PlaceBet,
     PlayerState,
+    ReleaseSeat,
+    RequestSeat,
+    SeatNotConfirmable,
+    Stand,
+    TableRefused,
 )
 
 
@@ -25,6 +37,82 @@ class PlayerLogic(Protocol):
     def decide_move(
         self, cmd: DecideMove, state: PlayerState, ctx: CommandContext
     ) -> MoveDecided: ...
+
+    def on_refused_create_table(
+        self,
+        command: CreateTable,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_request_seat(
+        self,
+        command: RequestSeat,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_leave_table(
+        self,
+        command: LeaveTable,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_place_bet(
+        self,
+        command: PlaceBet,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_deal_round(
+        self,
+        command: DealRound,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_hit(
+        self,
+        command: Hit,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_stand(
+        self,
+        command: Stand,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_double_down(
+        self,
+        command: DoubleDown,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_confirm_seat(
+        self,
+        command: ConfirmSeat,
+        refusal: SeatNotConfirmable | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]: ...
+
+    def on_refused_release_seat(
+        self, command: ReleaseSeat, state: PlayerState, ctx: CommandContext
+    ) -> list[MoveDecided]: ...
 
     def apply_move_decided(
         self, state: PlayerState, event: MoveDecided

@@ -8,9 +8,21 @@ from __future__ import annotations
 
 from angzarr_player.domain import (
     CommandContext,
+    ConfirmSeat,
+    CreateTable,
+    DealRound,
     DecideMove,
+    DoubleDown,
+    Hit,
+    LeaveTable,
     MoveDecided,
+    PlaceBet,
     PlayerState,
+    ReleaseSeat,
+    RequestSeat,
+    SeatNotConfirmable,
+    Stand,
+    TableRefused,
 )
 from angzarr_player.logic import PlayerLogic
 
@@ -20,6 +32,92 @@ class PlayerLogicImpl(PlayerLogic):
         self, cmd: DecideMove, state: PlayerState, ctx: CommandContext
     ) -> MoveDecided:
         raise NotImplementedError  # TODO: decide DecideMove
+
+    def on_refused_create_table(
+        self,
+        command: CreateTable,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of CreateTable
+
+    def on_refused_request_seat(
+        self,
+        command: RequestSeat,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of RequestSeat
+
+    def on_refused_leave_table(
+        self,
+        command: LeaveTable,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of LeaveTable
+
+    def on_refused_place_bet(
+        self,
+        command: PlaceBet,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of PlaceBet
+
+    def on_refused_deal_round(
+        self,
+        command: DealRound,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of DealRound
+
+    def on_refused_hit(
+        self,
+        command: Hit,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of Hit
+
+    def on_refused_stand(
+        self,
+        command: Stand,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of Stand
+
+    def on_refused_double_down(
+        self,
+        command: DoubleDown,
+        refusal: TableRefused | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of DoubleDown
+
+    def on_refused_confirm_seat(
+        self,
+        command: ConfirmSeat,
+        refusal: SeatNotConfirmable | None,
+        state: PlayerState,
+        ctx: CommandContext,
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of ConfirmSeat
+
+    def on_refused_release_seat(
+        self, command: ReleaseSeat, state: PlayerState, ctx: CommandContext
+    ) -> list[MoveDecided]:
+        raise NotImplementedError  # TODO: record the refusal of ReleaseSeat
 
     def apply_move_decided(self, state: PlayerState, event: MoveDecided) -> PlayerState:
         raise NotImplementedError  # TODO: fold MoveDecided into the state

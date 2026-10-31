@@ -4,6 +4,7 @@
 use prost_reflect::{Kind, MessageDescriptor};
 
 use crate::common::{local_name, refusal_key, refusal_reason, snake, wire_name};
+use crate::model::ComponentKind;
 
 use super::{GENERATED, Unit, capital, member, py_name, reached};
 
@@ -67,6 +68,18 @@ fn reexports(unit: &Unit) -> &'static str {
          from angzarr_client.router import Bug as Bug\n\
          from angzarr_client.router import CommandContext as CommandContext\n\
          from angzarr_client.router import Rejection as Rejection\n"
+    } else if unit.kind() == ComponentKind::Policy && !unit.refusable.is_empty() {
+        "# What a handler reads besides its event (its page's context: the book's\n\
+         # cover, the source domain and root among it, and the page's sequence),\n\
+         # what a translating callback reads besides the refused command (that\n\
+         # command's context), and the class they fail with, raised, a diagnostic\n\
+         # key and its args, never text; re-exported so the logic imports only this\n\
+         # module.\n\
+         # - Bug(key, **args): a defect; the runtime alerts it\n\
+         #   (ROUTER_REASON_UNHANDLED_HANDLER_ERROR, its key and args the cause).\n\
+         from angzarr_client.router import Bug as Bug\n\
+         from angzarr_client.router import CommandContext as CommandContext\n\
+         from angzarr_client.router import PageContext as PageContext\n"
     } else {
         "# What a handler reads besides its event (its page's context: the book's\n\
          # cover, the source domain and root among it, and the page's sequence),\n\

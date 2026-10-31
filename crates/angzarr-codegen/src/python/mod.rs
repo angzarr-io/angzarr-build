@@ -44,7 +44,7 @@ use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 
 use crate::common::{local_name, snake, wire_name};
 use crate::error::CodegenError;
-use crate::model::{self, ALL_KINDS, Component, ComponentKind};
+use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input};
 use crate::scaffold::{Owner, ScaffoldFile, Translate};
 use dispatch::dispatch;
 use domain::domain_py;
@@ -117,6 +117,35 @@ struct Unit {
     commands: Vec<MessageDescriptor>,
     /// A projector's source domains.
     sources: Vec<String>,
+    /// The commands whose refusal reaches the unit: a domain's, each
+    /// command a policy it sources sends (the pass-through `CommandRefused`,
+    /// decision 14.31); a policy's, each command it sends when its source
+    /// takes facts to translate a refusal into. Whatever `--translate`
+    /// selects: the generated files are the same either way.
+    refusable: Vec<Refusable>,
+    /// The refusal switch's selections touching the unit, each a command's
+    /// full name and the fact it translates into: a policy's own, which its
+    /// logic translates; a domain's, the ones its policies translate, which
+    /// its logic is not handed as `CommandRefused`.
+    translated: Vec<(String, MessageDescriptor)>,
+    /// A policy's source's facts: what a translating callback returns.
+    facts: Vec<MessageDescriptor>,
+}
+
+/// A command whose refusal reaches a unit, and the typed refusals it
+/// refuses with.
+struct Refusable {
+    command: MessageDescriptor,
+    refuses: Vec<MessageDescriptor>,
+}
+
+impl Refusable {
+    fn of(input: &Input) -> Self {
+        Refusable {
+            command: input.message.clone(),
+            refuses: input.refuses.clone(),
+        }
+    }
 }
 
 impl Unit {
@@ -132,6 +161,15 @@ impl Unit {
             ComponentKind::Aggregate | ComponentKind::ProcessManager
         )
     }
+
+    /// The fact the refusal switch translates `command`'s refusal into, when
+    /// it is selected.
+    fn translation(&self, command: &MessageDescriptor) -> Option<&MessageDescriptor> {
+        self.translated
+            .iter()
+            .find(|(full, _)| full == command.full_name())
+            .map(|(_, fact)| fact)
+    }
 }
 
 /// The project of `app.domain`: the component of that domain, or of that
@@ -143,7 +181,10 @@ pub fn scaffold_python(
     app: &PythonApp,
     translate: &[Translate],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
-    let _ = translate;
+    let pool = model::pool_components(descriptor_set)?;
+    for selection in translate {
+        crate::scaffold::check_translate(&pool, selection)?;
+    }
     let components: Vec<Component> = model::components(descriptor_set, files, ALL_KINDS)?
         .into_iter()
         .filter(|c| c.domain == app.domain || c.component_name == app.domain)
@@ -155,7 +196,7 @@ pub fn scaffold_python(
     }
     let units = components
         .into_iter()
-        .map(|c| unit(c, descriptor_set))
+        .map(|c| unit(c, &pool, translate))
         .collect::<Result<Vec<_>, _>>()?;
     for unit in &units {
         let (messages, enums) = reached(unit);
@@ -278,26 +319,79 @@ pub fn scaffold_python(
     Ok(crate::headed_files(out))
 }
 
-/// `component` with what its kind needs beside it: a policy's target's
-/// commands (refused when no aggregate or process manager of the set owns
-/// its `output_domain`), a projector's sources.
-fn unit(component: Component, descriptor_set: &[u8]) -> Result<Unit, CodegenError> {
+/// `component` with what its kind needs beside it, from the descriptor
+/// set's `pool`: a policy's target's commands (refused when no aggregate or
+/// process manager of the set owns its `output_domain`) and, when its
+/// source takes facts, those facts and the commands it may translate the
+/// refusal of; a domain's commands its policies send, refusable back to
+/// it; a projector's sources; and the `translate` selections touching it.
+fn unit(
+    component: Component,
+    pool: &[Component],
+    translate: &[Translate],
+) -> Result<Unit, CodegenError> {
+    let owner = |domain: &str| {
+        pool.iter()
+            .find(|t| t.kind != ComponentKind::Policy && t.domain == domain)
+    };
+    let fact_of = |selection: &Translate| {
+        owner_input(pool, &selection.fact).map(|f| (selection.command.clone(), f))
+    };
     let mut commands = Vec::new();
-    if component.kind == ComponentKind::Policy {
-        let pool = model::pool_components(descriptor_set)?;
-        let target = pool
-            .iter()
-            .find(|t| t.kind != ComponentKind::Policy && t.domain == component.output_domain)
-            .ok_or_else(|| CodegenError::UnownedDomain {
-                policy: component.anchor.full_name().to_string(),
-                domain: component.output_domain.clone(),
-            })?;
-        commands = target
-            .inputs
-            .iter()
-            .filter(|i| !i.fact)
-            .map(|i| i.message.clone())
-            .collect();
+    let mut refusable = Vec::new();
+    let mut translated = Vec::new();
+    let mut facts = Vec::new();
+    match component.kind {
+        ComponentKind::Policy => {
+            let target =
+                owner(&component.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
+                    policy: component.anchor.full_name().to_string(),
+                    domain: component.output_domain.clone(),
+                })?;
+            let sent: Vec<&Input> = target.inputs.iter().filter(|i| !i.fact).collect();
+            commands = sent.iter().map(|i| i.message.clone()).collect();
+            if let Some(source) = owner(&component.input_domain) {
+                facts = source
+                    .inputs
+                    .iter()
+                    .filter(|i| i.fact)
+                    .map(|i| i.message.clone())
+                    .collect();
+            }
+            if !facts.is_empty() {
+                refusable = sent.into_iter().map(Refusable::of).collect();
+            }
+            translated = translate
+                .iter()
+                .filter(|t| t.policy == component.anchor.full_name())
+                .filter_map(fact_of)
+                .collect();
+        }
+        ComponentKind::Aggregate | ComponentKind::ProcessManager => {
+            for policy in pool
+                .iter()
+                .filter(|p| p.kind == ComponentKind::Policy && p.input_domain == component.domain)
+            {
+                let Some(target) = owner(&policy.output_domain) else {
+                    continue;
+                };
+                for input in target.inputs.iter().filter(|i| !i.fact) {
+                    if !refusable
+                        .iter()
+                        .any(|r: &Refusable| r.command == input.message)
+                    {
+                        refusable.push(Refusable::of(input));
+                    }
+                }
+                translated.extend(
+                    translate
+                        .iter()
+                        .filter(|t| t.policy == policy.anchor.full_name())
+                        .filter_map(fact_of),
+                );
+            }
+        }
+        ComponentKind::Projector => {}
     }
     let sources = if component.kind == ComponentKind::Projector {
         component.sources.clone()
@@ -309,7 +403,19 @@ fn unit(component: Component, descriptor_set: &[u8]) -> Result<Unit, CodegenErro
         component,
         commands,
         sources,
+        refusable,
+        translated,
+        facts,
     })
+}
+
+/// The message of the input of some aggregate or process manager of
+/// `pool` named `full_name`.
+fn owner_input(pool: &[Component], full_name: &str) -> Option<MessageDescriptor> {
+    pool.iter()
+        .filter(|c| c.kind != ComponentKind::Policy)
+        .find_map(|c| c.input(full_name))
+        .map(|i| i.message.clone())
 }
 
 /// What the project serves, for its docs: `the player domain`, `the
@@ -374,6 +480,11 @@ fn roots(unit: &Unit) -> Vec<MessageDescriptor> {
     }
     roots.extend(component.events.iter().cloned());
     roots.extend(unit.commands.iter().cloned());
+    for refusable in &unit.refusable {
+        roots.push(refusable.command.clone());
+        roots.extend(refusable.refuses.iter().cloned());
+    }
+    roots.extend(unit.facts.iter().cloned());
     roots
 }
 

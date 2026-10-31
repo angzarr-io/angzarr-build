@@ -8,7 +8,7 @@ use crate::common::snake;
 use crate::model::{Cardinality, Component, ComponentKind, Input};
 
 use super::layout::{head, wrap};
-use super::{PythonApp, Unit};
+use super::{PythonApp, Refusable, Unit};
 
 /// One method of the logic interface.
 struct Method {
@@ -65,13 +65,43 @@ fn decided(component: &Component, input: &Input) -> String {
         .join(" | ")
 }
 
+/// A refusal method's typed refusal parameter, when `refusable` refuses
+/// with types: `refusal`, one of them or None.
+fn refusal_param(refusable: &Refusable) -> Option<(String, String)> {
+    if refusable.refuses.is_empty() {
+        return None;
+    }
+    let types: Vec<&str> = refusable.refuses.iter().map(|r| r.name()).collect();
+    Some((
+        "refusal".to_string(),
+        format!("{} | None", types.join(" | ")),
+    ))
+}
+
+/// What a domain's handler of a refusal returns, as a fact handler with no
+/// emits does: a list of any of its events, None when it has none.
+fn any_events(component: &Component) -> String {
+    let any: Vec<&str> = component.events.iter().map(|e| e.name()).collect();
+    if any.is_empty() {
+        "None".to_string()
+    } else {
+        format!("list[{}]", any.join(" | "))
+    }
+}
+
 /// The interface's methods, by kind. A domain's: a decision per command
 /// (or fact) from the state and its context (the harness's
 /// `CommandContext`, re-exported by `domain.py`), returning what it emits
-/// or a typed refusal, and a fold per event from the state to the next
-/// state. A policy's: a reaction per event from the event, its source root
-/// and its page's context, returning the target's commands, each with its
-/// root. A projector's: a coroutine per event from the projection, the
+/// or a typed refusal, a handler per command its policies send of that
+/// command's pass-through refusal (`on_refused_<command>`: the command, its
+/// typed refusal or None, the state and the context, returning the events
+/// recording it) unless the refusal switch translates it, and a fold per
+/// event from the state to the next state. A policy's: a reaction per event
+/// from the event, its source root and its page's context, returning the
+/// target's commands, each with its root, and a translating callback per
+/// command the refusal switch selects (`<command>_refused`: the command, its
+/// typed refusal or None and the refused command's context, returning the
+/// fact). A projector's: a coroutine per event from the projection, the
 /// event and its page's context, returning the next projection. All of it
 /// in the plain types (`domain.py`).
 fn methods(unit: &Unit) -> Vec<Method> {
@@ -97,6 +127,23 @@ fn methods(unit: &Unit) -> Vec<Method> {
                     } else {
                         format!("decide {ty}")
                     },
+                });
+            }
+            for refusable in &unit.refusable {
+                if unit.translation(&refusable.command).is_some() {
+                    continue;
+                }
+                let ty = refusable.command.name().to_string();
+                let mut params = vec![("command".to_string(), ty.clone())];
+                params.extend(refusal_param(refusable));
+                params.push(("state".to_string(), anchor.clone()));
+                params.push(("ctx".to_string(), "CommandContext".to_string()));
+                out.push(Method {
+                    name: format!("on_refused_{}", snake(&ty)),
+                    asynchronous: false,
+                    params,
+                    returns: any_events(component),
+                    todo: format!("record the refusal of {ty}"),
                 });
             }
             for event in &component.events {
@@ -131,6 +178,22 @@ fn methods(unit: &Unit) -> Vec<Method> {
                     ],
                     returns: format!("list[tuple[bytes, {command}]]"),
                     todo: format!("react to {ty}"),
+                });
+            }
+            for refusable in &unit.refusable {
+                let Some(fact) = unit.translation(&refusable.command) else {
+                    continue;
+                };
+                let ty = refusable.command.name().to_string();
+                let mut params = vec![("command".to_string(), ty.clone())];
+                params.extend(refusal_param(refusable));
+                params.push(("ctx".to_string(), "CommandContext".to_string()));
+                out.push(Method {
+                    name: format!("{}_refused", snake(&ty)),
+                    asynchronous: false,
+                    params,
+                    returns: fact.name().to_string(),
+                    todo: format!("translate the refusal of {ty}"),
                 });
             }
         }
@@ -176,6 +239,18 @@ fn interface_imports(app: &PythonApp, unit: &Unit) -> String {
     names.extend(component.events.iter().map(|e| e.name().to_string()));
     if !component.events.is_empty() {
         names.extend(unit.commands.iter().map(|c| c.name().to_string()));
+    }
+    // A refusal method's: the refused command, its typed refusals, the
+    // refused command's context and, translated, the fact.
+    for refusable in &unit.refusable {
+        let translation = unit.translation(&refusable.command);
+        if unit.is_domain() == translation.is_some() {
+            continue;
+        }
+        names.insert(refusable.command.name().to_string());
+        names.extend(refusable.refuses.iter().map(|r| r.name().to_string()));
+        names.insert("CommandContext".to_string());
+        names.extend(translation.map(|fact| fact.name().to_string()));
     }
     let mut out = format!("from {}.domain import (\n", app.package());
     for name in names {

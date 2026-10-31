@@ -110,7 +110,10 @@ pub fn scaffold(
 
 /// `selection`'s policy is a policy, its command one its target decides,
 /// and its fact a fact its source ingests.
-fn check_translate(components: &[Component], selection: &Translate) -> Result<(), CodegenError> {
+pub(crate) fn check_translate(
+    components: &[Component],
+    selection: &Translate,
+) -> Result<(), CodegenError> {
     let policy = components
         .iter()
         .find(|c| c.kind == ComponentKind::Policy && c.anchor.full_name() == selection.policy)

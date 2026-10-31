@@ -410,17 +410,19 @@ pub fn scaffold_into(
 
 /// The uv project of one Python domain (see
 /// `angzarr_codegen::scaffold_python`) under `root`, as [`scaffold_into`]
-/// writes a Rust scaffold: a user's file once, a generated file every time.
+/// writes a Rust scaffold: a user's file once, a generated file every time,
+/// `translate` being the refusal switch's translate selections.
 pub fn scaffold_python_into(
     root: &Path,
     protos: &[&str],
     includes: &[&str],
     app: &PythonApp,
+    translate: &[Translate],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
-    let files =
-        angzarr_codegen::scaffold_python(&bytes, protos, app, &[]).map_err(BuildError::Codegen)?;
+    let files = angzarr_codegen::scaffold_python(&bytes, protos, app, translate)
+        .map_err(BuildError::Codegen)?;
     write_scaffold(root, files, existing)
 }
 
