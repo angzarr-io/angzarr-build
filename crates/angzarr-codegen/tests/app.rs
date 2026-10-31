@@ -1,0 +1,422 @@
+//! An angzarr-embedded application's startup, generated (`angzarr
+//! scaffold app`): the host config and the driver the user's, written
+//! once; build.rs and main.rs the CLI's, derived from the protos and the
+//! host config on disk. Pinned by golden files (`tests/golden/app`), and
+//! the host config's lints against the protos.
+//!
+//! The host config is today's `HostConfig` (angzarr-embedded b44e374); its
+//! shape is to be redesigned, and these tests re-targeted at it.
+
+mod common;
+
+use angzarr_codegen::{
+    AppLint, AppSeed, CodegenError, Exposure, Owner, RetrySeed, ScaffoldFile, app, lint_app,
+    remote_domains,
+};
+use common::*;
+
+const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/app");
+
+/// The blackjack example: the table aggregate, the player aggregate, and
+/// the policies between them (and one to the wallet, outside the app).
+const BLACKJACK: &[&str] = &[
+    "io/angzarr/examples/v1/table.proto",
+    "io/angzarr/examples/v1/player.proto",
+    "io/angzarr/examples/v1/policies.proto",
+];
+const SHOP: &[&str] = &["shop/v1/shop.proto"];
+
+fn seed(name: &str) -> AppSeed {
+    AppSeed {
+        name: name.to_string(),
+        includes: vec!["proto".to_string()],
+        python: Vec::new(),
+        expose: Vec::new(),
+        retry: RetrySeed::default(),
+        in_memory: false,
+    }
+}
+
+/// What blackjack's e2e and examples-rust's `remote_player` hand-write:
+/// the table and its policies in process, the player a Python child, the
+/// store in memory.
+fn blackjack() -> AppSeed {
+    AppSeed {
+        python: vec!["player".to_string()],
+        in_memory: true,
+        ..seed("blackjack")
+    }
+}
+
+fn file<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
+    files
+        .iter()
+        .find(|f| f.path == path)
+        .unwrap_or_else(|| panic!("no {path} among {:?}", paths(files)))
+}
+
+fn paths(files: &[ScaffoldFile]) -> Vec<&str> {
+    let mut paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    paths.sort_unstable();
+    paths
+}
+
+fn golden(app: &str, path: &str) -> String {
+    std::fs::read_to_string(format!("{GOLDEN}/{app}/{path}")).unwrap()
+}
+
+/// Every file of `files` is `app`'s golden, and owned as the split says:
+/// the host config and the driver the user's, build.rs and main.rs the
+/// CLI's.
+fn assert_golden(app: &str, files: &[ScaffoldFile]) {
+    assert_eq!(
+        paths(files),
+        ["angzarr.toml", "build.rs", "src/driver.rs", "src/main.rs"]
+    );
+    for f in files {
+        let owner = match f.path.as_str() {
+            "angzarr.toml" | "src/driver.rs" => Owner::User,
+            _ => Owner::Generated,
+        };
+        assert_eq!(f.owner, owner, "{}", f.path);
+        assert_eq!(f.source, golden(app, &f.path), "{}", f.path);
+    }
+}
+
+#[test]
+fn a_single_aggregate_rust_app_is_its_golden_config_build_script_main_and_driver() {
+    let files = app(&descriptors(SHOP), SHOP, &seed("shop"), None).unwrap();
+    assert_golden("shop", &files);
+}
+
+#[test]
+fn the_mixed_blackjack_app_is_its_golden_rust_table_python_player_and_policies() {
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    assert_golden("blackjack", &files);
+}
+
+/// The config, its comments and blank lines dropped.
+fn settings(toml: &str) -> Vec<&str> {
+    toml.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect()
+}
+
+#[test]
+fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    // What the e2e's angzarr.toml held, hand-written, before it generated
+    // its own.
+    let hand = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                [[component]]\nname = \"player\"\nlanguage = \"python\"\ndir = \"player\"\n\
+                entry = [\"angzarr-player\"]\n\n[store]\nin_memory = true\n";
+    assert_eq!(
+        settings(&file(&files, "angzarr.toml").source),
+        settings(hand)
+    );
+    // examples-rust's remote_player: the same components, its `dir` an
+    // environment variable's and its handshake a slow first `uv` run's.
+    let remote_player = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                         [[component]]\nname = \"player\"\nlanguage = \"python\"\n\
+                         entry = [\"angzarr-player\"]\n";
+    let generated = settings(&file(&files, "angzarr.toml").source);
+    for line in settings(remote_player) {
+        assert!(generated.contains(&line), "{line}: {generated:?}");
+    }
+}
+
+#[test]
+fn the_generated_main_registers_only_the_in_process_components_and_their_policies() {
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    let main = &file(&files, "src/main.rs").source;
+    for module in [
+        "pub mod table_aggregate;",
+        "pub mod table_player_policy;",
+        "pub mod player_table_policy;",
+    ] {
+        assert!(main.contains(module), "{module}:\n{main}");
+    }
+    // The player is the Python child's; the wallet policy's target is
+    // outside the application.
+    for absent in ["pub mod player_aggregate", "pub mod table_wallet_policy"] {
+        assert!(!main.contains(absent), "{absent}:\n{main}");
+    }
+}
+
+#[test]
+fn expose_and_the_retry_settings_seeded_are_emitted_and_the_unseeded_are_not() {
+    let seeded = AppSeed {
+        expose: vec![("table".to_string(), Exposure::Loopback)],
+        retry: RetrySeed {
+            max_retries: Some(5),
+            max_race_runs: Some(0),
+        },
+        ..blackjack()
+    };
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None).unwrap();
+    let config = &file(&files, "angzarr.toml").source;
+    assert!(
+        config.contains(
+            "[[component]]\nname = \"table\"\nlanguage = \"rust\"\nexpose = \"loopback\"\n"
+        ),
+        "{config}"
+    );
+    assert!(
+        config.contains("\n[retry]\nmax_retries = 5\nmax_race_runs = 0\n"),
+        "{config}"
+    );
+    let ip = AppSeed {
+        expose: vec![("table".to_string(), Exposure::Ip)],
+        ..blackjack()
+    };
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &ip, None).unwrap();
+    let config = &file(&files, "angzarr.toml").source;
+    assert!(config.contains("expose = \"ip\"\n"), "{config}");
+    assert!(
+        !config.contains("[retry]"),
+        "no retry key seeded, no table: the host's defaults: {config}"
+    );
+
+    let plain = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
+    let config = &file(&plain, "angzarr.toml").source;
+    assert!(
+        !config.contains("expose") && !config.contains("[retry]"),
+        "{config}"
+    );
+}
+
+#[test]
+fn an_existing_config_is_the_input_the_generated_files_follow_not_the_seed() {
+    // The user moved the table to a Go child of their own and kept the
+    // player in Rust; the seed still says the player is Python.
+    let mine = "[[component]]\nname = \"table\"\nlanguage = \"go\"\nlaunch = [\"./bin/table\"]\n\n\
+                [[component]]\nname = \"player\"\nlanguage = \"rust\"\n";
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), Some(mine)).unwrap();
+    let config = file(&files, "angzarr.toml");
+    assert_eq!(config.owner, Owner::User);
+    assert_eq!(config.source, mine, "the config on disk is passed through");
+    let main = &file(&files, "src/main.rs").source;
+    assert!(main.contains("pub mod player_aggregate;"), "{main}");
+    assert!(!main.contains("pub mod table_aggregate;"), "{main}");
+}
+
+#[test]
+fn generating_twice_from_the_same_inputs_is_byte_identical() {
+    let set = descriptors(BLACKJACK);
+    let first = app(&set, BLACKJACK, &blackjack(), None).unwrap();
+    let config = file(&first, "angzarr.toml").source.clone();
+    let second = app(&set, BLACKJACK, &blackjack(), Some(&config)).unwrap();
+    assert!(!first.is_empty());
+    assert_eq!(first, second);
+}
+
+#[test]
+fn a_seed_naming_a_python_domain_the_protos_lack_is_refused() {
+    let seeded = AppSeed {
+        python: vec!["dealer".to_string()],
+        ..blackjack()
+    };
+    assert_eq!(
+        app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None),
+        Err(CodegenError::AppRefused {
+            lints: vec![AppLint::UnknownComponent {
+                name: "dealer".to_string(),
+                kind: "domain".to_string(),
+            }]
+        })
+    );
+}
+
+#[test]
+fn a_seed_exposing_a_process_manager_is_refused() {
+    let buyin = AppSeed {
+        expose: vec![("buyin".to_string(), Exposure::Loopback)],
+        ..seed("buyin")
+    };
+    assert_eq!(
+        app(&descriptors(BUYIN), BUYIN, &buyin, None),
+        Err(CodegenError::AppRefused {
+            lints: vec![AppLint::NotExposable {
+                name: "buyin".to_string(),
+                kind: "process_manager".to_string(),
+            }]
+        })
+    );
+}
+
+#[test]
+fn an_existing_config_with_lints_is_refused() {
+    let mine = "[[component]]\nname = \"dealer\"\nlanguage = \"rust\"\n";
+    let refused = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), Some(mine));
+    assert!(
+        matches!(&refused, Err(CodegenError::AppRefused { lints }) if !lints.is_empty()),
+        "{refused:?}"
+    );
+}
+
+fn lints(config: &str, files: &[&str]) -> Vec<AppLint> {
+    lint_app(config, &descriptors(BLACKJACK), files).unwrap()
+}
+
+#[test]
+fn the_generated_configs_have_no_lints() {
+    assert_eq!(
+        lint_app(&golden("shop", "angzarr.toml"), &descriptors(SHOP), SHOP).unwrap(),
+        []
+    );
+    assert_eq!(lints(&golden("blackjack", "angzarr.toml"), BLACKJACK), []);
+}
+
+#[test]
+fn lint_app_flags_an_unknown_component_a_duplicate_and_an_unlisted_domain() {
+    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"dealer\"\nlanguage = \"rust\"\n";
+    assert_eq!(
+        lints(config, BLACKJACK),
+        [
+            AppLint::DuplicateComponent {
+                name: "table".to_string()
+            },
+            AppLint::UnknownComponent {
+                name: "dealer".to_string(),
+                kind: "domain".to_string(),
+            },
+            AppLint::UnlistedDomain {
+                domain: "player".to_string()
+            },
+        ]
+    );
+}
+
+#[test]
+fn lint_app_flags_a_policy_component_the_protos_do_not_declare() {
+    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"player\"\nlanguage = \"python\"\n\n\
+                  [[component]]\nname = \"dealer-table-policy\"\nkind = \"policy\"\n\
+                  language = \"python\"\n";
+    assert_eq!(
+        lints(config, BLACKJACK),
+        [AppLint::UnknownComponent {
+            name: "dealer-table-policy".to_string(),
+            kind: "policy".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn lint_app_flags_a_policy_whose_source_domain_is_not_in_the_app() {
+    // The table alone: the player-to-table policy of policies.proto reads
+    // the player, which nothing of the application owns.
+    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n";
+    let files = [BLACKJACK[0], BLACKJACK[2]];
+    assert_eq!(
+        lints(config, &files),
+        [AppLint::PolicySourceAbsent {
+            policy: "io.angzarr.examples.v1.PlayerTablePolicy".to_string(),
+            domain: "player".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn lint_app_flags_a_remote_policy_whose_source_domain_is_not_in_the_app() {
+    // A Python child serving the player-to-table policy, named as its
+    // component kebab-cased, beside the table alone.
+    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"player-table-policy\"\nkind = \"policy\"\n\
+                  language = \"python\"\nentry = [\"-m\", \"player_table.serve\"]\n";
+    let files = [BLACKJACK[0], BLACKJACK[2]];
+    assert_eq!(
+        lints(config, &files),
+        [AppLint::PolicySourceAbsent {
+            policy: "player-table-policy".to_string(),
+            domain: "player".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn lint_app_flags_exposing_anything_but_an_aggregate() {
+    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\nexpose = \"ip\"\n\n\
+                  [[component]]\nname = \"player\"\nlanguage = \"python\"\n\n\
+                  [[component]]\nname = \"table-player-policy\"\nkind = \"policy\"\n\
+                  language = \"python\"\nexpose = \"loopback\"\n\n\
+                  [[component]]\nname = \"table-view\"\nkind = \"projector\"\n\
+                  language = \"python\"\nexpose = \"ip\"\n";
+    assert_eq!(
+        lints(config, BLACKJACK),
+        [
+            AppLint::NotExposable {
+                name: "table-player-policy".to_string(),
+                kind: "policy".to_string(),
+            },
+            AppLint::NotExposable {
+                name: "table-view".to_string(),
+                kind: "projector".to_string(),
+            },
+        ],
+        "an exposed aggregate is fine; a projector is not checked against the protos"
+    );
+    let buyin = "[[component]]\nname = \"wallet\"\nlanguage = \"rust\"\n\n\
+                 [[component]]\nname = \"buyin\"\nlanguage = \"rust\"\nexpose = \"loopback\"\n";
+    assert_eq!(
+        lint_app(buyin, &descriptors(BUYIN), BUYIN).unwrap(),
+        [AppLint::NotExposable {
+            name: "buyin".to_string(),
+            kind: "process_manager".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn lint_app_flags_a_language_with_no_launch_and_an_empty_launch() {
+    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"player\"\nlanguage = \"cobol\"\n";
+    assert_eq!(
+        lints(config, BLACKJACK),
+        [AppLint::UnknownLanguage {
+            name: "player".to_string(),
+            language: "cobol".to_string(),
+        }]
+    );
+    let empty = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                 [[component]]\nname = \"player\"\nlanguage = \"python\"\nlaunch = []\n";
+    assert_eq!(
+        lints(empty, BLACKJACK),
+        [AppLint::EmptyLaunch {
+            name: "player".to_string()
+        }]
+    );
+}
+
+#[test]
+fn lint_app_refuses_what_is_not_todays_host_config() {
+    for config in [
+        "[[component]]\nname = \"player\"\nlanguage = \"python\"\nlanuch = [\"x\"]\n",
+        "[[component]]\nname = \"table\"\nkind = \"saga\"\nlanguage = \"rust\"\n",
+        "[[component]]\nname = \"table\"\nlanguage = \"rust\"\nexpose = \"world\"\n",
+        "[retry]\nmax_race_runz = 0\n",
+    ] {
+        assert!(
+            matches!(
+                lint_app(config, &descriptors(BLACKJACK), BLACKJACK),
+                Err(CodegenError::AppConfig { .. })
+            ),
+            "{config}"
+        );
+    }
+}
+
+#[test]
+fn remote_domains_are_the_domains_not_in_rust_or_given_a_launch() {
+    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"player\"\nlanguage = \"python\"\n\n\
+                  [[component]]\nname = \"dealer\"\nlanguage = \"rust\"\nlaunch = [\"./dealer\"]\n\n\
+                  [[component]]\nname = \"table-view\"\nkind = \"projector\"\nlanguage = \"python\"\n";
+    assert_eq!(
+        remote_domains(config).unwrap(),
+        ["player".to_string(), "dealer".to_string()]
+    );
+}

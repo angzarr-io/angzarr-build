@@ -86,6 +86,11 @@ pub enum CodegenError {
     /// A command declaring typed refusals, which the Python scaffold does
     /// not emit yet.
     PythonRefuses { message: String },
+    /// A host config (`angzarr.toml`) that does not read as one.
+    AppConfig { detail: String },
+    /// `angzarr scaffold app` refused the host config: it has lints
+    /// ([`crate::AppLint`]), each reported on its own.
+    AppRefused { lints: Vec<crate::AppLint> },
 }
 
 impl fmt::Display for CodegenError {
@@ -205,6 +210,14 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} declares refuses, which the Python scaffold does not emit yet"
             ),
+            CodegenError::AppConfig { detail } => {
+                write!(f, "the host config does not read as one: {detail}")
+            }
+            CodegenError::AppRefused { lints } => write!(
+                f,
+                "the host config has {} lints; nothing is written",
+                lints.len()
+            ),
         }
     }
 }
@@ -246,6 +259,8 @@ impl Diagnostic for CodegenError {
             CodegenError::PythonKind { .. } => "angzarr-codegen-python-kind",
             CodegenError::PythonFact { .. } => "angzarr-codegen-python-fact",
             CodegenError::PythonRefuses { .. } => "angzarr-codegen-python-refuses",
+            CodegenError::AppConfig { .. } => "angzarr-codegen-app-config",
+            CodegenError::AppRefused { .. } => "angzarr-codegen-app-refused",
         }
     }
 
@@ -323,6 +338,13 @@ impl Diagnostic for CodegenError {
             CodegenError::PythonFact { message } | CodegenError::PythonRefuses { message } => {
                 vec![("message", s(message))]
             }
+            CodegenError::AppConfig { detail } => vec![("detail", s(detail))],
+            CodegenError::AppRefused { lints } => {
+                vec![(
+                    "count",
+                    i64::try_from(lints.len()).unwrap_or(i64::MAX).into(),
+                )]
+            }
         }
     }
 }
@@ -330,7 +352,7 @@ impl Diagnostic for CodegenError {
 /// One value of every error this crate defines, for the catalog test.
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     let s = || "x".to_string();
-    vec![
+    let errors: Vec<Box<dyn Diagnostic>> = vec![
         Box::new(CodegenError::Descriptors { detail: s() }),
         Box::new(CodegenError::FileNotInSet { file: s() }),
         Box::new(CodegenError::UnknownComponent {
@@ -405,5 +427,11 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             name: s(),
         }),
         Box::new(CodegenError::PythonRefuses { message: s() }),
-    ]
+        Box::new(CodegenError::AppConfig { detail: s() }),
+        Box::new(CodegenError::AppRefused { lints: Vec::new() }),
+    ];
+    errors
+        .into_iter()
+        .chain(crate::app::app_lint_samples())
+        .collect()
 }

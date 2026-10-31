@@ -1,0 +1,10 @@
+//! What blackjack does once it is up. Written once by `angzarr scaffold app`
+//! and yours: send commands with `app.handle(book, &sampled).await`, read
+//! a stream with `app.events(&cover).await`.
+
+use angzarr_embedded_host::App;
+
+pub async fn drive(app: &App) -> Result<(), Box<dyn std::error::Error>> {
+    let _ = app;
+    todo!("send the application's commands")
+}

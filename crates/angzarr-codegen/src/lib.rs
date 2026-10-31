@@ -6,6 +6,7 @@
 //! survive only there, read through `prost-reflect`. prost drops them when it
 //! decodes a set.
 
+mod app;
 mod descriptor;
 mod error;
 mod model;
@@ -13,6 +14,9 @@ mod python;
 mod rust;
 mod scaffold;
 
+pub use app::{
+    AppLint, AppSeed, Exposure, RetrySeed, app, app_lint_samples, lint_app, remote_domains,
+};
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
 pub use error::{CodegenError, diagnostic_samples};
 
