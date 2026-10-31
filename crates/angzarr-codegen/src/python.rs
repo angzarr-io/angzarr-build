@@ -403,12 +403,15 @@ fn logic_name(app: &PythonApp, unit: &Unit) -> String {
 }
 
 /// What a decision of `input` returns: its events by its cardinality (one
-/// event, a tuple of several, that or None, or a list of any of them;
-/// None when it emits nothing), or one of its typed refusals.
-fn decided(input: &Input) -> String {
+/// event, a tuple of several, that or None, or a list of any of them; an
+/// input declaring no emits, a list of any of `component`'s events, None
+/// when it has none), or one of its typed refusals.
+fn decided(component: &Component, input: &Input) -> String {
     let names: Vec<&str> = input.emits.iter().map(|e| e.name()).collect();
+    let any: Vec<&str> = component.events.iter().map(|e| e.name()).collect();
     let events = match (input.cardinality, names.as_slice()) {
-        (_, []) => "None".to_string(),
+        (_, []) if any.is_empty() => "None".to_string(),
+        (_, []) => format!("list[{}]", any.join(" | ")),
         (Cardinality::Many, _) => format!("list[{}]", names.join(" | ")),
         (Cardinality::Optional, [one]) => format!("{one} | None"),
         (Cardinality::Optional, _) => format!("tuple[{}] | None", names.join(", ")),
@@ -447,7 +450,7 @@ fn methods(unit: &Unit) -> Vec<Method> {
                         ("state".to_string(), anchor.clone()),
                         ("ctx".to_string(), "CommandContext".to_string()),
                     ],
-                    returns: decided(input),
+                    returns: decided(component, input),
                     todo: if input.fact {
                         format!("record {ty}")
                     } else {

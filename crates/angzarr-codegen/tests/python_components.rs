@@ -178,6 +178,26 @@ fn test_a_map_field_is_a_dict_of_its_plain_type() {
     );
 }
 
+/// A command declaring no emits returns raw payloads of any of its
+/// domain's events (unset is MANY): a list of any of them, typed, as Rust's
+/// `Vec<LedgerStateEvent>`, not nothing.
+#[test]
+fn test_a_command_with_no_emits_returns_a_list_of_any_of_its_domains_events() {
+    let files = scaffold_python(
+        &descriptors(&["kinds/v1/kinds.proto"]),
+        &["kinds/v1/kinds.proto"],
+        &app("ledger"),
+    )
+    .unwrap();
+    assert_has(
+        source(&files, "/logic.py"),
+        &[
+            "def raw(self, cmd: Raw, state: LedgerState, ctx: CommandContext) \
+           -> list[Posted | Noted | Cleared | Closed]: ...",
+        ],
+    );
+}
+
 // --------------------------------------------------------------- policy
 
 /// table -> player: each TurnStarted becomes the player's commands, each
