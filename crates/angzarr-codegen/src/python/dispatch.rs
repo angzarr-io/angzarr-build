@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use prost_reflect::MessageDescriptor;
 
 use crate::common::snake;
-use crate::model::{Component, ComponentKind};
+use crate::model::{ComponentKind, Input};
 
 use super::convert::{converter_pair, converters, pb2_class, table};
 use super::layout::{call, head, wrap};
@@ -138,13 +138,11 @@ pub(super) fn dispatch(app: &PythonApp, unit: &Unit) -> String {
         &returns,
         "",
     );
-    match unit.kind() {
-        ComponentKind::Aggregate | ComponentKind::ProcessManager => {
-            domain_dispatch(&mut out, unit, &new)
-        }
-        ComponentKind::Policy => policy_dispatch(&mut out, unit, &new),
-        ComponentKind::Projector => projector_dispatch(&mut out, unit, &new),
-    }
+    out.push_str(&match unit.kind() {
+        ComponentKind::Aggregate | ComponentKind::ProcessManager => domain_dispatch(unit, &new),
+        ComponentKind::Policy => policy_dispatch(unit, &new),
+        ComponentKind::Projector => projector_dispatch(unit, &new),
+    });
     out.push_str("    return dispatch\n");
     out
 }
@@ -208,6 +206,16 @@ fn refused_command(refusable: &Refusable, book: &str, packed: &str) -> (String, 
     (out, args)
 }
 
+/// The registration of the handler `_<method>` with `registrar`, for
+/// `message` by its full name.
+fn register(registrar: &str, message: &MessageDescriptor, method: &str) -> String {
+    call(
+        4,
+        registrar,
+        &format!("\"{}\", _{method}", message.full_name()),
+    )
+}
+
 /// `if hasattr(logic, "<method>"):` registering `thunk` for `command`'s
 /// refusals with the client's `on_refused`: the user's logic decides, as
 /// the Rust adapters read the user's interface.
@@ -224,24 +232,20 @@ fn register_refused(command: &MessageDescriptor, method: &str, thunk: &str) -> S
 /// An aggregate's or a process manager's dispatch: its rebuilder of folds,
 /// a decision per command, a record per fact, and a record per pass-through
 /// refusal of a command its policies send, when its logic handles it.
-fn domain_dispatch(out: &mut String, unit: &Unit, new: &str) {
+fn domain_dispatch(unit: &Unit, new: &str) -> String {
     let component = &unit.component;
-    out.push_str(&table(
+    let mut out = table(
         "Each event's plain type, and its converter to the wire.",
         "_EVENTS",
         &component.events,
-    ));
+    );
     out.push_str(WIRE_EVENTS);
-    let refusals: Vec<MessageDescriptor> = component
-        .inputs
-        .iter()
-        .flat_map(|i| i.refuses.iter().cloned())
-        .fold(Vec::new(), |mut all, r| {
-            if !all.contains(&r) {
-                all.push(r);
-            }
-            all
-        });
+    let mut refusals: Vec<MessageDescriptor> = Vec::new();
+    for refusal in component.inputs.iter().flat_map(|i| &i.refuses) {
+        if !refusals.contains(refusal) {
+            refusals.push(refusal.clone());
+        }
+    }
     if !refusals.is_empty() {
         out.push_str(&table(
             "Each typed refusal's plain type, and its converter to the wire.",
@@ -251,115 +255,114 @@ fn domain_dispatch(out: &mut String, unit: &Unit, new: &str) {
         out.push_str(DECIDED);
     }
     out.push_str(&typed_refusals(unit));
-    domain_rebuilder(out, component, new);
-    out.push('\n');
-    out.push_str(&call(
-        4,
-        &format!("dispatch = _az.{}", dispatch_type(component.kind)),
-        &format!("\"{}\", \"{}\", rebuilder", unit.name, component.domain),
-    ));
-    domain_inputs(out, component);
-    domain_refusables(out, unit);
-}
-
-/// A domain's rebuilder, folding each of its events through its logic.
-fn domain_rebuilder(out: &mut String, component: &Component, new: &str) {
     let (state_to, state_from) = converters(&component.anchor);
     out.push_str(&format!(
         "\n\n{new}\n    rebuilder = _az.Rebuilder({})\n",
         pb2_class(&component.anchor)
     ));
     for event in &component.events {
-        let method = format!("apply_{}", snake(event.name()));
-        let (event_to, _) = converters(event);
-        out.push_str(&format!(
-            "\n    def _{method}(state, payload, ctx):\n        \
-             event = {event_to}(_decode({}(), payload))\n        \
-             folded = logic.{method}({state_to}(state), event)\n        \
-             state.CopyFrom({state_from}(folded))\n\n",
-            pb2_class(event),
-        ));
-        out.push_str(&call(
-            4,
-            "rebuilder.apply_with_context",
-            &format!("\"{}\", _{method}", event.full_name()),
-        ));
+        out.push_str(&fold_handler(event, &state_to, &state_from));
     }
+    out.push('\n');
+    out.push_str(&call(
+        4,
+        &format!("dispatch = _az.{}", dispatch_type(component.kind)),
+        &format!("\"{}\", \"{}\", rebuilder", unit.name, component.domain),
+    ));
+    for input in &component.inputs {
+        out.push_str(&input_handler(input, &state_to));
+    }
+    for refusable in &unit.refusable {
+        out.push_str(&refused_handler(refusable, &state_to));
+    }
+    out
 }
 
-/// A domain's decision per command and record per fact.
-fn domain_inputs(out: &mut String, component: &Component) {
-    let (state_to, _) = converters(&component.anchor);
-    for input in &component.inputs {
-        let method = snake(input.message.name());
-        let (input_to, _) = converters(&input.message);
-        let class = pb2_class(&input.message);
-        if input.fact {
-            out.push_str(&format!(
-                "\n    def _on_{method}(payload, state, cctx):\n        \
-                 wire = _decode({class}(), payload)\n        \
+/// A domain's fold of `event` through its logic, `state_to` and
+/// `state_from` its state's converters, registered with its rebuilder.
+fn fold_handler(event: &MessageDescriptor, state_to: &str, state_from: &str) -> String {
+    let method = format!("apply_{}", snake(event.name()));
+    let (event_to, _) = converters(event);
+    let mut out = format!(
+        "\n    def _{method}(state, payload, ctx):\n        \
+         event = {event_to}(_decode({}(), payload))\n        \
+         folded = logic.{method}({state_to}(state), event)\n        \
+         state.CopyFrom({state_from}(folded))\n\n",
+        pb2_class(event),
+    );
+    out.push_str(&register("rebuilder.apply_with_context", event, &method));
+    out
+}
+
+/// A domain's decision of a command, or record of a fact, `state_to` its
+/// state's converter to the plain type.
+fn input_handler(input: &Input, state_to: &str) -> String {
+    let method = snake(input.message.name());
+    let (input_to, _) = converters(&input.message);
+    let class = pb2_class(&input.message);
+    let (body, registrar) = if input.fact {
+        (
+            format!(
+                "wire = _decode({class}(), payload)\n        \
                  flags = logic.{method}({input_to}(wire), {state_to}(state), cctx)\n        \
-                 return _az.FactRecord(wire, tuple(_wire(flags)))\n\n",
-            ));
-            out.push_str(&call(
-                4,
-                "dispatch.on_fact",
-                &format!("\"{}\", _on_{method}", input.message.full_name()),
-            ));
-            continue;
-        }
+                 return _az.FactRecord(wire, tuple(_wire(flags)))"
+            ),
+            "dispatch.on_fact",
+        )
+    } else {
         let answer = if input.refuses.is_empty() {
             "_book"
         } else {
             "_decided"
         };
-        out.push_str(&format!(
-            "\n    def _on_{method}(payload, state, cctx):\n        \
-             cmd = {input_to}(_decode({class}(), payload))\n        \
-             return {answer}(logic.{method}(cmd, {state_to}(state), cctx))\n\n",
-        ));
-        out.push_str(&call(
-            4,
+        (
+            format!(
+                "cmd = {input_to}(_decode({class}(), payload))\n        \
+                 return {answer}(logic.{method}(cmd, {state_to}(state), cctx))"
+            ),
             "dispatch.on_command",
-            &format!("\"{}\", _on_{method}", input.message.full_name()),
-        ));
-    }
+        )
+    };
+    let mut out = format!("\n    def _on_{method}(payload, state, cctx):\n        {body}\n\n");
+    out.push_str(&register(
+        registrar,
+        &input.message,
+        &format!("on_{method}"),
+    ));
+    out
 }
 
-/// A domain's record per pass-through refusal of a command its policies
-/// send, when its logic handles it.
-fn domain_refusables(out: &mut String, unit: &Unit) {
-    let (state_to, _) = converters(&unit.component.anchor);
-    for refusable in &unit.refusable {
-        let method = format!("on_refused_{}", snake(refusable.command.name()));
-        let (body, args) = refused_command(refusable, "refused.command", "refused.refusal");
-        out.push_str(&format!(
-            "\n    def _{method}(refused, state, cctx):\n{body}"
-        ));
-        out.push_str(&call(
-            8,
-            &format!("flags = logic.{method}"),
-            &format!("{args}{state_to}(state), cctx"),
-        ));
-        out.push_str("        return _az.FactRecord(refused, tuple(_wire(flags)))\n\n");
-        out.push_str(&register_refused(
-            &refusable.command,
-            &method,
-            &format!("_{method}"),
-        ));
-    }
+/// A domain's record of the pass-through refusal of `refusable`, a command
+/// its policies send, when its logic handles it; `state_to` its state's
+/// converter to the plain type.
+fn refused_handler(refusable: &Refusable, state_to: &str) -> String {
+    let method = format!("on_refused_{}", snake(refusable.command.name()));
+    let (body, args) = refused_command(refusable, "refused.command", "refused.refusal");
+    let mut out = format!("\n    def _{method}(refused, state, cctx):\n{body}");
+    out.push_str(&call(
+        8,
+        &format!("flags = logic.{method}"),
+        &format!("{args}{state_to}(state), cctx"),
+    ));
+    out.push_str("        return _az.FactRecord(refused, tuple(_wire(flags)))\n\n");
+    out.push_str(&register_refused(
+        &refusable.command,
+        &method,
+        &format!("_{method}"),
+    ));
+    out
 }
 
 /// A policy's dispatch: a reaction per event, its commands addressed to
 /// the target domain, and, when its source takes facts, a translating
 /// callback per command it sends, when its logic has it.
-fn policy_dispatch(out: &mut String, unit: &Unit, new: &str) {
+fn policy_dispatch(unit: &Unit, new: &str) -> String {
     let component = &unit.component;
-    out.push_str(&table(
+    let mut out = table(
         "Each command's plain type, and its converter to the wire.",
         "_COMMANDS",
         &unit.commands,
-    ));
+    );
     out.push_str(&format!(
         "\n\ndef _commands(result) -> list:\n    \
          \"\"\"A reaction's commands, each to its root of the {target} domain.\"\"\"\n    \
@@ -401,11 +404,7 @@ fn policy_dispatch(out: &mut String, unit: &Unit, new: &str) {
              return _commands(logic.{method}(event, source, ctx))\n\n",
             pb2_class(event),
         ));
-        out.push_str(&call(
-            4,
-            "dispatch.on_event_with_context",
-            &format!("\"{}\", _{method}", event.full_name()),
-        ));
+        out.push_str(&register("dispatch.on_event_with_context", event, &method));
     }
     for refusable in &unit.refusable {
         let method = format!("{}_refused", snake(refusable.command.name()));
@@ -424,13 +423,14 @@ fn policy_dispatch(out: &mut String, unit: &Unit, new: &str) {
             &format!("_{method}"),
         ));
     }
+    out
 }
 
 /// A projector's dispatch: its sources, and a projection per event, each
 /// the logic's coroutine run on the dispatch's event loop.
-fn projector_dispatch(out: &mut String, unit: &Unit, new: &str) {
+fn projector_dispatch(unit: &Unit, new: &str) -> String {
     let component = &unit.component;
-    out.push_str(EVENT_LOOP);
+    let mut out = EVENT_LOOP.to_string();
     let (projection_to, projection_from) = converters(&component.anchor);
     out.push_str(&format!("\n\n{new}\n"));
     out.push_str(&call(
@@ -456,10 +456,7 @@ fn projector_dispatch(out: &mut String, unit: &Unit, new: &str) {
         out.push_str(&format!(
             "        projection.CopyFrom({projection_from}(projected))\n\n"
         ));
-        out.push_str(&call(
-            4,
-            "dispatch.on_event_with_context",
-            &format!("\"{}\", _{method}", event.full_name()),
-        ));
+        out.push_str(&register("dispatch.on_event_with_context", event, &method));
     }
+    out
 }
