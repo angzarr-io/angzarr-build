@@ -85,6 +85,22 @@ pub fn register_into(
     std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
+/// The stand-in of every domain in `protos` served by a child process
+/// (`angzarr-stand-ins.rs` in `OUT_DIR`, see `angzarr_codegen::stand_ins`):
+/// its command set and its event set as a hand-written Rust policy names
+/// them, generated from its proto, for the crate root to `include!`.
+pub fn stand_ins(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+    stand_ins_into(&out_dir()?, protos, includes)
+}
+
+/// [`stand_ins`], into `out`.
+pub fn stand_ins_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+    let bytes = build_descriptors(out, protos, includes)?;
+    let source = angzarr_codegen::stand_ins(&bytes, protos).map_err(BuildError::Codegen)?;
+    let path = out.join("angzarr-stand-ins.rs");
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))
+}
+
 /// The generated adapters of every component in `protos`
 /// (`angzarr-adapters.rs` in `OUT_DIR`), for the crate root to `include!`
 /// as `pub mod adapters` (see `angzarr_codegen::adapters`).

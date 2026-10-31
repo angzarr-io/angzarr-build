@@ -139,3 +139,15 @@ fn test_descriptors_into_writes_each_components_descriptor_with_the_version() {
     assert!(source.contains("2.0.0"), "{source}");
     std::fs::remove_dir_all(&out).unwrap();
 }
+
+/// A child-served domain's stand-in, generated from its proto into the
+/// output directory, for a crate that hand-writes the policies naming it.
+#[test]
+fn test_stand_ins_into_writes_the_remote_domains_stand_in() {
+    let out = out_dir();
+    angzarr_build::stand_ins_into(&out, &["buyin/v1/wallet.proto"], &[&fixtures()]).unwrap();
+    let source = std::fs::read_to_string(out.join("angzarr-stand-ins.rs")).unwrap();
+    assert!(source.contains("impl CommandTarget for Wallet"), "{source}");
+    assert!(source.contains("impl Decides<Hold> for Wallet"), "{source}");
+    std::fs::remove_dir_all(&out).unwrap();
+}

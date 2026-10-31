@@ -982,6 +982,17 @@ fn domain_adapter(component: &Component) -> TokenStream {
     }
 }
 
+/// The stand-in of every aggregate and process manager declared in
+/// `files` served by a child process, generated from its proto: what a
+/// Rust policy names it by, its command set (`CommandTarget`, `Decides` of
+/// each command) and its event set (`EventSource`, `Ingests` of each fact),
+/// for a crate that hand-writes its policies and generates no adapter of
+/// the domain. Its domain types are `crate::domain`'s.
+pub fn stand_ins(descriptor_set: &[u8], files: &[&str]) -> Result<String, CodegenError> {
+    let _ = model::components(descriptor_set, files, ALL_KINDS)?;
+    Ok(String::new())
+}
+
 /// A remote domain (served by a child process) as a policy names it: its
 /// command set (`CommandTarget`, `Decides` of each command) and its
 /// event set (`EventSource`, `Ingests` of each fact), each type by its full

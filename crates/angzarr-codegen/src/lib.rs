@@ -73,7 +73,7 @@ pub use python::{
 };
 pub use scaffold::{
     Owner, ScaffoldFile, Translate, adapters, complete, markup_domain, register, register_only,
-    scaffold,
+    scaffold, stand_ins,
 };
 
 /// The Rust source generated for one proto package.
