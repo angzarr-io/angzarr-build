@@ -30,7 +30,8 @@ pre-commit:
       run: just fmt
       stage_fixed: true
     lint:
-      # clippy -D warnings and the rustfmt check.
+      # clippy -D warnings (the complexity gate among them: Cargo.toml's
+      # [workspace.lints.clippy] and clippy.toml) and the rustfmt check.
       priority: 3
       run: just lint
     tests:
