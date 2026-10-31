@@ -8,7 +8,7 @@
 mod common;
 
 use angzarr_codegen::{
-    Descriptor, ProtoInput, PythonApp, descriptors, descriptors_rs, scaffold_python,
+    Descriptor, LICENCE_HEADER, ProtoInput, PythonApp, descriptors, descriptors_rs, scaffold_python,
 };
 use angzarr_proto::v1::{ComponentDescriptor, ComponentKind, ConflictResolution, Target};
 use common::*;
@@ -259,7 +259,10 @@ fn the_python_project_holds_its_components_generated_descriptor() {
     );
     let order = generated().into_iter().find(|d| d.name == "order").unwrap();
     assert_eq!(python_bytes(&file.source), order.encoded);
-    for line in file.source.lines() {
+    // The licence header is the one line past it: a comment, which Black
+    // leaves as it is (owner ruling 2026-10-31).
+    for line in file.source.lines().skip(1) {
         assert!(line.len() <= 88, "longer than Black's width: {line}");
     }
+    assert!(file.source.starts_with(&format!("# {LICENCE_HEADER}\n")));
 }

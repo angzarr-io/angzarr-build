@@ -138,7 +138,7 @@ pub fn app(
     let components = model::components(descriptor_set, files, model::ALL_KINDS)?;
     let config_text = match config {
         Some(text) => text.to_string(),
-        None => seeded_config(&components, seed),
+        None => crate::headed("angzarr.toml", seeded_config(&components, seed)),
     };
     let lints = lint(&read(&config_text)?, &components);
     if !lints.is_empty() {
@@ -147,7 +147,10 @@ pub fn app(
     let host = read(&config_text)?;
     let (manifest_text, domain) = match manifest {
         Some(text) => (text.to_string(), manifest_domain(text)?),
-        None => (self::manifest(seed), seed.domain.clone()),
+        None => (
+            crate::headed("Cargo.toml", self::manifest(seed)),
+            seed.domain.clone(),
+        ),
     };
     if let Some(domain) = &domain {
         for path in std::iter::once(&domain.path).chain(&domain.wire) {
@@ -168,17 +171,22 @@ pub fn app(
         source,
         owner: Owner::Generated,
     };
+    // The host config and the manifest on disk, the user's, pass through
+    // as they are; what is generated here carries the licence header.
     Ok(vec![
         user("angzarr.toml", config_text),
         user("Cargo.toml", manifest_text),
         generated(
             "build.rs",
-            build_script(files, &seed.includes, domain.as_ref()),
+            crate::headed(".rs", build_script(files, &seed.includes, domain.as_ref())),
         ),
-        user("src/driver.rs", driver(&seed.name)),
+        user("src/driver.rs", crate::headed(".rs", driver(&seed.name))),
         generated(
             "src/main.rs",
-            main_rs(&seed.name, &components, &host, domain.as_ref()),
+            crate::headed(
+                ".rs",
+                main_rs(&seed.name, &components, &host, domain.as_ref()),
+            ),
         ),
     ])
 }

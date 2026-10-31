@@ -252,7 +252,7 @@ pub fn scaffold_python(
         ));
     }
     out.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(out)
+    Ok(crate::headed_files(out))
 }
 
 /// `component` with what its kind needs beside it: a policy's target's
