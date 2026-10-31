@@ -17,9 +17,9 @@ publish = false
 # it names, so the app has one router and one angzarr-proto (angzarr core's,
 # at the rev angzarr-embedded and angzarr-cli both pin).
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c8520470fa0fd9435020d7c30ade79dd2808ae7" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c8520470fa0fd9435020d7c30ade79dd2808ae7" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c8520470fa0fd9435020d7c30ade79dd2808ae7" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c0a8bb904c202d18356d9627db8f37b54fc50bc" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c0a8bb904c202d18356d9627db8f37b54fc50bc" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c0a8bb904c202d18356d9627db8f37b54fc50bc" }
 angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "d83c85460c662f35ff4f888e77004267c5054c2a" }
 prost = "0.14"
 

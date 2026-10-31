@@ -1,5 +1,27 @@
 # The buy-in app's config, as `angzarr_embedded_host::run` reads it: every
-# component is in process (the generated register()), so no [[component]] is
-# listed, and the store is in memory, so a run leaves nothing behind.
+# component in process (the generated register()), each listed, and the
+# store in memory, so a run leaves nothing behind. The process manager is
+# listed by its domain, as angzarr-embedded-host matches a domain
+# component to what register() registered.
+[[component]]
+name = "wallet"
+language = "rust"
+kind = "domain"
+
+[[component]]
+name = "buyin"
+language = "rust"
+kind = "domain"
+
+[[component]]
+name = "policy-buyin-wallet"
+language = "rust"
+kind = "policy"
+
+[[component]]
+name = "policy-wallet-buyin"
+language = "rust"
+kind = "policy"
+
 [store]
 in_memory = true
