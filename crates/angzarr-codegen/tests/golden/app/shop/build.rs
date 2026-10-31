@@ -3,7 +3,8 @@
 //! The application's generated layer, into OUT_DIR: the wire types, the
 //! markup domain layer, the adapters, the descriptors and `register()`,
 //! from the protos and angzarr.toml; a domain angzarr.toml serves from a
-//! child process gets a contract, not an adapter.
+//! child process gets a contract, not an adapter, and `register()`
+//! registers the in-process components angzarr.toml lists.
 
 const PROTOS: &[&str] = &["shop/v1/shop.proto"];
 const INCLUDES: &[&str] = &["proto"];

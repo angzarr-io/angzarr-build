@@ -38,6 +38,7 @@ angzarr-codegen-app-unknown-component = the { $kind } { $name } is no component 
 angzarr-codegen-app-duplicate-component = the component { $name } is listed more than once
 angzarr-codegen-app-unlisted-domain = the protos declare the domain { $domain }, which the config does not list
 angzarr-codegen-app-policy-source-absent = the policy { $policy } reads the domain { $domain }, which no component of the application owns
+angzarr-codegen-app-policy-target-absent = the policy { $policy } sends to the domain { $domain }, which no component of the application owns; list it, remote if it runs elsewhere
 angzarr-codegen-app-not-exposable = { $name } is a { $kind }, which cannot be exposed: only an aggregate is
 angzarr-codegen-app-unknown-language = { $name } is in { $language }, which has no default launch; give it a launch
 angzarr-codegen-app-empty-launch = { $name }'s launch names no program

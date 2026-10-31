@@ -1,0 +1,19 @@
+# The manifest of shop on angzarr-embedded. Written once by `angzarr
+# scaffold app` and yours from then on: add your logic's dependencies.
+[package]
+name = "shop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+prost = "0.14"
+# The App is async, on the caller's runtime: tokio's.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[build-dependencies]
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr-cli" }

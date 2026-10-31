@@ -16,7 +16,8 @@ mod rust;
 mod scaffold;
 
 pub use app::{
-    AppLint, AppSeed, Exposure, RetrySeed, app, app_lint_samples, lint_app, remote_domains,
+    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, Exposure,
+    RetrySeed, app, app_lint_samples, in_process_components, lint_app, remote_domains,
 };
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
 pub use error::{CodegenError, diagnostic_samples};
@@ -30,7 +31,8 @@ pub use python::{
     scaffold_python,
 };
 pub use scaffold::{
-    Owner, ScaffoldFile, Translate, adapters, complete, markup_domain, register, scaffold,
+    Owner, ScaffoldFile, Translate, adapters, complete, markup_domain, register, register_only,
+    scaffold,
 };
 
 /// The Rust source generated for one proto package.

@@ -1201,10 +1201,33 @@ pub fn register(
     files: &[&str],
     remote: &[&str],
 ) -> Result<String, CodegenError> {
+    registration(descriptor_set, files, &|c: &Component| {
+        c.kind == ComponentKind::Policy || !remote.contains(&c.domain.as_str())
+    })
+}
+
+/// The generated `register(&mut Registry)` of the components of `files`
+/// named in `names` alone (by [`crate::component_name`]): what an
+/// application's host config lists in process.
+pub fn register_only(
+    descriptor_set: &[u8],
+    files: &[&str],
+    names: &[&str],
+) -> Result<String, CodegenError> {
+    registration(descriptor_set, files, &|c: &Component| {
+        names.contains(&c.component_name.as_str())
+    })
+}
+
+fn registration(
+    descriptor_set: &[u8],
+    files: &[&str],
+    keep: &dyn Fn(&Component) -> bool,
+) -> Result<String, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let registrations = application(&components)
         .into_iter()
-        .filter(|c| c.kind == ComponentKind::Policy || !remote.contains(&c.domain.as_str()))
+        .filter(|c| keep(c))
         .map(|component| {
             let name = ident(&component.name);
             let ty = quote!(crate::adapters::#name);

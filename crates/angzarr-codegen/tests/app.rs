@@ -4,8 +4,9 @@
 //! host config on disk. Pinned by golden files (`tests/golden/app`), and
 //! the host config's lints against the protos.
 //!
-//! The host config is today's `HostConfig` (angzarr-embedded b44e374); its
-//! shape is to be redesigned, and these tests re-targeted at it.
+//! The host config is angzarr-embedded-host's strict `HostConfig`
+//! (angzarr-embedded 5265e5c): `kind` required on every component, every
+//! component listed by its name from the protos, unknown keys refused.
 
 mod common;
 
@@ -34,6 +35,7 @@ fn seed(name: &str) -> AppSeed {
         expose: Vec::new(),
         retry: RetrySeed::default(),
         in_memory: false,
+        angzarr_build: None,
     }
 }
 
@@ -65,20 +67,32 @@ fn golden(app: &str, path: &str) -> String {
     std::fs::read_to_string(format!("{GOLDEN}/{app}/{path}")).unwrap()
 }
 
-/// Every file of `files` is `app`'s golden, and owned as the split says:
-/// the host config and the driver the user's, build.rs and main.rs the
-/// CLI's.
+/// Every file of `files` is `app`'s golden (rewritten under
+/// `ANGZARR_BLESS`), and owned as the split says: the host config, the
+/// manifest and the driver the user's, build.rs and main.rs the CLI's.
 fn assert_golden(app: &str, files: &[ScaffoldFile]) {
     assert_eq!(
         paths(files),
-        ["angzarr.toml", "build.rs", "src/driver.rs", "src/main.rs"]
+        [
+            "Cargo.toml",
+            "angzarr.toml",
+            "build.rs",
+            "src/driver.rs",
+            "src/main.rs"
+        ]
     );
     for f in files {
         let owner = match f.path.as_str() {
-            "angzarr.toml" | "src/driver.rs" => Owner::User,
+            "angzarr.toml" | "Cargo.toml" | "src/driver.rs" => Owner::User,
             _ => Owner::Generated,
         };
         assert_eq!(f.owner, owner, "{}", f.path);
+        if std::env::var_os("ANGZARR_BLESS").is_some() {
+            let path = format!("{GOLDEN}/{app}/{}", f.path);
+            std::fs::create_dir_all(std::path::Path::new(&path).parent().unwrap()).unwrap();
+            std::fs::write(&path, &f.source).unwrap();
+            continue;
+        }
         assert_eq!(f.source, golden(app, &f.path), "{}", f.path);
     }
 }
@@ -106,19 +120,24 @@ fn settings(toml: &str) -> Vec<&str> {
 #[test]
 fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
     let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None).unwrap();
-    // What the e2e's angzarr.toml held, hand-written, before it generated
-    // its own.
-    let hand = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                [[component]]\nname = \"player\"\nlanguage = \"python\"\ndir = \"player\"\n\
-                entry = [\"angzarr-player\"]\n\n[store]\nin_memory = true\n";
+    // What the e2e hand-wrote, now with every component listed, each with
+    // its kind (the owner's config rulings): the table, the player a
+    // Python child, the two policies between them in process; the wallet
+    // policy's target is not in the application, so it is not listed.
+    let hand = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\
+                dir = \"player\"\nentry = [\"angzarr-player\"]\n\n\
+                [[component]]\nname = \"policy-table-player\"\nkind = \"policy\"\nlanguage = \"rust\"\n\n\
+                [[component]]\nname = \"policy-player-table\"\nkind = \"policy\"\nlanguage = \"rust\"\n\n\
+                [store]\nin_memory = true\n";
     assert_eq!(
         settings(&file(&files, "angzarr.toml").source),
         settings(hand)
     );
     // examples-rust's remote_player: the same components, its `dir` an
     // environment variable's and its handshake a slow first `uv` run's.
-    let remote_player = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                         [[component]]\nname = \"player\"\nlanguage = \"python\"\n\
+    let remote_player = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                         [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\
                          entry = [\"angzarr-player\"]\n";
     let generated = settings(&file(&files, "angzarr.toml").source);
     for line in settings(remote_player) {
@@ -158,7 +177,7 @@ fn expose_and_the_retry_settings_seeded_are_emitted_and_the_unseeded_are_not() {
     let config = &file(&files, "angzarr.toml").source;
     assert!(
         config.contains(
-            "[[component]]\nname = \"table\"\nlanguage = \"rust\"\nexpose = \"loopback\"\n"
+            "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\nexpose = \"loopback\"\n"
         ),
         "{config}"
     );
@@ -190,8 +209,9 @@ fn expose_and_the_retry_settings_seeded_are_emitted_and_the_unseeded_are_not() {
 fn an_existing_config_is_the_input_the_generated_files_follow_not_the_seed() {
     // The user moved the table to a Go child of their own and kept the
     // player in Rust; the seed still says the player is Python.
-    let mine = "[[component]]\nname = \"table\"\nlanguage = \"go\"\nlaunch = [\"./bin/table\"]\n\n\
-                [[component]]\nname = \"player\"\nlanguage = \"rust\"\n";
+    let mine = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"go\"\n\
+                launch = [\"./bin/table\"]\n\n\
+                [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"rust\"\n";
     let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), Some(mine)).unwrap();
     let config = file(&files, "angzarr.toml");
     assert_eq!(config.owner, Owner::User);
@@ -230,15 +250,16 @@ fn a_seed_naming_a_python_domain_the_protos_lack_is_refused() {
 
 #[test]
 fn a_seed_exposing_a_process_manager_is_refused() {
+    // A process manager's name is pmg- and its domain (decision 14.50).
     let buyin = AppSeed {
-        expose: vec![("buyin".to_string(), Exposure::Loopback)],
+        expose: vec![("pmg-buyin".to_string(), Exposure::Loopback)],
         ..seed("buyin")
     };
     assert_eq!(
         app(&descriptors(BUYIN), BUYIN, &buyin, None),
         Err(CodegenError::AppRefused {
             lints: vec![AppLint::NotExposable {
-                name: "buyin".to_string(),
+                name: "pmg-buyin".to_string(),
                 kind: "process_manager".to_string(),
             }]
         })
@@ -247,7 +268,7 @@ fn a_seed_exposing_a_process_manager_is_refused() {
 
 #[test]
 fn an_existing_config_with_lints_is_refused() {
-    let mine = "[[component]]\nname = \"dealer\"\nlanguage = \"rust\"\n";
+    let mine = "[[component]]\nname = \"dealer\"\nkind = \"domain\"\nlanguage = \"rust\"\n";
     let refused = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), Some(mine));
     assert!(
         matches!(&refused, Err(CodegenError::AppRefused { lints }) if !lints.is_empty()),
@@ -270,9 +291,9 @@ fn the_generated_configs_have_no_lints() {
 
 #[test]
 fn lint_app_flags_an_unknown_component_a_duplicate_and_an_unlisted_domain() {
-    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                  [[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                  [[component]]\nname = \"dealer\"\nlanguage = \"rust\"\n";
+    let config = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"dealer\"\nkind = \"domain\"\nlanguage = \"rust\"\n";
     assert_eq!(
         lints(config, BLACKJACK),
         [
@@ -292,8 +313,8 @@ fn lint_app_flags_an_unknown_component_a_duplicate_and_an_unlisted_domain() {
 
 #[test]
 fn lint_app_flags_a_policy_component_the_protos_do_not_declare() {
-    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                  [[component]]\nname = \"player\"\nlanguage = \"python\"\n\n\
+    let config = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\n\
                   [[component]]\nname = \"dealer-table-policy\"\nkind = \"policy\"\n\
                   language = \"python\"\n";
     assert_eq!(
@@ -307,41 +328,74 @@ fn lint_app_flags_a_policy_component_the_protos_do_not_declare() {
 
 #[test]
 fn lint_app_flags_a_policy_whose_source_domain_is_not_in_the_app() {
-    // The table alone: the player-to-table policy of policies.proto reads
-    // the player, which nothing of the application owns.
-    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n";
+    // The table alone, and the player-to-table policy listed: it reads the
+    // player, which nothing of the application owns. A policy of the
+    // protos the config does not list is not registered, and no lint.
+    let config = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"policy-player-table\"\nkind = \"policy\"\n\
+                  language = \"rust\"\n";
     let files = [BLACKJACK[0], BLACKJACK[2]];
     assert_eq!(
         lints(config, &files),
         [AppLint::PolicySourceAbsent {
-            policy: "io.angzarr.examples.v1.PlayerTablePolicy".to_string(),
+            policy: "policy-player-table".to_string(),
             domain: "player".to_string(),
         }]
     );
+    let table = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n";
+    assert_eq!(lints(table, &files), []);
 }
 
 #[test]
 fn lint_app_flags_a_remote_policy_whose_source_domain_is_not_in_the_app() {
-    // A Python child serving the player-to-table policy, named as its
-    // component kebab-cased, beside the table alone.
-    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                  [[component]]\nname = \"player-table-policy\"\nkind = \"policy\"\n\
+    // A Python child serving the player-to-table policy, by its name from
+    // the protos, beside the table alone.
+    let config = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"policy-player-table\"\nkind = \"policy\"\n\
                   language = \"python\"\nentry = [\"-m\", \"player_table.serve\"]\n";
     let files = [BLACKJACK[0], BLACKJACK[2]];
     assert_eq!(
         lints(config, &files),
         [AppLint::PolicySourceAbsent {
-            policy: "player-table-policy".to_string(),
+            policy: "policy-player-table".to_string(),
             domain: "player".to_string(),
         }]
     );
 }
 
 #[test]
+fn lint_app_flags_a_policy_whose_target_is_not_in_the_app_unless_declared_remote() {
+    const WALLET: &str = "io/angzarr/examples/v1/wallet.proto";
+    let files = [BLACKJACK[0], BLACKJACK[1], BLACKJACK[2], WALLET];
+    let set = descriptors(&files);
+    let base = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\n\
+                [[component]]\nname = \"policy-table-wallet\"\nkind = \"policy\"\nlanguage = \"rust\"\n";
+    assert_eq!(
+        lint_app(base, &set, &files).unwrap(),
+        [
+            AppLint::PolicyTargetAbsent {
+                policy: "policy-table-wallet".to_string(),
+                domain: "wallet".to_string(),
+            },
+            AppLint::UnlistedDomain {
+                domain: "wallet".to_string()
+            },
+        ]
+    );
+    // The wallet declared remote, a child of its own: no lint.
+    let remote = format!(
+        "{base}\n[[component]]\nname = \"wallet\"\nkind = \"domain\"\nlanguage = \"go\"\n\
+         launch = [\"./bin/wallet\"]\n"
+    );
+    assert_eq!(lint_app(&remote, &set, &files).unwrap(), []);
+}
+
+#[test]
 fn lint_app_flags_exposing_anything_but_an_aggregate() {
-    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\nexpose = \"ip\"\n\n\
-                  [[component]]\nname = \"player\"\nlanguage = \"python\"\n\n\
-                  [[component]]\nname = \"table-player-policy\"\nkind = \"policy\"\n\
+    let config = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\nexpose = \"ip\"\n\n\
+                  [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\n\
+                  [[component]]\nname = \"policy-table-player\"\nkind = \"policy\"\n\
                   language = \"python\"\nexpose = \"loopback\"\n\n\
                   [[component]]\nname = \"table-view\"\nkind = \"projector\"\n\
                   language = \"python\"\nexpose = \"ip\"\n";
@@ -349,7 +403,7 @@ fn lint_app_flags_exposing_anything_but_an_aggregate() {
         lints(config, BLACKJACK),
         [
             AppLint::NotExposable {
-                name: "table-player-policy".to_string(),
+                name: "policy-table-player".to_string(),
                 kind: "policy".to_string(),
             },
             AppLint::NotExposable {
@@ -359,12 +413,12 @@ fn lint_app_flags_exposing_anything_but_an_aggregate() {
         ],
         "an exposed aggregate is fine; a projector is not checked against the protos"
     );
-    let buyin = "[[component]]\nname = \"wallet\"\nlanguage = \"rust\"\n\n\
-                 [[component]]\nname = \"buyin\"\nlanguage = \"rust\"\nexpose = \"loopback\"\n";
+    let buyin = "[[component]]\nname = \"wallet\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                 [[component]]\nname = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"rust\"\nexpose = \"loopback\"\n";
     assert_eq!(
         lint_app(buyin, &descriptors(BUYIN), BUYIN).unwrap(),
         [AppLint::NotExposable {
-            name: "buyin".to_string(),
+            name: "pmg-buyin".to_string(),
             kind: "process_manager".to_string(),
         }]
     );
@@ -372,8 +426,8 @@ fn lint_app_flags_exposing_anything_but_an_aggregate() {
 
 #[test]
 fn lint_app_flags_a_language_with_no_launch_and_an_empty_launch() {
-    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                  [[component]]\nname = \"player\"\nlanguage = \"cobol\"\n";
+    let config = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"cobol\"\n";
     assert_eq!(
         lints(config, BLACKJACK),
         [AppLint::UnknownLanguage {
@@ -381,8 +435,8 @@ fn lint_app_flags_a_language_with_no_launch_and_an_empty_launch() {
             language: "cobol".to_string(),
         }]
     );
-    let empty = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                 [[component]]\nname = \"player\"\nlanguage = \"python\"\nlaunch = []\n";
+    let empty = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                 [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\nlaunch = []\n";
     assert_eq!(
         lints(empty, BLACKJACK),
         [AppLint::EmptyLaunch {
@@ -392,12 +446,22 @@ fn lint_app_flags_a_language_with_no_launch_and_an_empty_launch() {
 }
 
 #[test]
-fn lint_app_refuses_what_is_not_todays_host_config() {
+fn lint_app_refuses_what_is_not_the_hosts_config() {
     for config in [
-        "[[component]]\nname = \"player\"\nlanguage = \"python\"\nlanuch = [\"x\"]\n",
-        "[[component]]\nname = \"table\"\nkind = \"saga\"\nlanguage = \"rust\"\n",
-        "[[component]]\nname = \"table\"\nlanguage = \"rust\"\nexpose = \"world\"\n",
+        // An unknown key, of a component and of a table.
+        "[[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\
+         lanuch = [\"x\"]\n",
         "[retry]\nmax_race_runz = 0\n",
+        // A value outside a closed set.
+        "[[component]]\nname = \"table\"\nkind = \"saga\"\nlanguage = \"rust\"\n",
+        "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\
+         expose = \"world\"\n",
+        "[policy]\non_bug = \"ignore\"\n",
+        // A component with no kind (the owner's ruling: kind is required).
+        "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n",
+        // A key of the wrong type.
+        "[store]\nin_memory = \"yes\"\n",
+        "[supervision]\ncall_timeout_ms = -1\n",
     ] {
         assert!(
             matches!(
@@ -411,9 +475,10 @@ fn lint_app_refuses_what_is_not_todays_host_config() {
 
 #[test]
 fn remote_domains_are_the_domains_not_in_rust_or_given_a_launch() {
-    let config = "[[component]]\nname = \"table\"\nlanguage = \"rust\"\n\n\
-                  [[component]]\nname = \"player\"\nlanguage = \"python\"\n\n\
-                  [[component]]\nname = \"dealer\"\nlanguage = \"rust\"\nlaunch = [\"./dealer\"]\n\n\
+    let config = "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\n\
+                  [[component]]\nname = \"dealer\"\nkind = \"domain\"\nlanguage = \"rust\"\n\
+                  launch = [\"./dealer\"]\n\n\
                   [[component]]\nname = \"table-view\"\nkind = \"projector\"\nlanguage = \"python\"\n";
     assert_eq!(
         remote_domains(config).unwrap(),

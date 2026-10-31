@@ -15,7 +15,11 @@ prettyplease = "0.3.0"
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
 prost-reflect = "0.16"
 quote = "1.0.47"
+# The host config (angzarr.toml) read as angzarr-embedded-host reads it,
+# with its toml version, to lint it and derive an application from it.
+serde.workspace = true
 syn = { version = "3.0.9", features = ["full"] }
+toml = "0.9"
 
 [dev-dependencies]
 angzarr-proto.workspace = true

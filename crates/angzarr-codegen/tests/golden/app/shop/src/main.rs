@@ -3,8 +3,8 @@
 
 //! shop on angzarr-embedded: the Rust components in process, every
 //! component angzarr.toml serves from a child process launched by the host,
-//! the in-process ones registered by the generated `register()`, then the
-//! driver (`src/driver.rs`, yours).
+//! the in-process ones it lists registered by the generated `register()`,
+//! then the driver (`src/driver.rs`, yours).
 
 pub mod wire {
     include!(concat!(env!("OUT_DIR"), "/shop.v1.rs"));

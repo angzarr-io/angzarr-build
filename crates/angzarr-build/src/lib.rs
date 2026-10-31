@@ -22,7 +22,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
 pub use angzarr_codegen::{
-    AppLint, AppSeed, Exposure, ProtoInput, PythonApp, RetrySeed, Translate,
+    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, Exposure, ProtoInput, PythonApp,
+    RetrySeed, Translate,
 };
 
 /// This crate's en-US messages.
@@ -220,39 +221,91 @@ pub fn component_names(
 /// An angzarr-embedded application's whole generated layer, for the
 /// build script `angzarr scaffold app` writes: from its host config
 /// (`config`, relative to the crate) and its protos, the wire types, the
-/// markup domain layer (its package's prost types at `crate::wire`), the
-/// adapters, `register()` and the components' descriptors, the domains the
-/// config serves from a child process as contracts. Cargo reruns it when
-/// the config changes.
+/// markup domain layer (each package's prost types at `crate::wire`), the
+/// adapters, the components' descriptors and `register()`, which registers
+/// the in-process components the config lists; a domain the config serves
+/// from a child process is a contract. Cargo reruns it when the config
+/// changes.
 pub fn app(config: &str, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
-    app_into(&out_dir()?, Path::new(config), protos, includes)
+    let config = std::env::var_os("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_default()
+        .join(config);
+    app_into(&out_dir()?, &config, protos, includes)
 }
 
-/// [`app`], into `out`.
+/// [`app`], into `out`, the user's interfaces under the `src` beside
+/// `config`.
 pub fn app_into(
     out: &Path,
     config: &Path,
     protos: &[&str],
     includes: &[&str],
 ) -> Result<(), BuildError> {
-    let _ = (out, config, protos, includes);
-    Ok(())
+    println!("cargo:rerun-if-changed={}", config.display());
+    let text = std::fs::read_to_string(config).map_err(|e| io(config, &e))?;
+    let bytes = build_descriptors(out, protos, includes)?;
+    let names = angzarr_codegen::component_names(&bytes, protos).map_err(BuildError::Codegen)?;
+    // The config names components; a remote domain's contract is by its
+    // stream domain.
+    let remote: Vec<String> = angzarr_codegen::remote_domains(&text)
+        .map_err(BuildError::Codegen)?
+        .into_iter()
+        .map(|name| {
+            names
+                .iter()
+                .find(|c| c.name == name && !c.domain.is_empty())
+                .map_or(name, |c| c.domain.clone())
+        })
+        .collect();
+    let remote: Vec<&str> = remote.iter().map(String::as_str).collect();
+    let listed = angzarr_codegen::in_process_components(&text).map_err(BuildError::Codegen)?;
+    let listed: Vec<&str> = listed.iter().map(String::as_str).collect();
+    let mut packages: Vec<String> = names
+        .iter()
+        .filter_map(|c| c.component.rsplit_once('.').map(|(p, _)| p.to_string()))
+        .collect();
+    packages.sort();
+    packages.dedup();
+    let wire: Vec<(&str, &str)> = packages
+        .iter()
+        .map(|p| (p.as_str(), "crate::wire"))
+        .collect();
+    wire_into(out, protos, includes)?;
+    markup_domain_into(out, protos, includes, &wire)?;
+    let src = config.parent().unwrap_or(Path::new("")).join("src");
+    for warning in adapters_from(out, &src, protos, includes, &remote)? {
+        println!("cargo:warning={}: {warning}", warning.code());
+    }
+    descriptors_into(out, protos, includes, &remote, &rules_version())?;
+    let source =
+        angzarr_codegen::register_only(&bytes, protos, &listed).map_err(BuildError::Codegen)?;
+    let path = out.join("angzarr-register.rs");
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
 /// The startup of an angzarr-embedded application (see
-/// `angzarr_codegen::app`) under `root`, the crate root: `angzarr.toml` and
-/// `src/driver.rs` written once from `seed` and the user's from then on;
-/// `build.rs` and `src/main.rs` the CLI's, rewritten from the protos and
-/// the `angzarr.toml` on disk on every run. A config with lints is refused
-/// and nothing is written.
+/// `angzarr_codegen::app`) under `root`, the crate root: `angzarr.toml`,
+/// `Cargo.toml` and `src/driver.rs` written once from `seed` and the
+/// user's from then on; `build.rs` and `src/main.rs` the CLI's, rewritten
+/// from the protos and the `angzarr.toml` on disk on every run. A config
+/// with lints is refused and nothing is written.
 pub fn app_scaffold_into(
     root: &Path,
     protos: &[&str],
     includes: &[&str],
     seed: &AppSeed,
 ) -> Result<Vec<Scaffolded>, BuildError> {
-    let _ = (root, protos, includes, seed);
-    Ok(Vec::new())
+    let config_path = root.join("angzarr.toml");
+    let config = match std::fs::read_to_string(&config_path) {
+        Ok(text) => Some(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(io(&config_path, &e)),
+    };
+    let bytes = scaffold_descriptors(protos, includes)?;
+    let files = angzarr_codegen::app(&bytes, protos, seed, config.as_deref())
+        .map_err(BuildError::Codegen)?;
+    write_scaffold(root, files, Existing::Keep)
 }
 
 /// The lints of the host config at `config` against the components
@@ -262,8 +315,9 @@ pub fn lint_app(
     protos: &[&str],
     includes: &[&str],
 ) -> Result<Vec<AppLint>, BuildError> {
-    let _ = (config, protos, includes);
-    Ok(Vec::new())
+    let text = std::fs::read_to_string(config).map_err(|e| io(config, &e))?;
+    let bytes = scaffold_descriptors(protos, includes)?;
+    angzarr_codegen::lint_app(&text, &bytes, protos).map_err(BuildError::Codegen)
 }
 
 /// What [`scaffold_into`] does with a component's file that exists.

@@ -15,7 +15,13 @@ const BUYIN: &[&str] = &[
     "buyin/v1/policies.proto",
 ];
 const SHOP: &[&str] = &["shop/v1/shop.proto"];
-const APP_FILES: &[&str] = &["angzarr.toml", "build.rs", "src/driver.rs", "src/main.rs"];
+const APP_FILES: &[&str] = &[
+    "Cargo.toml",
+    "angzarr.toml",
+    "build.rs",
+    "src/driver.rs",
+    "src/main.rs",
+];
 
 fn fixtures() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -44,6 +50,7 @@ fn seed() -> AppSeed {
         expose: Vec::new(),
         retry: RetrySeed::default(),
         in_memory: true,
+        angzarr_build: None,
     }
 }
 
@@ -130,6 +137,7 @@ fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_cl
     assert_eq!(
         actions(&root, &scaffold(&root, SHOP, &other)),
         [
+            ("Cargo.toml".to_string(), "kept"),
             ("angzarr.toml".to_string(), "kept"),
             ("build.rs".to_string(), "regenerated"),
             ("src/driver.rs".to_string(), "kept"),
@@ -148,11 +156,14 @@ fn an_edit_to_the_config_is_followed_by_the_next_main() {
     let root = empty_dir();
     scaffold(&root, BUYIN, &seed());
     assert!(read(&root, "src/main.rs").contains("pub mod buy_in;"));
-    // The user moves the buy-in to a Python child.
+    // The user moves the buy-in (its process manager, pmg-buyin) to a
+    // Python child.
     let config = read(&root, "angzarr.toml").replace(
-        "name = \"buyin\"\nlanguage = \"rust\"\n",
-        "name = \"buyin\"\nlanguage = \"python\"\nentry = [\"angzarr-buyin\"]\n",
+        "name = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"rust\"\n",
+        "name = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"python\"\n\
+         entry = [\"angzarr-buyin\"]\n",
     );
+    assert_ne!(config, read(&root, "angzarr.toml"));
     std::fs::write(root.join("angzarr.toml"), &config).unwrap();
     scaffold(&root, BUYIN, &seed());
     let main = read(&root, "src/main.rs");
@@ -186,8 +197,8 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_contracts() {
     let config = out.join("angzarr.toml");
     std::fs::write(
         &config,
-        "[[component]]\nname = \"wallet\"\nlanguage = \"rust\"\n\n\
-         [[component]]\nname = \"buyin\"\nlanguage = \"python\"\n",
+        "[[component]]\nname = \"wallet\"\nkind = \"domain\"\nlanguage = \"rust\"\n\n\
+         [[component]]\nname = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"python\"\n",
     )
     .unwrap();
     app_into(&out, &config, BUYIN, &[&fixtures()]).unwrap();
