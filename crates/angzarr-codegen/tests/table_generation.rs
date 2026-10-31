@@ -1,0 +1,298 @@
+//! red/table-generation: what generating the blackjack table (the spec's
+//! table.proto and the LedgerProjection beside it) needs that the generator
+//! does not do yet. The plan is
+//! `rust-table-generation.plan.md` (session inept-sixth-stick). Every
+//! fixture is the spec submodule's protos ([`spec`]) except
+//! `refusals/v1/refusals.proto`, the shape a declared rejection code would
+//! take (an owner decision; the spec does not declare one yet).
+//!
+//! Red today, each for the reason its doc says; the pins marked GREEN hold
+//! what the plan keeps.
+
+mod common;
+
+use angzarr_codegen::{Generated, adapters, markup_domain, register, scaffold};
+use common::*;
+
+const TABLE: &str = "io/angzarr/examples/v1/table.proto";
+const LEDGER: &str = "io/angzarr/examples/v1/ledger.proto";
+const WIRE: &[(&str, &str)] = &[("io.angzarr.examples.v1", "crate::wire")];
+
+fn one(generated: Vec<Generated>) -> String {
+    let [Generated { source, .. }] = generated.as_slice() else {
+        panic!("one package expected, got {} packages", generated.len());
+    };
+    source.clone()
+}
+
+/// The source of the generated `impl <trait> for <ty>`, without spacing.
+fn impl_text(source: &str, trait_: &str, ty: &str) -> String {
+    let file = syn::parse_file(source).expect("generated source parses");
+    file.items
+        .iter()
+        .find_map(|i| match i {
+            syn::Item::Impl(imp)
+                if text(&imp.self_ty) == ty
+                    && imp
+                        .trait_
+                        .as_ref()
+                        .is_some_and(|(path, _)| text(path) == trait_) =>
+            {
+                Some(text(imp))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no impl {trait_} for {ty}"))
+}
+
+// ------------------------------------------------- external components
+
+/// RED: UnknownComponent{TableCreated, LedgerProjection}. table.proto
+/// alone (protoc with its own imports only) names three consumers it does
+/// not declare (LedgerProjection, TableBuyInPolicy, TableWalletPolicy):
+/// an `(event)` entry naming a component outside the set is a reference to
+/// a consumer generated elsewhere, not a refusal. A `(command)` naming one
+/// stays refused (`bad/v1/unknown_component.proto`): its owner is the
+/// component generated here.
+#[test]
+fn test_markup_domain_of_table_proto_alone_takes_unknown_consumers_as_references() {
+    let generated = markup_domain(&descriptors(&[TABLE]), &[TABLE], WIRE)
+        .expect("an event's consumer outside the set is a reference");
+    assert!(one(generated).contains("pub enum TableAggregateEvent"));
+}
+
+// ------------------------------------------------------------ projectors
+
+/// RED: Ok(vec![]) today, the projector skipped. The projector's domain
+/// layer: every event it projects (the table's and the wallet's) as a
+/// domain type, and the context its handlers read.
+#[test]
+fn test_markup_domain_generates_the_ledger_projectors_events_and_context() {
+    let source =
+        one(markup_domain(&descriptors(BLACKJACK), &[LEDGER], WIRE)
+            .expect("a projector is generated"));
+    for event in [
+        "RoundSettled",
+        "PlayerSeated",
+        "FundsDeposited",
+        "FundsHeld",
+    ] {
+        assert!(
+            source.contains(&format!("pub struct {event} ")),
+            "{event} missing:\n{source}"
+        );
+    }
+    assert!(
+        source.contains("pub use ::angzarr_embedded::next::markup::ProjectionContext;"),
+        "{source}"
+    );
+}
+
+/// RED: no file for LedgerProjection today. The user's two files for a
+/// projector, as for every other kind: its interface, one method per
+/// projected event, and its implementation holding the projection.
+#[test]
+fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
+    let files = scaffold(&descriptors(BLACKJACK), &[LEDGER], &[]).unwrap();
+    let interface = files
+        .iter()
+        .find(|f| f.path == "ledger_projector.rs")
+        .unwrap_or_else(|| {
+            panic!(
+                "no ledger_projector.rs: {:?}",
+                files.iter().map(|f| &f.path).collect::<Vec<_>>()
+            )
+        });
+    for expected in [
+        "pub trait LedgerProjector {",
+        "fn round_settled(&mut self, event: &RoundSettled, ctx: &ProjectionContext) -> Result<(), Bug>;",
+        "fn funds_held(&mut self, event: &FundsHeld, ctx: &ProjectionContext) -> Result<(), Bug>;",
+    ] {
+        assert!(
+            interface.source.contains(expected),
+            "{expected}:\n{}",
+            interface.source
+        );
+    }
+    let implementation = files
+        .iter()
+        .find(|f| f.path == "ledger_projector_impl.rs")
+        .expect("ledger_projector_impl.rs");
+    assert!(
+        implementation
+            .source
+            .contains("pub state: crate::wire::LedgerProjection,"),
+        "{}",
+        implementation.source
+    );
+}
+
+/// RED: no `#[projector]` today. The adapter marks the projector up for
+/// angzarr-embedded, one `#[projector]` per source domain (the markup
+/// takes one source each), delegating to the user's one implementation.
+#[test]
+fn test_adapters_mark_up_the_ledger_projector_for_each_source_domain() {
+    let source = adapters(&descriptors(BLACKJACK), &[LEDGER], &[], &|_| None).unwrap();
+    assert_eq!(source.matches("#[projector(").count(), 2, "{source}");
+    assert!(source.contains("#[projects(RoundSettled)]"), "{source}");
+    assert!(source.contains("#[projects(FundsHeld)]"), "{source}");
+}
+
+/// RED: `register` registers no projector today (the markup's kinds hold
+/// none).
+#[test]
+fn test_register_registers_the_ledger_projector() {
+    let source = register(&descriptors(BLACKJACK), BLACKJACK, &[]).unwrap();
+    assert!(source.contains("registry.projector("), "{source}");
+}
+
+// --------------------------------------------------------- refusal codes
+
+/// RED: the generated diagnostic of a typed refusal has no args today
+/// (`Vec::new()`). SeatNotConfirmable's `reason` field is its arg, as the
+/// hand-written one in examples-rust has it.
+#[test]
+fn test_a_typed_refusals_fields_are_its_diagnostic_args() {
+    let source = one(markup_domain(&descriptors(BLACKJACK), &[TABLE], WIRE).unwrap());
+    let diagnostic = impl_text(
+        &source,
+        "::angzarr_embedded_diagnostic::Diagnostic",
+        "SeatNotConfirmable",
+    );
+    assert!(diagnostic.contains("(\"reason\","), "{diagnostic}");
+}
+
+/// RED: no args today. A refusal declaring its codes as a nested enum (an
+/// owner decision for table.proto's eighteen): each value is mapped, and
+/// the diagnostic names the reason by the value's name without its
+/// enum's prefix, the ErrorInfo.reason on the wire.
+#[test]
+fn test_a_refusals_reason_enum_is_its_rejection_code() {
+    const FILE: &str = "refusals/v1/refusals.proto";
+    let source = one(markup_domain(
+        &descriptors(&[FILE]),
+        &[FILE],
+        &[("refusals.v1", "crate::wire")],
+    )
+    .unwrap());
+    assert!(source.contains("pub enum BetRefusedReason"), "{source}");
+    let diagnostic = impl_text(
+        &source,
+        "::angzarr_embedded_diagnostic::Diagnostic",
+        "BetRefused",
+    );
+    for expected in [
+        "(\"reason\",",
+        "\"ALREADY_BET\"",
+        "\"BET_OUT_OF_RANGE\"",
+        "(\"max_bet\",",
+    ] {
+        assert!(diagnostic.contains(expected), "{expected}: {diagnostic}");
+    }
+}
+
+// ------------------------------------------------------------- policies
+
+/// RED, and blocked on angzarr-embedded: the adapters carry a private
+/// `source_root` helper today, which a hand-written policy must copy. The
+/// trigger's root is the context's (`PolicyContext::source_root`, an
+/// angzarr-embedded change), so nothing is generated for it.
+#[test]
+fn test_policy_adapters_read_the_trigger_root_from_the_context() {
+    let files = &[
+        TABLE,
+        "io/angzarr/examples/v1/player.proto",
+        "io/angzarr/examples/v1/policies.proto",
+    ];
+    let source = adapters(&descriptors(BLACKJACK), files, &["player"], &|_| None).unwrap();
+    assert!(!source.contains("fn source_root"), "{source}");
+    assert!(source.contains("ctx.source_root()"), "{source}");
+}
+
+/// GREEN pin: a policy is named for its spec name, policy-<source>-<target>,
+/// with no hand edit (examples-rust's two HAND-EDITs went with the split
+/// scaffold).
+#[test]
+fn test_policy_adapters_carry_the_spec_names() {
+    let files = &[
+        TABLE,
+        "io/angzarr/examples/v1/player.proto",
+        "io/angzarr/examples/v1/policies.proto",
+    ];
+    let source = adapters(&descriptors(BLACKJACK), files, &["player"], &|_| None).unwrap();
+    for name in ["\"policy-table-player\"", "\"policy-player-table\""] {
+        assert!(source.contains(name), "{name}:\n{source}");
+    }
+}
+
+// ----------------------------------------------------------- escape hatch
+
+/// GREEN pin of the escape hatch: the generated `register` is a plain
+/// public function the application composes with components it writes by
+/// hand, registered through angzarr-embedded's own public API
+/// (`Registry::projector_handler`), nothing of the generator's. Compiled
+/// with warnings denied against a stub of that API.
+#[test]
+fn test_generated_register_composes_with_a_hand_written_component() {
+    const SHOP: &str = "shop/v1/shop.proto";
+    let generated = register(&descriptors(&[SHOP]), &[SHOP], &["carts"]).unwrap();
+    let app = format!(
+        "{generated}\n\
+         pub struct HandWrittenLedger;\n\
+         impl ::angzarr_embedded::router::ProjectorHandler for HandWrittenLedger {{}}\n\
+         /// The application's registration: the generated, then its own.\n\
+         pub fn register_all(registry: &mut ::angzarr_embedded::next::Registry) {{\n\
+             register(registry);\n\
+             registry.projector_handler(\"carts\", HandWrittenLedger);\n\
+         }}\n"
+    );
+    let stub = "pub mod router { pub trait ProjectorHandler {} }\n\
+                pub mod next { pub struct Registry; impl Registry {\n\
+                    pub fn projector_handler(&mut self, _source: &str, _p: impl crate::router::ProjectorHandler + 'static) -> &mut Self { self }\n\
+                } }";
+    if let Err(diagnostics) = compile_with_stub(stub, &app) {
+        panic!("{app}\n{diagnostics}");
+    }
+}
+
+/// rustc with warnings denied on `source` as a library, `::angzarr_embedded`
+/// the crate `stub`: the diagnostics, if rustc refused it.
+fn compile_with_stub(stub: &str, source: &str) -> Result<(), String> {
+    use std::process::Command;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static RUN: AtomicUsize = AtomicUsize::new(0);
+    let dir = std::env::temp_dir().join(format!(
+        "angzarr-codegen-table-generation-{}-{}",
+        std::process::id(),
+        RUN.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
+    let rustc = |args: &[&str]| {
+        Command::new(&rustc)
+            .current_dir(&dir)
+            .args(["--edition=2021", "--crate-type=lib", "-Dwarnings"])
+            .args(args)
+            .output()
+            .expect("rustc on PATH")
+    };
+    std::fs::write(dir.join("stub.rs"), stub).unwrap();
+    let built = rustc(&["--crate-name=angzarr_embedded", "stub.rs"]);
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    std::fs::write(dir.join("app.rs"), source).unwrap();
+    let out = rustc(&[
+        "--crate-name=app",
+        "--extern=angzarr_embedded=libangzarr_embedded.rlib",
+        "app.rs",
+    ]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).into_owned())
+    }
+}
