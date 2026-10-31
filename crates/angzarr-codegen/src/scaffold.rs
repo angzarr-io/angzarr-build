@@ -264,12 +264,14 @@ fn interface_methods(
             let short = |full: &str| full.rsplit('.').next().unwrap_or(full).to_string();
             let (command, fact) = (short(&selection.command), short(&selection.fact));
             let mut params = vec![("command".to_string(), format!("&{command}"))];
+            // The typed refusal: its one type, or the choice of several.
             if let Some(refusal) =
                 target
                     .input(&selection.command)
                     .and_then(|i| match i.refuses.as_slice() {
+                        [] => None,
                         [one] => Some(one.name().to_string()),
-                        _ => None,
+                        _ => Some(refusal_choice_name(&i.message)),
                     })
             {
                 params.push(("refusal".to_string(), format!("Option<{refusal}>")));
@@ -1144,12 +1146,30 @@ fn policy_adapter(
         let m = format_ident!("{}", r.name);
         let command = ident(&r.command);
         let fact = ident(&r.fact);
-        let args = match &r.refusal {
-            Some(refusal) => {
+        // A command refusing several types: the choice, each type tried in
+        // turn.
+        let several = target
+            .inputs
+            .iter()
+            .find(|i| !i.fact && i.message.name() == r.command && i.refuses.len() > 1)
+            .filter(|i| r.refusal.as_deref() == Some(&refusal_choice_name(&i.message)));
+        let args = match (&r.refusal, several) {
+            (Some(_), Some(input)) => {
+                let choice = format_ident!("{}", refusal_choice_name(&input.message));
+                let types: Vec<syn::Ident> =
+                    input.refuses.iter().map(|t| ident(t.name())).collect();
+                let (first, rest) = (&types[0], &types[1..]);
+                quote! {
+                    refusal.command(),
+                    refusal.refusal::<#first>().map(#choice::#first)
+                        #(.or_else(|| refusal.refusal::<#rest>().map(#choice::#rest)))*
+                }
+            }
+            (Some(refusal), None) => {
                 let refusal = ident(refusal);
                 quote!(refusal.command(), refusal.refusal::<#refusal>())
             }
-            None => quote!(refusal.command()),
+            (None, _) => quote!(refusal.command()),
         };
         quote! {
             #[on_refused(#command)]

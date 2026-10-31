@@ -7,7 +7,7 @@
 use crate::domain::*;
 
 pub trait AuditState {
-    fn audit(&self, cmd: &Audit, ctx: &Context) -> Result<Audited, Failed<Rejection>>;
+    fn audit(&self, cmd: &Audit, ctx: &Context) -> Result<Audited, Failed<AuditRefuses>>;
 
     fn apply_audited(&mut self, event: &Audited);
 }

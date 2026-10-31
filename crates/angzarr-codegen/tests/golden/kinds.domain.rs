@@ -1035,6 +1035,88 @@ impl ::angzarr_embedded_diagnostic::Diagnostic for PostRefuses {
         }
     }
 }
+/// What Audit refuses with: one of its refuses types.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuditRefuses {
+    PostRefused(PostRefused),
+    Unreasoned(Unreasoned),
+}
+impl From<PostRefused> for AuditRefuses {
+    fn from(refusal: PostRefused) -> Self {
+        AuditRefuses::PostRefused(refusal)
+    }
+}
+impl From<Unreasoned> for AuditRefuses {
+    fn from(refusal: Unreasoned) -> Self {
+        AuditRefuses::Unreasoned(refusal)
+    }
+}
+impl AuditRefuses {
+    /// `failed`, its refusal converted by the chosen type's own
+    /// `Into`: what the generated adapter hands the markup.
+    pub fn widen<Y>(failed: Failed<AuditRefuses>) -> Failed<Y>
+    where
+        PostRefused: Into<Y>,
+        Unreasoned: Into<Y>,
+    {
+        match failed {
+            Failed::Rejected { rejection, status } => {
+                Failed::Rejected {
+                    rejection: match rejection {
+                        AuditRefuses::PostRefused(refusal) => refusal.into(),
+                        AuditRefuses::Unreasoned(refusal) => refusal.into(),
+                    },
+                    status,
+                }
+            }
+            Failed::Immediate(report) => Failed::Immediate(report),
+            Failed::Bug(report) => Failed::Bug(report),
+            Failed::RetryableBug { status, report } => {
+                Failed::RetryableBug {
+                    status,
+                    report,
+                }
+            }
+        }
+    }
+}
+/// A bug of the handler refusing with this, as it fails:
+/// `Failed::Bug`.
+impl ::core::convert::From<Bug> for Failed<AuditRefuses> {
+    fn from(bug: Bug) -> Self {
+        Failed::bug(&bug)
+    }
+}
+impl ::std::fmt::Display for AuditRefuses {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match self {
+            AuditRefuses::PostRefused(refusal) => ::std::fmt::Display::fmt(refusal, f),
+            AuditRefuses::Unreasoned(refusal) => ::std::fmt::Display::fmt(refusal, f),
+        }
+    }
+}
+impl ::angzarr_embedded_diagnostic::Diagnostic for AuditRefuses {
+    fn code(&self) -> &'static str {
+        match self {
+            AuditRefuses::PostRefused(refusal) => {
+                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+            }
+            AuditRefuses::Unreasoned(refusal) => {
+                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+            }
+        }
+    }
+    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+        match self {
+            AuditRefuses::PostRefused(refusal) => {
+                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+            }
+            AuditRefuses::Unreasoned(refusal) => {
+                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+            }
+        }
+    }
+}
 /// The prost settings this layer is generated for, checked against
 /// the wire types: bytes as `Vec<u8>`, maps as `BTreeMap`.
 mod wire_settings {

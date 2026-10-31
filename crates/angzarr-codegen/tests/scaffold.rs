@@ -348,6 +348,59 @@ fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
     );
 }
 
+/// The kinds fixture's policy translating Audit, which refuses two types,
+/// into the ledger's Arrived.
+fn translate_audit() -> Translate {
+    Translate {
+        policy: "kinds.v1.LedgerAuditPolicy".to_string(),
+        command: "kinds.v1.Audit".to_string(),
+        fact: "kinds.v1.Arrived".to_string(),
+    }
+}
+
+const KINDS: &[&str] = &["kinds/v1/kinds.proto"];
+
+/// A command refusing several types is refused with one of them: the
+/// `<command>_refused` method takes the domain layer's choice of them, as
+/// the command's handler refuses with it, not one type or none.
+#[test]
+fn test_a_refused_method_takes_the_choice_of_a_command_refusing_several_types() {
+    let files = scaffold(&descriptors(KINDS), KINDS, &[translate_audit()]).unwrap();
+    let source = &file_at(&files, "ledger_audit_policy.rs").source;
+    assert!(
+        source.contains(
+            "    fn audit_refused(\n        &self,\n        command: &Audit,\n        refusal: Option<AuditRefuses>,\n        ctx: &CommandContext,\n    ) -> Result<Arrived, Bug>;"
+        ),
+        "{source}"
+    );
+}
+
+/// The adapter hands that method the refusal as the choice: each of the
+/// command's refusal types tried in turn, the one it is chosen.
+#[test]
+fn test_adapters_hand_a_refused_method_the_choice_of_several_refusal_types() {
+    let files = scaffold(&descriptors(KINDS), KINDS, &[translate_audit()]).unwrap();
+    let interface = |path: &str| {
+        files
+            .iter()
+            .find(|f| f.path == path)
+            .map(|f| f.source.clone())
+    };
+    let source = adapters(&descriptors(KINDS), KINDS, &[], &interface).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    let imp = inherent_impl(&file, "LedgerAuditPolicy");
+    assert_eq!(
+        markers(imp),
+        s(&[("on_event", "Noted"), ("on_refused", "Audit")])
+    );
+    assert_eq!(
+        text(&methods(imp)[1].block),
+        "{crate::ledger_audit_policy::LedgerAuditPolicy::audit_refused(&self.0,refusal.command(),\
+         refusal.refusal::<PostRefused>().map(AuditRefuses::PostRefused)\
+         .or_else(||{refusal.refusal::<Unreasoned>().map(AuditRefuses::Unreasoned)}),ctx,)}"
+    );
+}
+
 /// A `<command>_refused` method with no typed refusal takes the context
 /// second: the parser does not take it for the refusal.
 #[test]

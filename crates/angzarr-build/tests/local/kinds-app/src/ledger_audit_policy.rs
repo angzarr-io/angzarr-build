@@ -15,4 +15,11 @@ pub trait LedgerAuditPolicy {
         event: &Noted,
         ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, AuditStateCommand)>, Bug>;
+
+    fn audit_refused(
+        &self,
+        command: &Audit,
+        refusal: Option<AuditRefuses>,
+        ctx: &CommandContext,
+    ) -> Result<Arrived, Bug>;
 }

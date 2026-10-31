@@ -12,7 +12,7 @@ pub struct AuditStateImpl {
 }
 
 impl AuditState for AuditStateImpl {
-    fn audit(&self, _cmd: &Audit, _ctx: &Context) -> Result<Audited, Failed<Rejection>> {
+    fn audit(&self, _cmd: &Audit, _ctx: &Context) -> Result<Audited, Failed<AuditRefuses>> {
         todo!()
     }
 

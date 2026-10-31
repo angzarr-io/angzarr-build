@@ -204,9 +204,15 @@ impl std::ops::Deref for AuditState {
 #[aggregate(domain = "audit")]
 #[allow(clippy::result_large_err)]
 impl AuditState {
-    #[handles_cmd(Audit)]
-    fn audit(&self, cmd: Audit, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
-        crate::audit_state::AuditState::audit(&self.0, &cmd, ctx).map(Emit::of)
+    #[handles_cmd(Audit, refuses(PostRefused, Unreasoned))]
+    fn audit(
+        &self,
+        cmd: Audit,
+        ctx: &Context,
+    ) -> Result<Emit<Self>, Failed<Refuses<Self, Audit>>> {
+        crate::audit_state::AuditState::audit(&self.0, &cmd, ctx)
+            .map(Emit::of)
+            .map_err(AuditRefuses::widen)
     }
     #[applies(Audited)]
     fn audited(&mut self, event: Audited) {

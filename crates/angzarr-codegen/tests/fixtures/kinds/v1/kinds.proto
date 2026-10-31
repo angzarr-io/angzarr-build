@@ -196,10 +196,13 @@ message AuditState {
   };
 }
 
+// Refusing two types: a policy translating it is handed their choice.
 message Audit {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.AuditState"
     emits: "kinds.v1.Audited"
+    refuses: "kinds.v1.PostRefused"
+    refuses: "kinds.v1.Unreasoned"
   };
 }
 

@@ -18,4 +18,16 @@ impl LedgerAuditPolicy for LedgerAuditPolicyImpl {
     ) -> Result<Vec<(Vec<u8>, AuditStateCommand)>, Bug> {
         Ok(vec![(source.to_vec(), Audit {}.into())])
     }
+
+    /// A refused Audit is the ledger's Arrived; the refusal, the choice of
+    /// Audit's two types, is printed as it is handed over.
+    fn audit_refused(
+        &self,
+        _command: &Audit,
+        refusal: Option<AuditRefuses>,
+        _ctx: &CommandContext,
+    ) -> Result<Arrived, Bug> {
+        println!("audit refused: {refusal:?}");
+        Ok(Arrived {})
+    }
 }
