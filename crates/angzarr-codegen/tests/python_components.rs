@@ -568,3 +568,19 @@ fn run_domain(domain: &str, script: &str) -> std::process::Output {
     std::fs::remove_dir_all(&dir).unwrap();
     out
 }
+
+/// buf generates every proto the reached ones import, used or not: a
+/// pb2 module imports each of its file's imports (buy_in.proto imports
+/// wallet.proto, none of whose messages the buy-in reaches).
+#[test]
+fn test_buf_generates_every_import_of_a_reached_proto() {
+    let files = buy_in();
+    let buf = source(&files, "buf.gen.yaml");
+    for proto in [BUY_IN, "io/angzarr/examples/v1/wallet.proto"] {
+        assert!(
+            buf.contains(&format!("      - proto/{proto}\n")),
+            "{proto}:\n{buf}"
+        );
+    }
+    assert!(!buf.contains("io/angzarr/v1/"), "{buf}");
+}

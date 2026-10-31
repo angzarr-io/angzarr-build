@@ -1631,33 +1631,34 @@ fn pyproject(app: &PythonApp, served: &str, units: &[Unit]) -> String {
     )
 }
 
-/// Every proto file the units' plain types reach, angzarr's own and
-/// google's excepted.
+/// Every proto file the units' plain types reach, and every file those
+/// import (a pb2 module imports each of its file's imports, used or not),
+/// angzarr's own and google's excepted.
 fn proto_paths(units: &[Unit]) -> BTreeSet<String> {
+    let ours =
+        |package: &str| !FRAMEWORK_PACKAGES.contains(&package) && !package.starts_with("google.");
     let mut seen = BTreeSet::new();
     let mut files = BTreeSet::new();
+    let mut reached = Vec::new();
     let mut stack: Vec<MessageDescriptor> = units.iter().flat_map(roots).collect();
     while let Some(message) = stack.pop() {
         if !seen.insert(message.full_name().to_string()) {
             continue;
         }
-        let package = message.package_name().to_string();
-        if !FRAMEWORK_PACKAGES.contains(&package.as_str()) && !package.starts_with("google.") {
-            files.insert(message.parent_file().name().to_string());
+        if ours(message.package_name()) {
+            reached.push(message.parent_file());
         }
         for field in message.fields() {
             match field.kind() {
                 Kind::Message(m) => stack.push(m),
-                Kind::Enum(e) => {
-                    let package = e.package_name().to_string();
-                    if !FRAMEWORK_PACKAGES.contains(&package.as_str())
-                        && !package.starts_with("google.")
-                    {
-                        files.insert(e.parent_file().name().to_string());
-                    }
-                }
+                Kind::Enum(e) if ours(e.package_name()) => reached.push(e.parent_file()),
                 _ => {}
             }
+        }
+    }
+    while let Some(file) = reached.pop() {
+        if ours(file.package_name()) && files.insert(file.name().to_string()) {
+            reached.extend(file.dependencies());
         }
     }
     files
