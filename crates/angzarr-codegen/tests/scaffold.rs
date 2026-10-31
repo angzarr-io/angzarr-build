@@ -276,12 +276,12 @@ fn test_a_decision_returns_its_one_event_or_any_of_its_events() {
     let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
     let table = &file_at(&files, "table_aggregate.rs").source;
     for expected in [
-        "fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Result<BetPlaced, Failed<Rejection>>;",
+        "fn place_bet(&self, cmd: &PlaceBet, ctx: &Context) -> Result<BetPlaced, Failed<TableRefused>>;",
         // Hit emits a variable subset of its four (the card, then a turn or
         // the dealer and the settlement): any of its events, not a tuple.
-        "fn hit(&self, cmd: &Hit, ctx: &Context) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
-        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
-        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<Rejection>>;",
+        "        cmd: &Hit,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
+        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
+        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
         "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<PlayerSeated, Failed<SeatNotConfirmable>>;",
     ] {
         assert!(table.contains(expected), "{expected}:\n{table}");
