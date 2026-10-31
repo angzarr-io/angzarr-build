@@ -79,6 +79,8 @@ pub(crate) const WRITE_KINDS: &[ComponentKind] = &[
     ComponentKind::Policy,
     ComponentKind::ProcessManager,
 ];
+/// The kinds the Python scaffold reads: the write side's.
+pub(crate) const MARKUP_KINDS: &[ComponentKind] = WRITE_KINDS;
 /// Every kind: what the Rust markup (scaffold, adapters, register, domain
 /// layer) and the descriptors are generated for.
 pub(crate) const ALL_KINDS: &[ComponentKind] = &[

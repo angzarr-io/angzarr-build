@@ -13,9 +13,9 @@ angzarr-build = { path = "crates/angzarr-build" }
 angzarr-codegen = { path = "crates/angzarr-codegen" }
 angzarr-fmt = { path = "crates/angzarr-fmt" }
 # angzarr-embedded is pinned by full commit; bumps are deliberate commits.
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "760797e58eaf4f20ebe416dc24ec18e10c8f0991" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
-angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "1cf00b71b094c185b0fd6964f646e48b4c39b8ab" }
+angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "6741a98ba2ed07124546ae3ed1a4531fbcd9a26c" }
 clap = { version = "4.5", features = ["derive"] }
 fluent-bundle = "0.15"
 fluent-syntax = "0.11"
