@@ -126,8 +126,61 @@ pub enum CodegenError {
     RefusalStatusMisplaced { value: String },
 }
 
-impl fmt::Display for CodegenError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+/// What a [`CodegenError`] refuses, which splits its message and its
+/// arguments by concern.
+enum Concern {
+    /// A descriptor set this generator cannot read or map.
+    Shape,
+    /// Markup that breaks a rule of the generated domain layer.
+    Markup,
+    /// A translate, scaffold, Python or host-config refusal.
+    Use,
+}
+
+impl CodegenError {
+    fn concern(&self) -> Concern {
+        match self {
+            CodegenError::Descriptors { .. }
+            | CodegenError::FileNotInSet { .. }
+            | CodegenError::UnknownComponent { .. }
+            | CodegenError::UnknownEmit { .. }
+            | CodegenError::UnknownRefusal { .. }
+            | CodegenError::UnownedDomain { .. }
+            | CodegenError::UnsupportedKind { .. }
+            | CodegenError::Commutative { .. }
+            | CodegenError::Oneof { .. }
+            | CodegenError::NestedType { .. }
+            | CodegenError::WellKnownType { .. }
+            | CodegenError::EnumZero { .. }
+            | CodegenError::NoWirePath { .. } => Concern::Shape,
+            CodegenError::RefusesOnFact { .. }
+            | CodegenError::ReservedName { .. }
+            | CodegenError::ComponentName { .. }
+            | CodegenError::InputDomainsOnNonProjector { .. }
+            | CodegenError::InputDomainsWithInputDomain { .. }
+            | CodegenError::DuplicateSource { .. }
+            | CodegenError::UnlistedSource { .. }
+            | CodegenError::UnprojectedSource { .. }
+            | CodegenError::CardinalityWithoutEmits { .. }
+            | CodegenError::EmitsTuple { .. }
+            | CodegenError::RefusalChoiceName { .. }
+            | CodegenError::RefusalStatusMisplaced { .. } => Concern::Markup,
+            CodegenError::TranslateUnknownPolicy { .. }
+            | CodegenError::TranslateNotATargetCommand { .. }
+            | CodegenError::TranslateNotASourceFact { .. }
+            | CodegenError::TranslateNotAFact { .. }
+            | CodegenError::ScaffoldImplNotFound { .. }
+            | CodegenError::InputMismatch { .. }
+            | CodegenError::PythonNoDomain { .. }
+            | CodegenError::AppConfig { .. }
+            | CodegenError::AppRefused { .. }
+            | CodegenError::AppManifest { .. }
+            | CodegenError::AppDomainPath { .. } => Concern::Use,
+        }
+    }
+
+    /// The message of a descriptor set this generator cannot read or map ([`Concern::Shape`]).
+    fn fmt_shape(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CodegenError::Descriptors { detail } => {
                 write!(f, "the descriptor set does not decode: {detail}")
@@ -185,24 +238,13 @@ impl fmt::Display for CodegenError {
                 f,
                 "no Rust path is given for the prost types of package {package}"
             ),
-            CodegenError::TranslateUnknownPolicy { policy } => {
-                write!(
-                    f,
-                    "translate names the policy {policy}, which no message declares"
-                )
-            }
-            CodegenError::TranslateNotATargetCommand { policy, command } => write!(
-                f,
-                "translate names {command}, which is not a command of {policy}'s target"
-            ),
-            CodegenError::TranslateNotASourceFact { policy, fact } => write!(
-                f,
-                "translate names {fact}, which is not an input of {policy}'s source"
-            ),
-            CodegenError::ScaffoldImplNotFound { path, component } => write!(
-                f,
-                "{path} holds no decorated impl of {component}; it is left as it is"
-            ),
+            _ => unreachable!("{self:?} is not a shape error: Concern routes it"),
+        }
+    }
+
+    /// The message of markup that breaks a rule of the generated domain layer ([`Concern::Markup`]).
+    fn fmt_markup(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
             CodegenError::RefusesOnFact { message } => write!(
                 f,
                 "{message} is a fact and declares refuses; a fact cannot be refused"
@@ -255,6 +297,35 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} is named {name}, which the generated domain layer gives the refusals of {command}; rename it"
             ),
+            CodegenError::RefusalStatusMisplaced { value } => write!(
+                f,
+                "{value} is marked (io.angzarr.v1.refusal_status), which marks a refusal's code alone: a non-zero value of the nested Reason of a message a command refuses with"
+            ),
+            _ => unreachable!("{self:?} is not a markup error: Concern routes it"),
+        }
+    }
+
+    /// The message of a translate, scaffold, Python or host-config refusal ([`Concern::Use`]).
+    fn fmt_use(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CodegenError::TranslateUnknownPolicy { policy } => {
+                write!(
+                    f,
+                    "translate names the policy {policy}, which no message declares"
+                )
+            }
+            CodegenError::TranslateNotATargetCommand { policy, command } => write!(
+                f,
+                "translate names {command}, which is not a command of {policy}'s target"
+            ),
+            CodegenError::TranslateNotASourceFact { policy, fact } => write!(
+                f,
+                "translate names {fact}, which is not an input of {policy}'s source"
+            ),
+            CodegenError::ScaffoldImplNotFound { path, component } => write!(
+                f,
+                "{path} holds no decorated impl of {component}; it is left as it is"
+            ),
             CodegenError::TranslateNotAFact { policy, fact } => write!(
                 f,
                 "translate names {fact}, a command of {policy}'s source; it must name a fact"
@@ -285,14 +356,160 @@ impl fmt::Display for CodegenError {
             CodegenError::AppManifest { detail } => {
                 write!(f, "the manifest does not read as one: {detail}")
             }
-            CodegenError::RefusalStatusMisplaced { value } => write!(
-                f,
-                "{value} is marked (io.angzarr.v1.refusal_status), which marks a refusal's code alone: a non-zero value of the nested Reason of a message a command refuses with"
-            ),
             CodegenError::AppDomainPath { path } => write!(
                 f,
                 "the domain crate's {path} is no Rust path: name it as Rust does (examples_proto, not examples-proto)"
             ),
+            _ => unreachable!("{self:?} is not a use error: Concern routes it"),
+        }
+    }
+
+    /// The arguments of a descriptor set this generator cannot read or map ([`Concern::Shape`]).
+    fn shape_args(&self) -> Vec<(&'static str, Arg)> {
+        let s = |v: &String| Arg::from(v.as_str());
+        match self {
+            CodegenError::Descriptors { detail } => vec![("detail", s(detail))],
+            CodegenError::FileNotInSet { file } => vec![("file", s(file))],
+            CodegenError::UnknownComponent { message, component } => {
+                vec![("message", s(message)), ("component", s(component))]
+            }
+            CodegenError::UnknownEmit { command, event } => {
+                vec![("command", s(command)), ("event", s(event))]
+            }
+            CodegenError::UnknownRefusal { command, refusal } => {
+                vec![("command", s(command)), ("refusal", s(refusal))]
+            }
+            CodegenError::UnownedDomain { policy, domain } => {
+                vec![("policy", s(policy)), ("domain", s(domain))]
+            }
+            CodegenError::UnsupportedKind { component, kind } => {
+                vec![("component", s(component)), ("kind", (*kind).into())]
+            }
+            CodegenError::Commutative { component } => vec![("component", s(component))],
+            CodegenError::Oneof { message, oneof } => {
+                vec![("message", s(message)), ("oneof", s(oneof))]
+            }
+            CodegenError::NestedType { message, nested } => {
+                vec![("message", s(message)), ("nested", s(nested))]
+            }
+            CodegenError::WellKnownType {
+                message,
+                field,
+                type_name,
+            } => vec![
+                ("message", s(message)),
+                ("field", s(field)),
+                ("type_name", s(type_name)),
+            ],
+            CodegenError::EnumZero { enum_name, value } => {
+                vec![("enum_name", s(enum_name)), ("value", s(value))]
+            }
+            CodegenError::NoWirePath { package } => vec![("package", s(package))],
+            _ => unreachable!("{self:?} is not a shape error: Concern routes it"),
+        }
+    }
+
+    /// The arguments of markup that breaks a rule of the generated domain layer ([`Concern::Markup`]).
+    fn markup_args(&self) -> Vec<(&'static str, Arg)> {
+        let s = |v: &String| Arg::from(v.as_str());
+        match self {
+            CodegenError::RefusesOnFact { message } => vec![("message", s(message))],
+            CodegenError::ReservedName { message, name } => {
+                vec![("message", s(message)), ("name", s(name))]
+            }
+            CodegenError::ComponentName { component, name } => {
+                vec![("component", s(component)), ("name", s(name))]
+            }
+            CodegenError::InputDomainsOnNonProjector { component }
+            | CodegenError::InputDomainsWithInputDomain { component } => {
+                vec![("component", s(component))]
+            }
+            CodegenError::DuplicateSource { component, domain }
+            | CodegenError::UnprojectedSource { component, domain } => {
+                vec![("component", s(component)), ("domain", s(domain))]
+            }
+            CodegenError::UnlistedSource {
+                component,
+                event,
+                domain,
+            } => vec![
+                ("component", s(component)),
+                ("event", s(event)),
+                ("domain", s(domain)),
+            ],
+            CodegenError::CardinalityWithoutEmits { message, optional } => vec![
+                ("message", s(message)),
+                (
+                    "cardinality",
+                    Arg::from(if *optional { "OPTIONAL" } else { "ONE" }),
+                ),
+            ],
+            CodegenError::EmitsTuple { message, count } => {
+                vec![("message", s(message)), ("count", (*count).into())]
+            }
+            CodegenError::RefusalChoiceName {
+                message,
+                name,
+                command,
+            } => vec![
+                ("message", s(message)),
+                ("name", s(name)),
+                ("command", s(command)),
+            ],
+            CodegenError::RefusalStatusMisplaced { value } => vec![("value", s(value))],
+            _ => unreachable!("{self:?} is not a markup error: Concern routes it"),
+        }
+    }
+
+    /// The arguments of a translate, scaffold, Python or host-config refusal ([`Concern::Use`]).
+    fn use_args(&self) -> Vec<(&'static str, Arg)> {
+        let s = |v: &String| Arg::from(v.as_str());
+        match self {
+            CodegenError::TranslateUnknownPolicy { policy } => vec![("policy", s(policy))],
+            CodegenError::TranslateNotATargetCommand { policy, command } => {
+                vec![("policy", s(policy)), ("command", s(command))]
+            }
+            CodegenError::TranslateNotASourceFact { policy, fact } => {
+                vec![("policy", s(policy)), ("fact", s(fact))]
+            }
+            CodegenError::ScaffoldImplNotFound { path, component } => {
+                vec![("path", s(path)), ("component", s(component))]
+            }
+            CodegenError::TranslateNotAFact { policy, fact } => {
+                vec![("policy", s(policy)), ("fact", s(fact))]
+            }
+            CodegenError::InputMismatch {
+                path,
+                message,
+                expected,
+                found,
+            } => vec![
+                ("path", s(path)),
+                ("message", s(message)),
+                ("expected", s(expected)),
+                ("found", s(found)),
+            ],
+            CodegenError::PythonNoDomain { domain } => vec![("domain", s(domain))],
+            CodegenError::AppConfig { cause } => vec![("cause", Arg::nested(cause))],
+            CodegenError::AppManifest { detail } => vec![("detail", s(detail))],
+            CodegenError::AppDomainPath { path } => vec![("path", s(path))],
+            CodegenError::AppRefused { lints } => {
+                vec![(
+                    "count",
+                    i64::try_from(lints.len()).unwrap_or(i64::MAX).into(),
+                )]
+            }
+            _ => unreachable!("{self:?} is not a use error: Concern routes it"),
+        }
+    }
+}
+
+impl fmt::Display for CodegenError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.concern() {
+            Concern::Shape => self.fmt_shape(f),
+            Concern::Markup => self.fmt_markup(f),
+            Concern::Use => self.fmt_use(f),
         }
     }
 }
@@ -356,131 +573,27 @@ impl Diagnostic for CodegenError {
     }
 
     fn args(&self) -> Vec<(&'static str, Arg)> {
-        let s = |v: &String| Arg::from(v.as_str());
-        match self {
-            CodegenError::Descriptors { detail } => vec![("detail", s(detail))],
-            CodegenError::FileNotInSet { file } => vec![("file", s(file))],
-            CodegenError::UnknownComponent { message, component } => {
-                vec![("message", s(message)), ("component", s(component))]
-            }
-            CodegenError::UnknownEmit { command, event } => {
-                vec![("command", s(command)), ("event", s(event))]
-            }
-            CodegenError::UnknownRefusal { command, refusal } => {
-                vec![("command", s(command)), ("refusal", s(refusal))]
-            }
-            CodegenError::UnownedDomain { policy, domain } => {
-                vec![("policy", s(policy)), ("domain", s(domain))]
-            }
-            CodegenError::UnsupportedKind { component, kind } => {
-                vec![("component", s(component)), ("kind", (*kind).into())]
-            }
-            CodegenError::Commutative { component } => vec![("component", s(component))],
-            CodegenError::Oneof { message, oneof } => {
-                vec![("message", s(message)), ("oneof", s(oneof))]
-            }
-            CodegenError::NestedType { message, nested } => {
-                vec![("message", s(message)), ("nested", s(nested))]
-            }
-            CodegenError::WellKnownType {
-                message,
-                field,
-                type_name,
-            } => vec![
-                ("message", s(message)),
-                ("field", s(field)),
-                ("type_name", s(type_name)),
-            ],
-            CodegenError::EnumZero { enum_name, value } => {
-                vec![("enum_name", s(enum_name)), ("value", s(value))]
-            }
-            CodegenError::NoWirePath { package } => vec![("package", s(package))],
-            CodegenError::TranslateUnknownPolicy { policy } => vec![("policy", s(policy))],
-            CodegenError::TranslateNotATargetCommand { policy, command } => {
-                vec![("policy", s(policy)), ("command", s(command))]
-            }
-            CodegenError::TranslateNotASourceFact { policy, fact } => {
-                vec![("policy", s(policy)), ("fact", s(fact))]
-            }
-            CodegenError::ScaffoldImplNotFound { path, component } => {
-                vec![("path", s(path)), ("component", s(component))]
-            }
-            CodegenError::RefusesOnFact { message } => vec![("message", s(message))],
-            CodegenError::ReservedName { message, name } => {
-                vec![("message", s(message)), ("name", s(name))]
-            }
-            CodegenError::TranslateNotAFact { policy, fact } => {
-                vec![("policy", s(policy)), ("fact", s(fact))]
-            }
-            CodegenError::ComponentName { component, name } => {
-                vec![("component", s(component)), ("name", s(name))]
-            }
-            CodegenError::InputDomainsOnNonProjector { component }
-            | CodegenError::InputDomainsWithInputDomain { component } => {
-                vec![("component", s(component))]
-            }
-            CodegenError::DuplicateSource { component, domain }
-            | CodegenError::UnprojectedSource { component, domain } => {
-                vec![("component", s(component)), ("domain", s(domain))]
-            }
-            CodegenError::UnlistedSource {
-                component,
-                event,
-                domain,
-            } => vec![
-                ("component", s(component)),
-                ("event", s(event)),
-                ("domain", s(domain)),
-            ],
-            CodegenError::CardinalityWithoutEmits { message, optional } => vec![
-                ("message", s(message)),
-                (
-                    "cardinality",
-                    Arg::from(if *optional { "OPTIONAL" } else { "ONE" }),
-                ),
-            ],
-            CodegenError::EmitsTuple { message, count } => {
-                vec![("message", s(message)), ("count", (*count).into())]
-            }
-            CodegenError::RefusalChoiceName {
-                message,
-                name,
-                command,
-            } => vec![
-                ("message", s(message)),
-                ("name", s(name)),
-                ("command", s(command)),
-            ],
-            CodegenError::InputMismatch {
-                path,
-                message,
-                expected,
-                found,
-            } => vec![
-                ("path", s(path)),
-                ("message", s(message)),
-                ("expected", s(expected)),
-                ("found", s(found)),
-            ],
-            CodegenError::PythonNoDomain { domain } => vec![("domain", s(domain))],
-            CodegenError::AppConfig { cause } => vec![("cause", Arg::nested(cause))],
-            CodegenError::AppManifest { detail } => vec![("detail", s(detail))],
-            CodegenError::AppDomainPath { path } => vec![("path", s(path))],
-            CodegenError::RefusalStatusMisplaced { value } => vec![("value", s(value))],
-            CodegenError::AppRefused { lints } => {
-                vec![(
-                    "count",
-                    i64::try_from(lints.len()).unwrap_or(i64::MAX).into(),
-                )]
-            }
+        match self.concern() {
+            Concern::Shape => self.shape_args(),
+            Concern::Markup => self.markup_args(),
+            Concern::Use => self.use_args(),
         }
     }
 }
 
 /// One value of every error this crate defines, for the catalog test.
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
+    shape_samples()
+        .into_iter()
+        .chain(rule_samples())
+        .chain(crate::app::app_lint_samples())
+        .collect()
+}
+
+/// One value of every [`Concern::Shape`] error.
+fn shape_samples() -> Vec<Box<dyn Diagnostic>> {
     let s = || "x".to_string();
-    let errors: Vec<Box<dyn Diagnostic>> = vec![
+    vec![
         Box::new(CodegenError::Descriptors { detail: s() }),
         Box::new(CodegenError::FileNotInSet { file: s() }),
         Box::new(CodegenError::UnknownComponent {
@@ -522,6 +635,14 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             value: s(),
         }),
         Box::new(CodegenError::NoWirePath { package: s() }),
+    ]
+}
+
+/// One value of every other error, a [`Concern::Markup`] or
+/// [`Concern::Use`] one.
+fn rule_samples() -> Vec<Box<dyn Diagnostic>> {
+    let s = || "x".to_string();
+    vec![
         Box::new(CodegenError::TranslateUnknownPolicy { policy: s() }),
         Box::new(CodegenError::TranslateNotATargetCommand {
             policy: s(),
@@ -592,9 +713,5 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::AppManifest { detail: s() }),
         Box::new(CodegenError::AppDomainPath { path: s() }),
         Box::new(CodegenError::RefusalStatusMisplaced { value: s() }),
-    ];
-    errors
-        .into_iter()
-        .chain(crate::app::app_lint_samples())
-        .collect()
+    ]
 }

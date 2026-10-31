@@ -224,73 +224,92 @@ fn interface_methods(
     pool: &[Component],
     translate: &[&Translate],
 ) -> Result<Vec<Method>, CodegenError> {
+    match component.kind {
+        ComponentKind::Projector => Ok(projector_methods(component)),
+        ComponentKind::Policy => policy_methods(component, pool, translate),
+        ComponentKind::Aggregate | ComponentKind::ProcessManager => Ok(domain_methods(component)),
+    }
+}
+
+/// A projector's interface: a projection per event.
+fn projector_methods(component: &Component) -> Vec<Method> {
     let mut methods = Vec::new();
-    if component.kind == ComponentKind::Projector {
-        for event in &component.events {
-            methods.push(Method {
-                name: method(event.name()),
-                receiver: "&mut self",
-                params: vec![
-                    ("event".to_string(), format!("&{}", event.name())),
-                    ("ctx".to_string(), "&ProjectionContext".to_string()),
-                ],
-                output: Some(
-                    "impl std::future::Future<Output = Result<(), Bug>> + Send".to_string(),
-                ),
-                awaited: Some("Result<(), Bug>".to_string()),
-            });
-        }
-        return Ok(methods);
+    for event in &component.events {
+        methods.push(Method {
+            name: method(event.name()),
+            receiver: "&mut self",
+            params: vec![
+                ("event".to_string(), format!("&{}", event.name())),
+                ("ctx".to_string(), "&ProjectionContext".to_string()),
+            ],
+            output: Some("impl std::future::Future<Output = Result<(), Bug>> + Send".to_string()),
+            awaited: Some("Result<(), Bug>".to_string()),
+        });
     }
-    if component.kind == ComponentKind::Policy {
-        let target =
-            owner(pool, &component.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
-                policy: component.anchor.full_name().to_string(),
-                domain: component.output_domain.clone(),
-            })?;
-        for event in &component.events {
-            methods.push(Method {
-                name: method(event.name()),
-                receiver: "&self",
-                params: vec![
-                    ("source".to_string(), "&[u8]".to_string()),
-                    ("event".to_string(), format!("&{}", event.name())),
-                    ("ctx".to_string(), "&PolicyContext".to_string()),
-                ],
-                output: Some(format!(
-                    "Result<Vec<(Vec<u8>, {}Command)>, Bug>",
-                    target.name
-                )),
-                awaited: None,
-            });
-        }
-        for selection in translate {
-            let short = |full: &str| full.rsplit('.').next().unwrap_or(full).to_string();
-            let (command, fact) = (short(&selection.command), short(&selection.fact));
-            let mut params = vec![("command".to_string(), format!("&{command}"))];
-            // The typed refusal: its one type, or the choice of several.
-            if let Some(refusal) =
-                target
-                    .input(&selection.command)
-                    .and_then(|i| match i.refuses.as_slice() {
-                        [] => None,
-                        [one] => Some(one.name().to_string()),
-                        _ => Some(refusal_choice_name(&i.message)),
-                    })
-            {
-                params.push(("refusal".to_string(), format!("Option<{refusal}>")));
-            }
-            params.push(("ctx".to_string(), "&CommandContext".to_string()));
-            methods.push(Method {
-                name: format!("{}_refused", snake(&command)),
-                receiver: "&self",
-                params,
-                output: Some(format!("Result<{fact}, Bug>")),
-                awaited: None,
-            });
-        }
-        return Ok(methods);
+    methods
+}
+
+/// A policy's interface: a reaction per event, and a translating callback
+/// per selected refusal of a command it sends.
+fn policy_methods(
+    component: &Component,
+    pool: &[Component],
+    translate: &[&Translate],
+) -> Result<Vec<Method>, CodegenError> {
+    let mut methods = Vec::new();
+    let target =
+        owner(pool, &component.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
+            policy: component.anchor.full_name().to_string(),
+            domain: component.output_domain.clone(),
+        })?;
+    for event in &component.events {
+        methods.push(Method {
+            name: method(event.name()),
+            receiver: "&self",
+            params: vec![
+                ("source".to_string(), "&[u8]".to_string()),
+                ("event".to_string(), format!("&{}", event.name())),
+                ("ctx".to_string(), "&PolicyContext".to_string()),
+            ],
+            output: Some(format!(
+                "Result<Vec<(Vec<u8>, {}Command)>, Bug>",
+                target.name
+            )),
+            awaited: None,
+        });
     }
+    for selection in translate {
+        let short = |full: &str| full.rsplit('.').next().unwrap_or(full).to_string();
+        let (command, fact) = (short(&selection.command), short(&selection.fact));
+        let mut params = vec![("command".to_string(), format!("&{command}"))];
+        // The typed refusal: its one type, or the choice of several.
+        if let Some(refusal) =
+            target
+                .input(&selection.command)
+                .and_then(|i| match i.refuses.as_slice() {
+                    [] => None,
+                    [one] => Some(one.name().to_string()),
+                    _ => Some(refusal_choice_name(&i.message)),
+                })
+        {
+            params.push(("refusal".to_string(), format!("Option<{refusal}>")));
+        }
+        params.push(("ctx".to_string(), "&CommandContext".to_string()));
+        methods.push(Method {
+            name: format!("{}_refused", snake(&command)),
+            receiver: "&self",
+            params,
+            output: Some(format!("Result<{fact}, Bug>")),
+            awaited: None,
+        });
+    }
+    Ok(methods)
+}
+
+/// An aggregate's or a process manager's interface: a decision per command,
+/// a record per fact, and a fold per event.
+fn domain_methods(component: &Component) -> Vec<Method> {
+    let mut methods = Vec::new();
     for input in &component.inputs {
         let ty = input.message.name();
         let out = decided(component, input);
@@ -332,7 +351,7 @@ fn interface_methods(
             awaited: None,
         });
     }
-    Ok(methods)
+    methods
 }
 
 fn interface_source(component: &Component, methods: &[Method]) -> String {
@@ -883,73 +902,17 @@ fn domain_adapter(component: &Component) -> TokenStream {
         format_ident!("aggregate")
     };
     let domain = &component.domain;
-    let mut methods = Vec::new();
-    for input in &component.inputs {
-        let ty = ident(input.message.name());
-        let m = format_ident!("{}", method(input.message.name()));
-        if input.fact {
-            let emit = emitted(component, input, &quote!());
-            let call = quote!(#interface::#m(&self.0, &fact, ctx));
-            let body = if is_of(input) {
-                quote!(Record::of(#call))
+    let mut methods: Vec<TokenStream> = component
+        .inputs
+        .iter()
+        .map(|input| {
+            if input.fact {
+                fact_method(component, input, &interface)
             } else {
-                // Bound first: a closure called where it is declared is
-                // clippy's `redundant_closure_call`.
-                quote! {
-                    let record = #emit;
-                    record(#call)
-                }
-            };
-            methods.push(quote! {
-                #[handles_fact(#ty)]
-                fn #m(&self, fact: #ty, ctx: &Context) -> Record<Self> {
-                    #body
-                }
-            });
-            continue;
-        }
-        let starts = if input.starts {
-            quote!(, starts)
-        } else {
-            quote!()
-        };
-        match input.refuses.as_slice() {
-            [] => {
-                let emit = emitted(component, input, &quote!(Failed<Rejection>));
-                methods.push(quote! {
-                    #[handles_cmd(#ty #starts)]
-                    fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
-                        #interface::#m(&self.0, &cmd, ctx).map(#emit)
-                    }
-                });
+                command_method(component, input, &interface)
             }
-            refusals => {
-                let emit = emitted(component, input, &quote!(Failed<Refuses<Self, #ty>>));
-                // One type widens by its own `Into`; several, by their
-                // domain-layer choice's `widen`. A refusal with a Reason is
-                // refused under its code's status first (decision 14.52).
-                let (refusal, widen) = match refusals {
-                    [one] => (ident(one.name()), quote!(Failed::widen)),
-                    _ => {
-                        let choice = format_ident!("{}", refusal_choice_name(&input.message));
-                        (choice.clone(), quote!(#choice::widen))
-                    }
-                };
-                let widen = if has_code_status(input) {
-                    quote!(map_err(#refusal::with_code_status).map_err(#widen))
-                } else {
-                    quote!(map_err(#widen))
-                };
-                let refusals: Vec<syn::Ident> = refusals.iter().map(|r| ident(r.name())).collect();
-                methods.push(quote! {
-                    #[handles_cmd(#ty #starts, refuses(#(#refusals),*))]
-                    fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Refuses<Self, #ty>>> {
-                        #interface::#m(&self.0, &cmd, ctx).map(#emit).#widen
-                    }
-                });
-            }
-        }
-    }
+        })
+        .collect();
     for event in &component.events {
         let ty = ident(event.name());
         let m = format_ident!("{}", method(event.name()));
@@ -978,6 +941,79 @@ fn domain_adapter(component: &Component) -> TokenStream {
         #[allow(clippy::result_large_err)]
         impl #name {
             #(#methods)*
+        }
+    }
+}
+
+/// A domain adapter's recorder of the fact `input`, delegating to
+/// `interface`.
+fn fact_method(component: &Component, input: &Input, interface: &TokenStream) -> TokenStream {
+    let ty = ident(input.message.name());
+    let m = format_ident!("{}", method(input.message.name()));
+    let emit = emitted(component, input, &quote!());
+    let call = quote!(#interface::#m(&self.0, &fact, ctx));
+    let body = if is_of(input) {
+        quote!(Record::of(#call))
+    } else {
+        // Bound first: a closure called where it is declared is
+        // clippy's `redundant_closure_call`.
+        quote! {
+            let record = #emit;
+            record(#call)
+        }
+    };
+    quote! {
+        #[handles_fact(#ty)]
+        fn #m(&self, fact: #ty, ctx: &Context) -> Record<Self> {
+            #body
+        }
+    }
+}
+
+/// A domain adapter's handler of the command `input`, delegating to
+/// `interface`, its refusals widened to the adapter's.
+fn command_method(component: &Component, input: &Input, interface: &TokenStream) -> TokenStream {
+    let ty = ident(input.message.name());
+    let m = format_ident!("{}", method(input.message.name()));
+    let starts = if input.starts {
+        quote!(, starts)
+    } else {
+        quote!()
+    };
+    match input.refuses.as_slice() {
+        [] => {
+            let emit = emitted(component, input, &quote!(Failed<Rejection>));
+            quote! {
+                #[handles_cmd(#ty #starts)]
+                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+                    #interface::#m(&self.0, &cmd, ctx).map(#emit)
+                }
+            }
+        }
+        refusals => {
+            let emit = emitted(component, input, &quote!(Failed<Refuses<Self, #ty>>));
+            // One type widens by its own `Into`; several, by their
+            // domain-layer choice's `widen`. A refusal with a Reason is
+            // refused under its code's status first (decision 14.52).
+            let (refusal, widen) = match refusals {
+                [one] => (ident(one.name()), quote!(Failed::widen)),
+                _ => {
+                    let choice = format_ident!("{}", refusal_choice_name(&input.message));
+                    (choice.clone(), quote!(#choice::widen))
+                }
+            };
+            let widen = if has_code_status(input) {
+                quote!(map_err(#refusal::with_code_status).map_err(#widen))
+            } else {
+                quote!(map_err(#widen))
+            };
+            let refusals: Vec<syn::Ident> = refusals.iter().map(|r| ident(r.name())).collect();
+            quote! {
+                #[handles_cmd(#ty #starts, refuses(#(#refusals),*))]
+                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Refuses<Self, #ty>>> {
+                    #interface::#m(&self.0, &cmd, ctx).map(#emit).#widen
+                }
+            }
         }
     }
 }

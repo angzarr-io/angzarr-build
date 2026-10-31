@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use prost_reflect::MessageDescriptor;
 
 use crate::common::snake;
-use crate::model::ComponentKind;
+use crate::model::{Component, ComponentKind};
 
 use super::convert::{converter_pair, converters, pb2_class, table};
 use super::layout::{call, head, wrap};
@@ -251,6 +251,19 @@ fn domain_dispatch(out: &mut String, unit: &Unit, new: &str) {
         out.push_str(DECIDED);
     }
     out.push_str(&typed_refusals(unit));
+    domain_rebuilder(out, component, new);
+    out.push('\n');
+    out.push_str(&call(
+        4,
+        &format!("dispatch = _az.{}", dispatch_type(component.kind)),
+        &format!("\"{}\", \"{}\", rebuilder", unit.name, component.domain),
+    ));
+    domain_inputs(out, component);
+    domain_refusables(out, unit);
+}
+
+/// A domain's rebuilder, folding each of its events through its logic.
+fn domain_rebuilder(out: &mut String, component: &Component, new: &str) {
     let (state_to, state_from) = converters(&component.anchor);
     out.push_str(&format!(
         "\n\n{new}\n    rebuilder = _az.Rebuilder({})\n",
@@ -272,12 +285,11 @@ fn domain_dispatch(out: &mut String, unit: &Unit, new: &str) {
             &format!("\"{}\", _{method}", event.full_name()),
         ));
     }
-    out.push('\n');
-    out.push_str(&call(
-        4,
-        &format!("dispatch = _az.{}", dispatch_type(component.kind)),
-        &format!("\"{}\", \"{}\", rebuilder", unit.name, component.domain),
-    ));
+}
+
+/// A domain's decision per command and record per fact.
+fn domain_inputs(out: &mut String, component: &Component) {
+    let (state_to, _) = converters(&component.anchor);
     for input in &component.inputs {
         let method = snake(input.message.name());
         let (input_to, _) = converters(&input.message);
@@ -312,6 +324,12 @@ fn domain_dispatch(out: &mut String, unit: &Unit, new: &str) {
             &format!("\"{}\", _on_{method}", input.message.full_name()),
         ));
     }
+}
+
+/// A domain's record per pass-through refusal of a command its policies
+/// send, when its logic handles it.
+fn domain_refusables(out: &mut String, unit: &Unit) {
+    let (state_to, _) = converters(&unit.component.anchor);
     for refusable in &unit.refusable {
         let method = format!("on_refused_{}", snake(refusable.command.name()));
         let (body, args) = refused_command(refusable, "refused.command", "refused.refusal");

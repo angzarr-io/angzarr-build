@@ -539,6 +539,15 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
 
 // ----------------------------------------------------------- the seed
 
+/// One component's line of a seeded host config.
+struct Entry {
+    name: String,
+    kind: &'static str,
+    language: String,
+    /// A Python child's project: `dir` and `angzarr-<project>`.
+    project: Option<String>,
+}
+
 /// The host config a seed makes for `components`: every aggregate and
 /// process manager (Rust, or a Python child for a domain the seed names),
 /// every policy whose two domains are among them and every projector all
@@ -546,94 +555,8 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
 /// its events), each in Rust; then `retry` with the keys seeded, and
 /// `store`; stamped at the current version.
 fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
-    struct Entry {
-        name: String,
-        kind: &'static str,
-        language: String,
-        /// A Python child's project: `dir` and `angzarr-<project>`.
-        project: Option<String>,
-    }
-    // A component's entry in its seeded language: by its name, a domain's
-    // also by its domain; its Python project its domain's, else its name
-    // (as `scaffold python --domain` names it).
-    let entry = |component: &Component, kind: &'static str| {
-        let named = |name: &String| {
-            *name == component.component_name || (kind == "domain" && *name == component.domain)
-        };
-        let language = seed
-            .languages
-            .iter()
-            .find(|(name, _)| named(name))
-            .map_or("rust", |(_, language)| language.as_str());
-        let project = if kind == "domain" {
-            &component.domain
-        } else {
-            &component.component_name
-        };
-        Entry {
-            name: component.component_name.clone(),
-            kind,
-            language: language.to_string(),
-            project: (language == "python").then(|| project.clone()),
-        }
-    };
-    let mut entries: Vec<Entry> = Vec::new();
-    let domains: Vec<&Component> = components
-        .iter()
-        .filter(|c| {
-            matches!(
-                c.kind,
-                ComponentKind::Aggregate | ComponentKind::ProcessManager
-            )
-        })
-        .collect();
-    for domain in &domains {
-        entries.push(entry(domain, "domain"));
-    }
-    let has = |domain: &str| domains.iter().any(|d| d.domain == domain);
-    for policy in components
-        .iter()
-        .filter(|c| c.kind == ComponentKind::Policy)
-    {
-        if has(&policy.input_domain) && has(&policy.output_domain) {
-            entries.push(entry(policy, "policy"));
-        }
-    }
-    for projector in components
-        .iter()
-        .filter(|c| c.kind == ComponentKind::Projector)
-    {
-        // A Python child's events are recorded by the host, so a projector
-        // of them runs in process as one of a Rust domain's does.
-        if !projector.sources.is_empty() && projector.sources.iter().all(|s| has(s)) {
-            entries.push(entry(projector, "projector"));
-        }
-    }
-    // A component the seed names that the protos lack: listed, for the
-    // lint to name.
-    for (name, language) in &seed.languages {
-        let known =
-            entries.iter().any(|e| &e.name == name) || domains.iter().any(|d| &d.domain == name);
-        if !known {
-            entries.push(Entry {
-                name: name.clone(),
-                kind: "domain",
-                language: language.clone(),
-                project: None,
-            });
-        }
-    }
-    // An exposure naming nothing listed: listed, for the lint to name.
-    for (name, _) in &seed.expose {
-        if !entries.iter().any(|e| &e.name == name) {
-            entries.push(Entry {
-                name: name.clone(),
-                kind: "domain",
-                language: "rust".to_string(),
-                project: None,
-            });
-        }
-    }
+    let entries = seeded_entries(components, seed);
+    let scalar = |text: &str| Value::scalar(text);
     let header = format!(
         "# The host config of {}: every component, its kind, the language it\n\
          # is written in and, for one served by a child process, how it is\n\
@@ -644,32 +567,9 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
          # `{KEY}`.\n",
         seed.name
     );
-    let scalar = |text: &str| Value::scalar(text);
-    let pair = |key: &str, value: Value| (key.to_string(), value);
     let components = entries
         .iter()
-        .map(|entry| {
-            let mut fields = vec![
-                pair("name", scalar(&entry.name)),
-                pair("kind", scalar(entry.kind)),
-                pair("language", scalar(&entry.language)),
-            ];
-            if let Some(project) = &entry.project {
-                fields.push(pair("dir", scalar(project)));
-                fields.push(pair(
-                    "entry",
-                    Value::Seq(vec![scalar(&format!("angzarr-{project}"))]),
-                ));
-            }
-            if let Some((_, exposure)) = seed.expose.iter().find(|(n, _)| *n == entry.name) {
-                let how = match exposure {
-                    Exposure::Loopback => Expose::Loopback,
-                    Exposure::Ip => Expose::Ip,
-                };
-                fields.push(pair("expose", scalar(how.as_str())));
-            }
-            Value::Map(fields)
-        })
+        .map(|entry| entry_value(entry, seed))
         .collect();
     let mut root = vec![
         pair(
@@ -699,6 +599,129 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
     // Collections of scalars nested three deep (a component's `entry`) are
     // written on one line.
     header + &angzarr_yaml::write(&Value::Map(root), 3)
+}
+
+/// A key and its value, as a map's field.
+fn pair(key: &str, value: Value) -> (String, Value) {
+    (key.to_string(), value)
+}
+
+/// A component's entry in its seeded language: by its name, a domain's
+/// also by its domain; its Python project its domain's, else its name
+/// (as `scaffold python --domain` names it).
+fn seeded_entry(component: &Component, kind: &'static str, seed: &AppSeed) -> Entry {
+    let named = |name: &String| {
+        *name == component.component_name || (kind == "domain" && *name == component.domain)
+    };
+    let language = seed
+        .languages
+        .iter()
+        .find(|(name, _)| named(name))
+        .map_or("rust", |(_, language)| language.as_str());
+    let project = if kind == "domain" {
+        &component.domain
+    } else {
+        &component.component_name
+    };
+    Entry {
+        name: component.component_name.clone(),
+        kind,
+        language: language.to_string(),
+        project: (language == "python").then(|| project.clone()),
+    }
+}
+
+/// The entries a seed makes for `components`, in the config's order:
+/// domains, policies, projectors, then what the seed names that the protos
+/// lack.
+fn seeded_entries(components: &[Component], seed: &AppSeed) -> Vec<Entry> {
+    let mut entries: Vec<Entry> = Vec::new();
+    let domains: Vec<&Component> = components
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.kind,
+                ComponentKind::Aggregate | ComponentKind::ProcessManager
+            )
+        })
+        .collect();
+    for domain in &domains {
+        entries.push(seeded_entry(domain, "domain", seed));
+    }
+    let has = |domain: &str| domains.iter().any(|d| d.domain == domain);
+    for policy in components
+        .iter()
+        .filter(|c| c.kind == ComponentKind::Policy)
+    {
+        if has(&policy.input_domain) && has(&policy.output_domain) {
+            entries.push(seeded_entry(policy, "policy", seed));
+        }
+    }
+    for projector in components
+        .iter()
+        .filter(|c| c.kind == ComponentKind::Projector)
+    {
+        // A Python child's events are recorded by the host, so a projector
+        // of them runs in process as one of a Rust domain's does.
+        if !projector.sources.is_empty() && projector.sources.iter().all(|s| has(s)) {
+            entries.push(seeded_entry(projector, "projector", seed));
+        }
+    }
+    unknown_entries(&mut entries, &domains, seed);
+    entries
+}
+
+/// What the seed names that `entries` lacks, appended for the lint to
+/// name: a component the protos lack, and an exposure naming nothing
+/// listed.
+fn unknown_entries(entries: &mut Vec<Entry>, domains: &[&Component], seed: &AppSeed) {
+    for (name, language) in &seed.languages {
+        let known =
+            entries.iter().any(|e| &e.name == name) || domains.iter().any(|d| &d.domain == name);
+        if !known {
+            entries.push(Entry {
+                name: name.clone(),
+                kind: "domain",
+                language: language.clone(),
+                project: None,
+            });
+        }
+    }
+    for (name, _) in &seed.expose {
+        if !entries.iter().any(|e| &e.name == name) {
+            entries.push(Entry {
+                name: name.clone(),
+                kind: "domain",
+                language: "rust".to_string(),
+                project: None,
+            });
+        }
+    }
+}
+
+/// An entry as the config's `component` item.
+fn entry_value(entry: &Entry, seed: &AppSeed) -> Value {
+    let scalar = |text: &str| Value::scalar(text);
+    let mut fields = vec![
+        pair("name", scalar(&entry.name)),
+        pair("kind", scalar(entry.kind)),
+        pair("language", scalar(&entry.language)),
+    ];
+    if let Some(project) = &entry.project {
+        fields.push(pair("dir", scalar(project)));
+        fields.push(pair(
+            "entry",
+            Value::Seq(vec![scalar(&format!("angzarr-{project}"))]),
+        ));
+    }
+    if let Some((_, exposure)) = seed.expose.iter().find(|(n, _)| *n == entry.name) {
+        let how = match exposure {
+            Exposure::Loopback => Expose::Loopback,
+            Exposure::Ip => Expose::Ip,
+        };
+        fields.push(pair("expose", scalar(how.as_str())));
+    }
+    Value::Map(fields)
 }
 
 /// `name` as a Cargo package name: ASCII letters and digits kept, lower

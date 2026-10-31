@@ -329,149 +329,26 @@ pub(crate) fn components(
     };
     let command_ext = pool.get_extension_by_name(COMMAND);
     let event_ext = pool.get_extension_by_name(EVENT);
-    let commutative = pool
-        .get_enum_by_name(RESOLUTION)
-        .and_then(|e| e.get_value_by_name(COMMUTATIVE))
-        .map(|v| v.number());
 
     let mut components: Vec<Component> = Vec::new();
     // Each component's listed sources (a projector's input_domains or
     // input_domain), by index: what its (event) entries are held to.
     let mut listed: Vec<Option<Vec<String>>> = Vec::new();
     for message in &messages {
-        let options = message.options();
-        if !options.has_extension(&component_ext) {
-            continue;
+        if let Some((component, sources)) =
+            declared_component(&pool, &component_ext, message, kinds)?
+        {
+            components.push(component);
+            listed.push(sources);
         }
-        let Some(declared) = message_value(&options, &component_ext) else {
-            continue;
-        };
-        let number = enum_field(&declared, "kind");
-        // The markup is the write side: a projector beside it is skipped,
-        // not refused.
-        if number == PROJECTOR && !kinds.contains(&ComponentKind::Projector) {
-            continue;
-        }
-        let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
-            return Err(CodegenError::UnsupportedKind {
-                component: message.full_name().to_string(),
-                kind: number,
-            });
-        };
-        let resolutions: Vec<i32> = pool
-            .get_extension_by_name(STATE)
-            .and_then(|state_ext| message_value(&options, &state_ext))
-            .map(|state| list_field(&state, "conflict_resolutions"))
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|v| v.as_enum_number())
-            .collect();
-        if commutative.is_some_and(|c| resolutions.contains(&c)) {
-            return Err(CodegenError::Commutative {
-                component: message.full_name().to_string(),
-            });
-        }
-        let name = match string_field(&declared, "name") {
-            n if n.is_empty() => message.name().to_string(),
-            n => n,
-        };
-        let (domain, input_domain, output_domain) = (
-            string_field(&declared, "domain"),
-            string_field(&declared, "input_domain"),
-            string_field(&declared, "output_domain"),
-        );
-        let input_domains = projector_sources(message, kind, &declared, &input_domain)?;
-        let component_name = crate::names::unchecked(&crate::names::NameOf {
-            kind: kind.name_kind(),
-            component_name: &string_field(&declared, "component_name"),
-            domain: &domain,
-            input_domain: &input_domain,
-            output_domain: &output_domain,
-            anchor: message.name(),
-        });
-        if !crate::names::well_formed(&component_name) {
-            return Err(CodegenError::ComponentName {
-                component: message.full_name().to_string(),
-                name: component_name,
-            });
-        }
-        components.push(Component {
-            anchor: message.clone(),
-            kind,
-            name,
-            component_name,
-            domain,
-            input_domain,
-            output_domain,
-            inputs: Vec::new(),
-            events: Vec::new(),
-            sources: input_domains.clone().unwrap_or_default(),
-            resolutions,
-        });
-        listed.push(input_domains);
     }
 
     // Events first, so a command's `emits` can be checked against them.
-    let mut seen: Vec<Vec<String>> = vec![Vec::new(); components.len()];
-    if let Some(event_ext) = &event_ext {
-        for message in &declaring {
-            let options = message.options();
-            if !options.has_extension(event_ext) {
-                continue;
-            }
-            for consumer in options.get_extension(event_ext).as_list().unwrap_or(&[]) {
-                let Value::Message(consumer) = consumer else {
-                    continue;
-                };
-                let named = string_field(consumer, "component");
-                // A consumer outside the set is a reference to a component
-                // generated elsewhere (decision 14.50), skipped.
-                let Some(index) = components
-                    .iter()
-                    .position(|c| c.anchor.full_name() == named)
-                else {
-                    continue;
-                };
-                let component = &mut components[index];
-                if !component.events.contains(message) {
-                    component.events.push(message.clone());
-                }
-                let source = string_field(consumer, "domain");
-                match &listed[index] {
-                    // A projector listing its sources: each entry names one
-                    // of them (an entry of one input_domain may leave it
-                    // unset).
-                    Some(list) => {
-                        let unset_of_one = source.is_empty() && component.input_domain == list[0];
-                        if !unset_of_one && !list.contains(&source) {
-                            return Err(CodegenError::UnlistedSource {
-                                component: component.anchor.full_name().to_string(),
-                                event: message.full_name().to_string(),
-                                domain: source,
-                            });
-                        }
-                        seen[index].push(source);
-                    }
-                    None => {
-                        if !source.is_empty() && !component.sources.contains(&source) {
-                            component.sources.push(source);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    for ((component, list), seen) in components.iter().zip(&listed).zip(&seen) {
-        let Some(list) = list.as_ref().filter(|_| component.input_domain.is_empty()) else {
-            continue;
-        };
-        if let Some(unnamed) = list.iter().find(|d| !seen.contains(d)) {
-            return Err(CodegenError::UnprojectedSource {
-                component: component.anchor.full_name().to_string(),
-                domain: unnamed.clone(),
-            });
-        }
-    }
+    let seen = match &event_ext {
+        Some(event_ext) => attach_events(&mut components, &listed, &declaring, event_ext)?,
+        None => vec![Vec::new(); components.len()],
+    };
+    check_projected(&components, &listed, &seen)?;
     if let Some(command_ext) = &command_ext {
         for message in &declaring {
             let options = message.options();
@@ -486,70 +363,274 @@ pub(crate) fn components(
             else {
                 continue;
             };
-            let mut emits = Vec::new();
-            for emitted in list_field(&declared, "emits") {
-                let Value::String(event) = emitted else {
-                    continue;
-                };
-                let Some(event) = component.events.iter().find(|e| e.full_name() == event) else {
-                    return Err(CodegenError::UnknownEmit {
-                        command: message.full_name().to_string(),
-                        event: event.clone(),
-                    });
-                };
-                emits.push(event.clone());
-            }
-            let cardinality = match enum_field(&declared, "emits_cardinality") {
-                CARDINALITY_MANY => Cardinality::Many,
-                // With no emits, the raw form is a list: unset is MANY.
-                0 if emits.is_empty() => Cardinality::Many,
-                n @ (CARDINALITY_ONE | CARDINALITY_OPTIONAL) if emits.is_empty() => {
-                    return Err(CodegenError::CardinalityWithoutEmits {
-                        message: message.full_name().to_string(),
-                        optional: n == CARDINALITY_OPTIONAL,
-                    });
-                }
-                CARDINALITY_OPTIONAL => Cardinality::Optional,
-                _ => Cardinality::One,
-            };
-            if cardinality != Cardinality::Many && emits.len() > MAX_TUPLE {
-                return Err(CodegenError::EmitsTuple {
-                    message: message.full_name().to_string(),
-                    count: emits.len(),
-                });
-            }
-            let fact = bool_field(&declared, "fact");
-            let refused = list_field(&declared, "refuses");
-            if fact && !refused.is_empty() {
-                return Err(CodegenError::RefusesOnFact {
-                    message: message.full_name().to_string(),
-                });
-            }
-            let mut refuses = Vec::new();
-            for refusal in refused {
-                let Value::String(refusal) = refusal else {
-                    continue;
-                };
-                let found = pool.get_message_by_name(&refusal).ok_or_else(|| {
-                    CodegenError::UnknownRefusal {
-                        command: message.full_name().to_string(),
-                        refusal: refusal.clone(),
-                    }
-                })?;
-                refuses.push(found);
-            }
-            component.inputs.push(Input {
-                message: message.clone(),
-                emits,
-                cardinality,
-                refuses,
-                starts: bool_field(&declared, "starts"),
-                fact,
-            });
+            let input = command_input(&pool, component, message, &declared)?;
+            component.inputs.push(input);
         }
     }
     check_refusal_statuses(&pool, files, &declaring, command_ext.as_ref())?;
     Ok(components)
+}
+
+/// A declared component, with its listed sources.
+type Declared = (Component, Option<Vec<String>>);
+
+/// The component `message` declares, with its listed sources (see
+/// [`projector_sources`]): `None` when it declares none, or is a projector
+/// and `kinds` takes none.
+fn declared_component(
+    pool: &DescriptorPool,
+    component_ext: &ExtensionDescriptor,
+    message: &MessageDescriptor,
+    kinds: &[ComponentKind],
+) -> Result<Option<Declared>, CodegenError> {
+    let options = message.options();
+    if !options.has_extension(component_ext) {
+        return Ok(None);
+    }
+    let Some(declared) = message_value(&options, component_ext) else {
+        return Ok(None);
+    };
+    let number = enum_field(&declared, "kind");
+    // The markup is the write side: a projector beside it is skipped,
+    // not refused.
+    if number == PROJECTOR && !kinds.contains(&ComponentKind::Projector) {
+        return Ok(None);
+    }
+    let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
+        return Err(CodegenError::UnsupportedKind {
+            component: message.full_name().to_string(),
+            kind: number,
+        });
+    };
+    let resolutions = resolutions(pool, &options, message)?;
+    let name = match string_field(&declared, "name") {
+        n if n.is_empty() => message.name().to_string(),
+        n => n,
+    };
+    let (domain, input_domain, output_domain) = (
+        string_field(&declared, "domain"),
+        string_field(&declared, "input_domain"),
+        string_field(&declared, "output_domain"),
+    );
+    let input_domains = projector_sources(message, kind, &declared, &input_domain)?;
+    let component_name = crate::names::unchecked(&crate::names::NameOf {
+        kind: kind.name_kind(),
+        component_name: &string_field(&declared, "component_name"),
+        domain: &domain,
+        input_domain: &input_domain,
+        output_domain: &output_domain,
+        anchor: message.name(),
+    });
+    if !crate::names::well_formed(&component_name) {
+        return Err(CodegenError::ComponentName {
+            component: message.full_name().to_string(),
+            name: component_name,
+        });
+    }
+    let component = Component {
+        anchor: message.clone(),
+        kind,
+        name,
+        component_name,
+        domain,
+        input_domain,
+        output_domain,
+        inputs: Vec::new(),
+        events: Vec::new(),
+        sources: input_domains.clone().unwrap_or_default(),
+        resolutions,
+    };
+    Ok(Some((component, input_domains)))
+}
+
+/// A component's state's conflict resolutions, refusing COMMUTATIVE, which
+/// is not generated yet.
+fn resolutions(
+    pool: &DescriptorPool,
+    options: &DynamicMessage,
+    message: &MessageDescriptor,
+) -> Result<Vec<i32>, CodegenError> {
+    let commutative = pool
+        .get_enum_by_name(RESOLUTION)
+        .and_then(|e| e.get_value_by_name(COMMUTATIVE))
+        .map(|v| v.number());
+    let resolutions: Vec<i32> = pool
+        .get_extension_by_name(STATE)
+        .and_then(|state_ext| message_value(options, &state_ext))
+        .map(|state| list_field(&state, "conflict_resolutions"))
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|v| v.as_enum_number())
+        .collect();
+    if commutative.is_some_and(|c| resolutions.contains(&c)) {
+        return Err(CodegenError::Commutative {
+            component: message.full_name().to_string(),
+        });
+    }
+    Ok(resolutions)
+}
+
+/// Each `(event)` entry's message added to the events of the component it
+/// names, and its source domain to that component's sources (or held to
+/// its listed ones). Returns each component's sources its entries named,
+/// by index.
+fn attach_events(
+    components: &mut [Component],
+    listed: &[Option<Vec<String>>],
+    declaring: &[MessageDescriptor],
+    event_ext: &ExtensionDescriptor,
+) -> Result<Vec<Vec<String>>, CodegenError> {
+    let mut seen: Vec<Vec<String>> = vec![Vec::new(); components.len()];
+    for message in declaring {
+        let options = message.options();
+        if !options.has_extension(event_ext) {
+            continue;
+        }
+        for consumer in options.get_extension(event_ext).as_list().unwrap_or(&[]) {
+            let Value::Message(consumer) = consumer else {
+                continue;
+            };
+            let named = string_field(consumer, "component");
+            // A consumer outside the set is a reference to a component
+            // generated elsewhere (decision 14.50), skipped.
+            let Some(index) = components
+                .iter()
+                .position(|c| c.anchor.full_name() == named)
+            else {
+                continue;
+            };
+            let component = &mut components[index];
+            if !component.events.contains(message) {
+                component.events.push(message.clone());
+            }
+            let source = string_field(consumer, "domain");
+            match &listed[index] {
+                // A projector listing its sources: each entry names one
+                // of them (an entry of one input_domain may leave it
+                // unset).
+                Some(list) => {
+                    let unset_of_one = source.is_empty() && component.input_domain == list[0];
+                    if !unset_of_one && !list.contains(&source) {
+                        return Err(CodegenError::UnlistedSource {
+                            component: component.anchor.full_name().to_string(),
+                            event: message.full_name().to_string(),
+                            domain: source,
+                        });
+                    }
+                    seen[index].push(source);
+                }
+                None => {
+                    if !source.is_empty() && !component.sources.contains(&source) {
+                        component.sources.push(source);
+                    }
+                }
+            }
+        }
+    }
+    Ok(seen)
+}
+
+/// Refuses a projector listing its sources in input_domains one of which
+/// no `(event)` entry for it names (`seen`, by index).
+fn check_projected(
+    components: &[Component],
+    listed: &[Option<Vec<String>>],
+    seen: &[Vec<String>],
+) -> Result<(), CodegenError> {
+    for ((component, list), seen) in components.iter().zip(listed).zip(seen) {
+        let Some(list) = list.as_ref().filter(|_| component.input_domain.is_empty()) else {
+            continue;
+        };
+        if let Some(unnamed) = list.iter().find(|d| !seen.contains(d)) {
+            return Err(CodegenError::UnprojectedSource {
+                component: component.anchor.full_name().to_string(),
+                domain: unnamed.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The input the `(command)` `message` declares (`declared`) of
+/// `component`: its emits, held to the component's events, their
+/// cardinality, and its refusals.
+fn command_input(
+    pool: &DescriptorPool,
+    component: &Component,
+    message: &MessageDescriptor,
+    declared: &DynamicMessage,
+) -> Result<Input, CodegenError> {
+    let mut emits = Vec::new();
+    for emitted in list_field(declared, "emits") {
+        let Value::String(event) = emitted else {
+            continue;
+        };
+        let Some(event) = component.events.iter().find(|e| e.full_name() == event) else {
+            return Err(CodegenError::UnknownEmit {
+                command: message.full_name().to_string(),
+                event: event.clone(),
+            });
+        };
+        emits.push(event.clone());
+    }
+    let cardinality = cardinality(message, declared, emits.len())?;
+    let fact = bool_field(declared, "fact");
+    let refused = list_field(declared, "refuses");
+    if fact && !refused.is_empty() {
+        return Err(CodegenError::RefusesOnFact {
+            message: message.full_name().to_string(),
+        });
+    }
+    let mut refuses = Vec::new();
+    for refusal in refused {
+        let Value::String(refusal) = refusal else {
+            continue;
+        };
+        let found =
+            pool.get_message_by_name(&refusal)
+                .ok_or_else(|| CodegenError::UnknownRefusal {
+                    command: message.full_name().to_string(),
+                    refusal: refusal.clone(),
+                })?;
+        refuses.push(found);
+    }
+    Ok(Input {
+        message: message.clone(),
+        emits,
+        cardinality,
+        refuses,
+        starts: bool_field(declared, "starts"),
+        fact,
+    })
+}
+
+/// A command's emits cardinality, given how many types it emits: refusing
+/// ONE or OPTIONAL with none, and a tuple longer than the markup's.
+fn cardinality(
+    message: &MessageDescriptor,
+    declared: &DynamicMessage,
+    emits: usize,
+) -> Result<Cardinality, CodegenError> {
+    let cardinality = match enum_field(declared, "emits_cardinality") {
+        CARDINALITY_MANY => Cardinality::Many,
+        // With no emits, the raw form is a list: unset is MANY.
+        0 if emits == 0 => Cardinality::Many,
+        n @ (CARDINALITY_ONE | CARDINALITY_OPTIONAL) if emits == 0 => {
+            return Err(CodegenError::CardinalityWithoutEmits {
+                message: message.full_name().to_string(),
+                optional: n == CARDINALITY_OPTIONAL,
+            });
+        }
+        CARDINALITY_OPTIONAL => Cardinality::Optional,
+        _ => Cardinality::One,
+    };
+    if cardinality != Cardinality::Many && emits > MAX_TUPLE {
+        return Err(CodegenError::EmitsTuple {
+            message: message.full_name().to_string(),
+            count: emits,
+        });
+    }
+    Ok(cardinality)
 }
 
 /// The status a refusal Reason's value marks (decision 14.52), its
