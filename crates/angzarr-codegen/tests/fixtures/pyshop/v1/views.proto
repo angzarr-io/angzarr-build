@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+// A projector naming no component_name or input_domains: its name is its
+// anchor's in kebab case, its sources its events' domains.
+package pyshop.v1;
+
+import "io/angzarr/v1/options.proto";
+
+message PageState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "pages"
+  };
+
+  int64 views = 1;
+}
+
+message ViewPage {
+  option (io.angzarr.v1.command) = {
+    component: "pyshop.v1.PageState"
+    emits: "pyshop.v1.PageViewed"
+  };
+}
+
+message PageViewed {
+  option (io.angzarr.v1.event) = {component: "pyshop.v1.PageState"};
+  option (io.angzarr.v1.event) = {
+    component: "pyshop.v1.HTTPServerView"
+    domain: "pages"
+  };
+
+  string path = 1;
+}
+
+message HTTPServerView {
+  option (io.angzarr.v1.component) = {kind: COMPONENT_KIND_PROJECTOR};
+
+  int64 views = 1;
+}
