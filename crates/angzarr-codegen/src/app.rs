@@ -28,7 +28,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use angzarr_embedded_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic};
 use serde::Deserialize;
 
 use crate::common::snake;

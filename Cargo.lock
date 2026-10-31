@@ -16,7 +16,7 @@ name = "angzarr-build"
 version = "0.1.0"
 dependencies = [
  "angzarr-codegen",
- "angzarr-embedded-diagnostic",
+ "angzarr-diagnostic",
  "angzarr-fmt",
  "angzarr-proto",
  "prost-build",
@@ -29,7 +29,7 @@ version = "0.1.0"
 dependencies = [
  "angzarr-build",
  "angzarr-codegen",
- "angzarr-embedded-diagnostic",
+ "angzarr-diagnostic",
  "angzarr-fmt",
  "angzarr-proto",
  "clap",
@@ -41,7 +41,7 @@ dependencies = [
 name = "angzarr-codegen"
 version = "0.1.0"
 dependencies = [
- "angzarr-embedded-diagnostic",
+ "angzarr-diagnostic",
  "angzarr-fmt",
  "angzarr-proto",
  "prettyplease 0.3.0",
@@ -55,15 +55,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "angzarr-embedded-diagnostic"
+name = "angzarr-diagnostic"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=c23457c14c857fc457324c563a12ca14fe4e7e79#c23457c14c857fc457324c563a12ca14fe4e7e79"
+source = "git+https://github.com/angzarr-io/angzarr?rev=d704afc21812225e7c536ef4055bf48a3ef821e9#d704afc21812225e7c536ef4055bf48a3ef821e9"
 
 [[package]]
 name = "angzarr-fmt"
 version = "0.1.0"
 dependencies = [
- "angzarr-embedded-diagnostic",
+ "angzarr-diagnostic",
  "fluent-bundle",
  "fluent-syntax",
  "serde",

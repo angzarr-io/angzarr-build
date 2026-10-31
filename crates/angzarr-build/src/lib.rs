@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use angzarr_embedded_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic};
 
 pub use angzarr_codegen::{
     ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Exposure, ProtoInput,

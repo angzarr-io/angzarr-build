@@ -577,10 +577,8 @@ fn test_every_catalog_message_is_the_code_of_a_sample() {
         .filter(|id| id.starts_with("angzarr-codegen-"))
         .collect();
     messages.sort_unstable();
-    let mut codes: Vec<&str> = angzarr_codegen::diagnostic_samples()
-        .iter()
-        .map(|d| d.code())
-        .collect();
+    let samples = angzarr_codegen::diagnostic_samples();
+    let mut codes: Vec<&str> = samples.iter().map(|d| d.code()).collect();
     codes.sort_unstable();
     assert_eq!(codes, messages);
 }
