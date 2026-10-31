@@ -3,9 +3,9 @@
 
 //! The application's generated layer, into OUT_DIR: the wire types, the
 //! markup domain layer, the adapters, the descriptors and `register()`,
-//! from the protos and angzarr.toml; a domain angzarr.toml serves from a
+//! from the protos and angzarr.yaml; a domain angzarr.yaml serves from a
 //! child process is its command and event sets, and `register()`
-//! registers the in-process components angzarr.toml lists.
+//! registers the in-process components angzarr.yaml lists.
 
 const PROTOS: &[&str] = &[
     "io/angzarr/examples/v1/table.proto",
@@ -15,5 +15,5 @@ const PROTOS: &[&str] = &[
 const INCLUDES: &[&str] = &["proto"];
 
 fn main() -> Result<(), angzarr_build::BuildError> {
-    angzarr_build::app("angzarr.toml", PROTOS, INCLUDES)
+    angzarr_build::app("angzarr.yaml", PROTOS, INCLUDES)
 }

@@ -1,7 +1,7 @@
 //! An angzarr-embedded application's startup, generated from its protos
 //! and its host config (`angzarr scaffold app`):
 //!
-//! - the user's, written once and never rewritten: `angzarr.toml`, the
+//! - the user's, written once and never rewritten: `angzarr.yaml`, the
 //!   host config, seeded from the [`AppSeed`] (which component runs in
 //!   which language, what is exposed, the retry and store settings) and the
 //!   user's to edit from then on; `Cargo.toml`, the crate's manifest, with
@@ -18,17 +18,22 @@
 //!
 //! Every component is listed in the config, in-process policies and
 //! projectors too, each by its name from the protos
-//! ([`crate::component_name`]) and with its `kind`. The config is read as
-//! angzarr-embedded-host's `HostConfig` reads it: an unknown key or value,
-//! or a missing `kind`, is refused ([`CodegenError::AppConfig`]).
+//! ([`crate::component_name`]) and with its `kind`. The config is read
+//! through angzarr-embedded-host-config, the schema angzarr-embedded-host
+//! runs: stamped `schema_version`, read strictly, so an unknown key or
+//! value, or a missing `kind`, is refused with the reader's error naming
+//! its key path ([`CodegenError::AppConfig`]).
 //! [`lint_app`] checks it against the protos, and [`app`] refuses to
 //! generate from one that has lints. Pure, as the rest of the crate:
 //! descriptors and the config's text in, files out.
 
-use std::collections::BTreeMap;
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic, Report};
+use angzarr_embedded_host_config::angzarr_yaml::{self, Value};
+use angzarr_embedded_host_config::{
+    ComponentConfig, ComponentKindConfig as Kind, Expose, FILE_NAME, HostConfig, KEY,
+};
 use serde::Deserialize;
 
 use crate::common::snake;
@@ -50,13 +55,13 @@ pub const ANGZARR_BUILD_GIT: &str = "https://github.com/angzarr-io/angzarr-cli";
 /// written.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Exposure {
-    /// `expose = "loopback"`: from this machine.
+    /// `expose: loopback`: from this machine.
     Loopback,
-    /// `expose = "ip"`: from the network.
+    /// `expose: ip`: from the network.
     Ip,
 }
 
-/// The `[retry]` keys a seed sets; each unset one is left to the host's
+/// The `retry` keys a seed sets; each unset one is left to the host's
 /// default and not written.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct RetrySeed {
@@ -67,7 +72,7 @@ pub struct RetrySeed {
 }
 
 /// What `angzarr scaffold app` writes a new host config and manifest from.
-/// Used only when they do not exist: an existing `angzarr.toml` or
+/// Used only when they do not exist: an existing `angzarr.yaml` or
 /// `Cargo.toml` is the user's, and the generated files follow it, not the
 /// seed.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -87,9 +92,9 @@ pub struct AppSeed {
     /// The components exposed through the host's listener, by name, and
     /// how far.
     pub expose: Vec<(String, Exposure)>,
-    /// The `[retry]` keys to write.
+    /// The `retry` keys to write.
     pub retry: RetrySeed,
-    /// `[store] in_memory = true`, else the default SQLite file.
+    /// `store.in_memory: true`, else the default SQLite file.
     pub in_memory: bool,
     /// The manifest's angzarr-build build-dependency, a TOML value (`{ path
     /// = ".." }`); `None` is [`ANGZARR_BUILD_GIT`]'s default branch.
@@ -121,7 +126,7 @@ pub struct DomainCrate {
 }
 
 /// The startup of the application declared in `files`, paths relative to
-/// the crate root: `angzarr.toml`, `Cargo.toml` and `src/driver.rs` (the
+/// the crate root: `angzarr.yaml`, `Cargo.toml` and `src/driver.rs` (the
 /// user's) and `build.rs` and `src/main.rs` (the CLI's). `config` and
 /// `manifest` are the host config and the manifest on disk, when there are
 /// ones: the generated files are derived from them (the manifest's
@@ -141,7 +146,7 @@ pub fn app(
     let components = model::components(descriptor_set, files, model::ALL_KINDS)?;
     let config_text = match config {
         Some(text) => text.to_string(),
-        None => crate::headed("angzarr.toml", seeded_config(&components, seed)),
+        None => crate::headed(FILE_NAME, seeded_config(&components, seed)),
     };
     let lints = lint(&read(&config_text)?, &components);
     if !lints.is_empty() {
@@ -177,7 +182,7 @@ pub fn app(
     // The host config and the manifest on disk, the user's, pass through
     // as they are; what is generated here carries the licence header.
     Ok(vec![
-        user("angzarr.toml", config_text),
+        user(FILE_NAME, config_text),
         user("Cargo.toml", manifest_text),
         generated(
             "build.rs",
@@ -223,13 +228,13 @@ fn manifest_domain(text: &str) -> Result<Option<DomainCrate>, CodegenError> {
 }
 
 /// The domains a host config serves from a child process: every
-/// `kind = "domain"` component not in Rust, or given a `launch`, by name.
+/// `kind: domain` component not in Rust, or given a `launch`, by name.
 /// What `angzarr_build::app` leaves out of the adapters and `register()`.
 pub fn remote_domains(config: &str) -> Result<Vec<String>, CodegenError> {
     Ok(read(config)?
         .components
         .iter()
-        .filter(|c| c.kind == Kind::Domain && !c.in_process())
+        .filter(|c| c.kind == Kind::Domain && !in_process(c))
         .map(|c| c.name.clone())
         .collect())
 }
@@ -241,7 +246,7 @@ pub fn child_components(config: &str) -> Result<Vec<String>, CodegenError> {
     Ok(read(config)?
         .components
         .iter()
-        .filter(|c| c.kind != Kind::Domain && !c.in_process())
+        .filter(|c| c.kind != Kind::Domain && !in_process(c))
         .map(|c| c.name.clone())
         .collect())
 }
@@ -253,7 +258,7 @@ pub fn in_process_components(config: &str) -> Result<Vec<String>, CodegenError> 
     Ok(read(config)?
         .components
         .iter()
-        .filter(|c| c.in_process())
+        .filter(|c| in_process(c))
         .map(|c| c.name.clone())
         .collect())
 }
@@ -385,7 +390,7 @@ pub fn app_lint_samples() -> Vec<Box<dyn Diagnostic>> {
     ]
 }
 
-/// The lints of `config`, a host config's TOML, against the components the
+/// The lints of `config`, a host config's YAML, against the components the
 /// protos declare in `files`, in the config's order and then the protos'.
 /// A config that does not read as a host config is refused
 /// ([`CodegenError::AppConfig`]).
@@ -400,135 +405,17 @@ pub fn lint_app(
 
 // ------------------------------------------------------------ the config
 
-/// angzarr-embedded-host's `HostConfig`, as strictly as it reads it: every
-/// table refuses a key it does not know, a component's `kind` is
-/// required, and `kind`, `expose` and `on_bug` are closed sets.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct HostConfig {
-    #[serde(rename = "component", default)]
-    components: Vec<ComponentConfig>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    supervision: Supervision,
-    #[serde(default)]
-    #[allow(dead_code)]
-    store: Store,
-    #[serde(default)]
-    #[allow(dead_code)]
-    policy: Policy,
-    #[serde(default)]
-    #[allow(dead_code)]
-    retry: Retry,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-#[allow(dead_code)]
-struct ComponentConfig {
-    name: String,
-    language: String,
-    kind: Kind,
-    upcasts: Option<String>,
-    launch: Option<Vec<String>>,
-    #[serde(default)]
-    entry: Vec<String>,
-    dir: Option<String>,
-    #[serde(default)]
-    env: BTreeMap<String, String>,
-    #[serde(default)]
-    expose: Expose,
-}
-
-impl ComponentConfig {
-    /// In the application's process: in Rust, with no `launch`.
-    fn in_process(&self) -> bool {
-        self.launch.is_none() && self.language == "rust"
-    }
-}
-
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "snake_case")]
-enum Kind {
-    Domain,
-    Policy,
-    Projector,
-    Upcaster,
-}
-
-impl Kind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Kind::Domain => "domain",
-            Kind::Policy => "policy",
-            Kind::Projector => "projector",
-            Kind::Upcaster => "upcaster",
-        }
-    }
-}
-
-#[derive(Deserialize, Default, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum Expose {
-    #[default]
-    None,
-    Loopback,
-    Ip,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields, default)]
-#[allow(dead_code)]
-struct Supervision {
-    handshake_timeout_ms: u64,
-    initial_backoff_ms: u64,
-    max_backoff_ms: u64,
-    shutdown_grace_ms: u64,
-    terminate_grace_ms: u64,
-    call_timeout_ms: u64,
-    socket_dir: Option<String>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields, default)]
-#[allow(dead_code)]
-struct Store {
-    path: String,
-    in_memory: bool,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields, default)]
-#[allow(dead_code)]
-struct Policy {
-    on_bug: OnBug,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-enum OnBug {
-    #[default]
-    MovePast,
-    Stay,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields, default)]
-#[allow(dead_code)]
-struct Retry {
-    max_retries: u32,
-    max_race_runs: u32,
-    initial_backoff_ms: u64,
-    multiplier: f64,
-    max_backoff_ms: u64,
-    jitter: f64,
-}
-
-/// `text` read as a host config.
+/// `text` read as angzarr-embedded-host reads its config: through the
+/// schema's loader, strictly, the reader's error kept as the cause.
 fn read(text: &str) -> Result<HostConfig, CodegenError> {
-    toml::from_str(text).map_err(|e| CodegenError::AppConfig {
-        detail: e.message().to_string(),
+    HostConfig::from_yaml(text, FILE_NAME).map_err(|e| CodegenError::AppConfig {
+        cause: Report::of(&e),
     })
+}
+
+/// In the application's process: in Rust, with no `launch`.
+fn in_process(component: &ComponentConfig) -> bool {
+    component.launch.is_none() && component.language == "rust"
 }
 
 /// A language the host launches with no `launch` given.
@@ -656,8 +543,8 @@ fn lint(config: &HostConfig, components: &[Component]) -> Vec<AppLint> {
 /// process manager (Rust, or a Python child for a domain the seed names),
 /// every policy whose two domains are among them and every projector all
 /// of whose sources are among them (a Python child's too: the host records
-/// its events), each in Rust; then `[retry]`
-/// with the keys seeded, and `[store]`.
+/// its events), each in Rust; then `retry` with the keys seeded, and
+/// `store`; stamped at the current version.
 fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
     struct Entry {
         name: String,
@@ -747,49 +634,71 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
             });
         }
     }
-    let mut out = format!(
+    let header = format!(
         "# The host config of {}: every component, its kind, the language it\n\
          # is written in and, for one served by a child process, how it is\n\
          # launched. Written once by `angzarr scaffold app` and yours from then\n\
          # on: each run regenerates build.rs and src/main.rs from it, main.rs\n\
          # registering the in-process components it lists, and `angzarr lint\n\
-         # app` checks it against the protos.\n",
+         # app` checks it against the protos. Its shape is versioned by\n\
+         # `{KEY}`.\n",
         seed.name
     );
-    for entry in &entries {
-        out.push_str(&format!(
-            "\n[[component]]\nname = \"{}\"\nkind = \"{}\"\nlanguage = \"{}\"\n",
-            entry.name, entry.kind, entry.language
-        ));
-        if let Some(project) = &entry.project {
-            out.push_str(&format!(
-                "dir = \"{project}\"\nentry = [\"angzarr-{project}\"]\n"
-            ));
-        }
-        if let Some((_, exposure)) = seed.expose.iter().find(|(n, _)| *n == entry.name) {
-            let how = match exposure {
-                Exposure::Loopback => "loopback",
-                Exposure::Ip => "ip",
-            };
-            out.push_str(&format!("expose = \"{how}\"\n"));
-        }
-    }
-    let retry: Vec<String> = [
+    let scalar = |text: &str| Value::scalar(text);
+    let pair = |key: &str, value: Value| (key.to_string(), value);
+    let components = entries
+        .iter()
+        .map(|entry| {
+            let mut fields = vec![
+                pair("name", scalar(&entry.name)),
+                pair("kind", scalar(entry.kind)),
+                pair("language", scalar(&entry.language)),
+            ];
+            if let Some(project) = &entry.project {
+                fields.push(pair("dir", scalar(project)));
+                fields.push(pair(
+                    "entry",
+                    Value::Seq(vec![scalar(&format!("angzarr-{project}"))]),
+                ));
+            }
+            if let Some((_, exposure)) = seed.expose.iter().find(|(n, _)| *n == entry.name) {
+                let how = match exposure {
+                    Exposure::Loopback => Expose::Loopback,
+                    Exposure::Ip => Expose::Ip,
+                };
+                fields.push(pair("expose", scalar(how.as_str())));
+            }
+            Value::Map(fields)
+        })
+        .collect();
+    let mut root = vec![
+        pair(
+            KEY,
+            scalar(&angzarr_embedded_host_config::CURRENT.to_string()),
+        ),
+        pair("component", Value::Seq(components)),
+    ];
+    let retry: Vec<(String, Value)> = [
         ("max_retries", seed.retry.max_retries),
         ("max_race_runs", seed.retry.max_race_runs),
     ]
     .into_iter()
-    .filter_map(|(key, value)| value.map(|v| format!("{key} = {v}\n")))
+    .filter_map(|(key, value)| value.map(|v| pair(key, scalar(&v.to_string()))))
     .collect();
     if !retry.is_empty() {
-        out.push_str(&format!("\n[retry]\n{}", retry.concat()));
+        root.push(pair("retry", Value::Map(retry)));
     }
-    out.push_str(if seed.in_memory {
-        "\n[store]\nin_memory = true\n"
-    } else {
-        "\n[store]\npath = \"angzarr.db\"\n"
-    });
-    out
+    root.push(pair(
+        "store",
+        Value::Map(vec![if seed.in_memory {
+            pair("in_memory", scalar("true"))
+        } else {
+            pair("path", scalar("angzarr.db"))
+        }]),
+    ));
+    // Collections of scalars nested three deep (a component's `entry`) are
+    // written on one line.
+    header + &angzarr_yaml::write(&Value::Map(root), 3)
 }
 
 /// `name` as a Cargo package name: ASCII letters and digits kept, lower
@@ -899,15 +808,15 @@ fn build_script(files: &[&str], includes: &[String], domain: Option<&DomainCrate
         "// @generated by `angzarr scaffold app`. Do not edit: every run rewrites it.\n\
          \n\
          {doc}\
-         //! from the protos and angzarr.toml; a domain angzarr.toml serves from a\n\
+         //! from the protos and angzarr.yaml; a domain angzarr.yaml serves from a\n\
          //! child process is its command and event sets, and `register()`\n\
-         //! registers the in-process components angzarr.toml lists.\n\
+         //! registers the in-process components angzarr.yaml lists.\n\
          \n\
          const PROTOS: &[&str] = {};\n\
          const INCLUDES: &[&str] = {};\n\
          \n\
          fn main() -> Result<(), angzarr_build::BuildError> {{\n    \
-             angzarr_build::{call}(\"angzarr.toml\", PROTOS, INCLUDES)\n\
+             angzarr_build::{call}(\"angzarr.yaml\", PROTOS, INCLUDES)\n\
          }}\n",
         list(&files),
         list(includes)
@@ -950,7 +859,7 @@ fn main_rs(
             .collect()
     };
     let mut modules: Vec<String> = vec!["driver".to_string()];
-    for listed in config.components.iter().filter(|c| c.in_process()) {
+    for listed in config.components.iter().filter(|c| in_process(c)) {
         let component = match listed.kind {
             Kind::Domain => domain_named(components, &listed.name),
             Kind::Policy => named(components, ComponentKind::Policy, &listed.name),
@@ -982,11 +891,11 @@ fn main_rs(
         }
     };
     format!(
-        "// @generated by `angzarr scaffold app` from angzarr.toml and the protos.\n\
+        "// @generated by `angzarr scaffold app` from angzarr.yaml and the protos.\n\
          // Do not edit: every run rewrites it.\n\
          \n\
          //! {name} on angzarr-embedded: the Rust components in process, every\n\
-         //! component angzarr.toml serves from a child process launched by the host,\n\
+         //! component angzarr.yaml serves from a child process launched by the host,\n\
          //! the in-process ones it lists registered by the generated `register()`,\n\
          //! then the driver (`src/driver.rs`, yours).\n\
          \n\
@@ -1000,7 +909,7 @@ fn main_rs(
          /// async, on the caller's). Dropping the application stops the children.\n\
          #[tokio::main]\n\
          async fn main() -> Result<(), Box<dyn std::error::Error>> {{\n    \
-             let app = angzarr_embedded_host::run(\"angzarr.toml\", register).await?;\n    \
+             let app = angzarr_embedded_host::run(\"angzarr.yaml\", register).await?;\n    \
              driver::drive(&app).await\n\
          }}\n",
     )

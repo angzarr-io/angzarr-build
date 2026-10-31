@@ -1,5 +1,5 @@
 //! A component's name in an application (decision 14.50): what the host
-//! config's `[[component]]` entry, the generated registration and
+//! config's `component` entry, the generated registration and
 //! hand-written code call it, all through [`component_name`].
 //! `ComponentOptions.component_name` when declared, else a default by kind:
 //!

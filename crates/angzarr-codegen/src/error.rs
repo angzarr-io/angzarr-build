@@ -108,8 +108,10 @@ pub enum CodegenError {
     /// The protos declare no component of the domain, or of the name,
     /// asked for.
     PythonNoDomain { domain: String },
-    /// A host config (`angzarr.toml`) that does not read as one.
-    AppConfig { detail: String },
+    /// A host config (`angzarr.yaml`) that does not load: `cause` is the
+    /// reader's error, naming for a decode the key path where it goes
+    /// wrong (`component[1].kind`).
+    AppConfig { cause: angzarr_diagnostic::Report },
     /// `angzarr scaffold app` refused the host config: it has lints
     /// ([`crate::AppLint`]), each reported on its own.
     AppRefused { lints: Vec<crate::AppLint> },
@@ -272,8 +274,8 @@ impl fmt::Display for CodegenError {
                     "the protos declare no component of the domain, or named, {domain}"
                 )
             }
-            CodegenError::AppConfig { detail } => {
-                write!(f, "the host config does not read as one: {detail}")
+            CodegenError::AppConfig { cause } => {
+                write!(f, "the host config does not read as one: {cause}")
             }
             CodegenError::AppRefused { lints } => write!(
                 f,
@@ -461,9 +463,8 @@ impl Diagnostic for CodegenError {
                 ("found", s(found)),
             ],
             CodegenError::PythonNoDomain { domain } => vec![("domain", s(domain))],
-            CodegenError::AppConfig { detail } | CodegenError::AppManifest { detail } => {
-                vec![("detail", s(detail))]
-            }
+            CodegenError::AppConfig { cause } => vec![("cause", Arg::nested(cause))],
+            CodegenError::AppManifest { detail } => vec![("detail", s(detail))],
             CodegenError::AppDomainPath { path } => vec![("path", s(path))],
             CodegenError::RefusalStatusMisplaced { value } => vec![("value", s(value))],
             CodegenError::AppRefused { lints } => {
@@ -582,7 +583,11 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             message: s(),
             name: s(),
         }),
-        Box::new(CodegenError::AppConfig { detail: s() }),
+        Box::new(CodegenError::AppConfig {
+            cause: angzarr_diagnostic::Report::new("angzarr-yaml-load-failed-at")
+                .arg("kind", "angzarr-host-config")
+                .arg("source", "angzarr.yaml"),
+        }),
         Box::new(CodegenError::AppRefused { lints: Vec::new() }),
         Box::new(CodegenError::AppManifest { detail: s() }),
         Box::new(CodegenError::AppDomainPath { path: s() }),

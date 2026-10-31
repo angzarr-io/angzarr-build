@@ -345,10 +345,10 @@ fn app_layer_into(
 }
 
 /// The startup of an angzarr-embedded application (see
-/// `angzarr_codegen::app`) under `root`, the crate root: `angzarr.toml`,
+/// `angzarr_codegen::app`) under `root`, the crate root: `angzarr.yaml`,
 /// `Cargo.toml` and `src/driver.rs` written once from `seed` and the
 /// user's from then on; `build.rs` and `src/main.rs` the CLI's, rewritten
-/// from the protos and the `angzarr.toml` and `Cargo.toml` on disk on every
+/// from the protos and the `angzarr.yaml` and `Cargo.toml` on disk on every
 /// run. A config with lints is refused and nothing is written.
 pub fn app_scaffold_into(
     root: &Path,
@@ -365,7 +365,7 @@ pub fn app_scaffold_into(
             .map(Some)
             .map_err(|e| io(&path, &e))
     };
-    let config = on_disk("angzarr.toml")?;
+    let config = on_disk("angzarr.yaml")?;
     let manifest = on_disk("Cargo.toml")?;
     let bytes = scaffold_descriptors(protos, includes)?;
     let files = angzarr_codegen::app(&bytes, protos, seed, config.as_deref(), manifest.as_deref())
