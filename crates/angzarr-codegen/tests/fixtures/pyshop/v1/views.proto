@@ -28,12 +28,26 @@ message PageViewed {
     component: "pyshop.v1.HTTPServerView"
     domain: "pages"
   };
+  option (io.angzarr.v1.event) = {
+    component: "pyshop.v1.PageCounter"
+    domain: "pages"
+  };
 
   string path = 1;
 }
 
 message HTTPServerView {
   option (io.angzarr.v1.component) = {kind: COMPONENT_KIND_PROJECTOR};
+
+  int64 views = 1;
+}
+
+// A projector reading the one domain its input_domain names.
+message PageCounter {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROJECTOR
+    input_domain: "visits"
+  };
 
   int64 views = 1;
 }

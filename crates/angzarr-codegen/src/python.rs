@@ -985,7 +985,7 @@ const REFUSAL_HELPERS: &str = "\n\ndef _key(name: str, reason: enum.IntEnum | No
 fn has_reason(refusal: &MessageDescriptor) -> bool {
     refusal
         .get_field_by_name("reason")
-        .is_some_and(|f| matches!(f.kind(), Kind::Enum(_)) && !f.is_list())
+        .is_some_and(|f| matches!(f.kind(), Kind::Enum(_)))
 }
 
 fn domain_py(served: &str, unit: &Unit) -> String {

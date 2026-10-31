@@ -98,6 +98,8 @@ fn test_a_projector_is_scaffolded_under_its_component_name() {
 fn test_a_projectors_logic_projects_each_event_of_every_source_asynchronously() {
     let files = ledger();
     let logic = source(&files, "/logic.py");
+    assert!(logic.contains("    PageContext,\n"), "{logic}");
+    assert!(!logic.contains("CommandContext"), "{logic}");
     assert_has(
         logic,
         &[
@@ -194,6 +196,14 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
              -> list[tuple[bytes, DecideMove]]: ...",
         ],
     );
+    for import in [
+        "    DecideMove,\n",
+        "    PageContext,\n",
+        "    TurnStarted,\n",
+    ] {
+        assert!(logic.contains(import), "{import}:\n{logic}");
+    }
+    assert!(!logic.contains("TablePlayerPolicy,"), "{logic}");
     let domain = source(&files, "/domain.py");
     assert_has(
         domain,
@@ -208,6 +218,13 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
 fn test_a_policys_dispatch_addresses_each_command_to_its_target() {
     let files = table_player();
     let dispatch = source(&files, "table_player_policy_angzarr.py");
+    // One parameter too long for a line: black's split, a trailing comma.
+    assert!(
+        dispatch.contains(
+            "def new_table_player_policy_dispatch(\n    logic: TablePlayerPolicyLogic,\n) -> _az.PolicyDispatch:\n"
+        ),
+        "{dispatch}"
+    );
     assert_has(
         dispatch,
         &[
@@ -294,6 +311,8 @@ fn test_a_decision_returns_its_cardinality_or_one_of_its_refusals() {
              -> list[Charged | Refunded]: ...",
             "def open(self, cmd: Open, state: TillState, ctx: CommandContext) \
              -> tuple[Charged, Refunded]: ...",
+            "def close(self, cmd: Close, state: TillState, ctx: CommandContext) \
+             -> tuple[Charged, Refunded] | None | Unbalanced: ...",
             "def cash_counted(self, fact: CashCounted, state: TillState, ctx: CommandContext) \
              -> Refunded: ...",
         ],
@@ -309,7 +328,7 @@ fn test_the_dispatch_refuses_with_a_returned_typed_refusal() {
     assert_has(
         dispatch,
         &[
-            "_REFUSALS = {_d.TillRefused: _from_till_refused, _d.CardDeclined: _from_card_declined,}",
+            "_REFUSALS = {_d.TillRefused: _from_till_refused, _d.CardDeclined: _from_card_declined, _d.Unbalanced: _from_unbalanced,}",
             "to_wire = _REFUSALS.get(type(result))",
             "raise _az.Refused(to_wire(result))",
             "return _decided(logic.charge(cmd, _to_till_state(state), cctx))",
@@ -347,6 +366,9 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
          assert d.key() == 'pyshop-v1-carddeclined', d.key()\n\
          assert d.args() == {'issuer': 'visa'}, d.args()\n\
          assert CardDeclined().args() == {}\n\
+         u = Unbalanced(reason='short')\n\
+         assert u.key() == 'pyshop-v1-unbalanced', u.key()\n\
+         assert u.args() == {'reason': 'short'}, u.args()\n\
          print('ok')\n",
     );
     assert!(
@@ -583,4 +605,21 @@ fn test_buf_generates_every_import_of_a_reached_proto() {
         );
     }
     assert!(!buf.contains("io/angzarr/v1/"), "{buf}");
+}
+
+/// A projector naming its one source as `input_domain` reads that domain.
+#[test]
+fn test_a_projectors_input_domain_is_its_one_source() {
+    const FILE: &str = "pyshop/v1/views.proto";
+    let files = scaffold_python(
+        &descriptors(&[FILE]),
+        &[FILE],
+        &app("projector-page-counter"),
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
+    let dispatch = source(&files, "_angzarr.py");
+    assert!(
+        flat(dispatch).contains("dispatch.for_domains(\"visits\")"),
+        "{dispatch}"
+    );
 }

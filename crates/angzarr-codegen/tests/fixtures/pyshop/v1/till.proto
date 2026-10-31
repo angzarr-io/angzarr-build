@@ -59,6 +59,17 @@ message Open {
   };
 }
 
+// One of each, or nothing; refused when the count is off.
+message Close {
+  option (io.angzarr.v1.command) = {
+    component: "pyshop.v1.TillState"
+    emits: "pyshop.v1.Charged"
+    emits: "pyshop.v1.Refunded"
+    refuses: "pyshop.v1.Unbalanced"
+    emits_cardinality: EMITS_CARDINALITY_OPTIONAL
+  };
+}
+
 // A fact: recorded as received, flagged by the event it emits.
 message CashCounted {
   option (io.angzarr.v1.command) = {
@@ -96,4 +107,9 @@ message TillRefused {
 
 message CardDeclined {
   string issuer = 1;
+}
+
+// A refusal whose reason is text, not a code.
+message Unbalanced {
+  string reason = 1;
 }
