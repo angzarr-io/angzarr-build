@@ -492,6 +492,7 @@ fn a_projector_is_listed_when_its_sources_all_run_in_process() {
         "io/angzarr/examples/v1/table.proto",
         "io/angzarr/examples/v1/wallet.proto",
         "io/angzarr/examples/v1/ledger.proto",
+        "io/angzarr/examples/v1/player.proto",
     ];
     let set = descriptors(WITH_LEDGER);
     let listed = |seed: &AppSeed| {
@@ -501,6 +502,12 @@ fn a_projector_is_listed_when_its_sources_all_run_in_process() {
             .contains("name = \"projector-wallet-table-ledger\"\nkind = \"projector\"")
     };
     assert!(listed(&seed("ledger")));
+    // A Python domain that is not one of its sources leaves it listed.
+    let player = AppSeed {
+        python: vec!["player".to_string()],
+        ..seed("ledger")
+    };
+    assert!(listed(&player));
     // The wallet a Python child: the projector would have a remote source.
     let python = AppSeed {
         python: vec!["wallet".to_string()],

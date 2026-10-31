@@ -297,10 +297,10 @@ pub fn app_scaffold_into(
     seed: &AppSeed,
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let config_path = root.join("angzarr.toml");
-    let config = match std::fs::read_to_string(&config_path) {
-        Ok(text) => Some(text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(io(&config_path, &e)),
+    let config = if config_path.exists() {
+        Some(std::fs::read_to_string(&config_path).map_err(|e| io(&config_path, &e))?)
+    } else {
+        None
     };
     let bytes = scaffold_descriptors(protos, includes)?;
     let files = angzarr_codegen::app(&bytes, protos, seed, config.as_deref())

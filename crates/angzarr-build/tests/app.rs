@@ -217,8 +217,11 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_contracts() {
     // domain's contract.
     let adapters = std::fs::read_to_string(out.join("angzarr-adapters.rs")).unwrap();
     assert!(
-        adapters.contains("#[process_manager(domain = \"buyin\")]")
-            && adapters.contains("served by a child process"),
+        adapters.contains("`buyin.v1.BuyInState`, served by a child process"),
+        "{adapters}"
+    );
+    assert!(
+        adapters.contains("`buyin.v1.WalletState`, delegating to"),
         "{adapters}"
     );
     assert!(
