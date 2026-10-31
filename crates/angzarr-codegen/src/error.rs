@@ -1,9 +1,20 @@
 //! Why generation refused a descriptor set. Every refusal names the proto
-//! element to change.
+//! element to change. Each error is a code and its args
+//! ([`Diagnostic`]); its English `Display` is its en-US catalog message
+//! filled with them ([`english`]), so the English is written once.
 
 use std::fmt;
 
 use angzarr_diagnostic::{Arg, Diagnostic};
+
+/// Each named field as the arg of its own name, its text:
+/// `texts![message, component]`. An arg is named as the field it carries.
+macro_rules! texts {
+    ($($field:ident),+ $(,)?) => {
+        vec![$((stringify!($field), ::angzarr_diagnostic::Arg::from($field.as_str()))),+]
+    };
+}
+pub(crate) use texts;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum CodegenError {
@@ -126,391 +137,9 @@ pub enum CodegenError {
     RefusalStatusMisplaced { value: String },
 }
 
-/// What a [`CodegenError`] refuses, which splits its message and its
-/// arguments by concern.
-enum Concern {
-    /// A descriptor set this generator cannot read or map.
-    Shape,
-    /// Markup that breaks a rule of the generated domain layer.
-    Markup,
-    /// A translate, scaffold, Python or host-config refusal.
-    Use,
-}
-
-impl CodegenError {
-    fn concern(&self) -> Concern {
-        match self {
-            CodegenError::Descriptors { .. }
-            | CodegenError::FileNotInSet { .. }
-            | CodegenError::UnknownComponent { .. }
-            | CodegenError::UnknownEmit { .. }
-            | CodegenError::UnknownRefusal { .. }
-            | CodegenError::UnownedDomain { .. }
-            | CodegenError::UnsupportedKind { .. }
-            | CodegenError::Commutative { .. }
-            | CodegenError::Oneof { .. }
-            | CodegenError::NestedType { .. }
-            | CodegenError::WellKnownType { .. }
-            | CodegenError::EnumZero { .. }
-            | CodegenError::NoWirePath { .. } => Concern::Shape,
-            CodegenError::RefusesOnFact { .. }
-            | CodegenError::ReservedName { .. }
-            | CodegenError::ComponentName { .. }
-            | CodegenError::InputDomainsOnNonProjector { .. }
-            | CodegenError::InputDomainsWithInputDomain { .. }
-            | CodegenError::DuplicateSource { .. }
-            | CodegenError::UnlistedSource { .. }
-            | CodegenError::UnprojectedSource { .. }
-            | CodegenError::CardinalityWithoutEmits { .. }
-            | CodegenError::EmitsTuple { .. }
-            | CodegenError::RefusalChoiceName { .. }
-            | CodegenError::RefusalStatusMisplaced { .. } => Concern::Markup,
-            CodegenError::TranslateUnknownPolicy { .. }
-            | CodegenError::TranslateNotATargetCommand { .. }
-            | CodegenError::TranslateNotASourceFact { .. }
-            | CodegenError::TranslateNotAFact { .. }
-            | CodegenError::ScaffoldImplNotFound { .. }
-            | CodegenError::InputMismatch { .. }
-            | CodegenError::PythonNoDomain { .. }
-            | CodegenError::AppConfig { .. }
-            | CodegenError::AppRefused { .. }
-            | CodegenError::AppManifest { .. }
-            | CodegenError::AppDomainPath { .. } => Concern::Use,
-        }
-    }
-
-    /// The message of a descriptor set this generator cannot read or map ([`Concern::Shape`]).
-    fn fmt_shape(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CodegenError::Descriptors { detail } => {
-                write!(f, "the descriptor set does not decode: {detail}")
-            }
-            CodegenError::FileNotInSet { file } => {
-                write!(f, "{file} is not in the descriptor set")
-            }
-            CodegenError::UnknownComponent { message, component } => write!(
-                f,
-                "{message} names the component {component}, which no message declares"
-            ),
-            CodegenError::UnknownEmit { command, event } => write!(
-                f,
-                "{command} emits {event}, which is not an event of its component"
-            ),
-            CodegenError::UnknownRefusal { command, refusal } => write!(
-                f,
-                "{command} refuses {refusal}, which is not a message of the descriptor set"
-            ),
-            CodegenError::UnownedDomain { policy, domain } => write!(
-                f,
-                "{policy} names the domain {domain}, which no aggregate or process manager owns"
-            ),
-            CodegenError::UnsupportedKind { component, kind } => write!(
-                f,
-                "{component} is a component of kind {kind}, which this generator does not emit"
-            ),
-            CodegenError::Commutative { component } => write!(
-                f,
-                "{component}'s state lists COMMUTATIVE, which is not generated yet"
-            ),
-            CodegenError::Oneof { message, oneof } => {
-                write!(
-                    f,
-                    "{message} has the oneof {oneof}, which is not mapped yet"
-                )
-            }
-            CodegenError::NestedType { message, nested } => write!(
-                f,
-                "{message} declares {nested} inside it; declare it at the top level"
-            ),
-            CodegenError::WellKnownType {
-                message,
-                field,
-                type_name,
-            } => write!(
-                f,
-                "{message}.{field} is a {type_name}; only google.protobuf.Timestamp is mapped"
-            ),
-            CodegenError::EnumZero { enum_name, value } => write!(
-                f,
-                "{enum_name}'s zero value is {value}; name it *_UNSPECIFIED"
-            ),
-            CodegenError::NoWirePath { package } => write!(
-                f,
-                "no Rust path is given for the prost types of package {package}"
-            ),
-            _ => unreachable!("{self:?} is not a shape error: Concern routes it"),
-        }
-    }
-
-    /// The message of markup that breaks a rule of the generated domain layer ([`Concern::Markup`]).
-    fn fmt_markup(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CodegenError::RefusesOnFact { message } => write!(
-                f,
-                "{message} is a fact and declares refuses; a fact cannot be refused"
-            ),
-            CodegenError::ReservedName { message, name } => write!(
-                f,
-                "{message} is named {name}, which the generated domain layer gives the runtime's own {name}; rename it"
-            ),
-            CodegenError::InputDomainsOnNonProjector { component } => write!(
-                f,
-                "{component} sets input_domains, which only a projector takes"
-            ),
-            CodegenError::InputDomainsWithInputDomain { component } => write!(
-                f,
-                "{component} sets both input_domains and input_domain; list its sources in input_domains"
-            ),
-            CodegenError::DuplicateSource { component, domain } => {
-                write!(f, "{component} lists the source domain {domain} twice")
-            }
-            CodegenError::UnlistedSource {
-                component,
-                event,
-                domain,
-            } => write!(
-                f,
-                "{event}'s entry for {component} names the domain \"{domain}\", which is not one of its input_domains"
-            ),
-            CodegenError::UnprojectedSource { component, domain } => write!(
-                f,
-                "{component} lists the source domain {domain}, which no (event) entry for it names"
-            ),
-            CodegenError::ComponentName { component, name } => write!(
-                f,
-                "{component}'s name \"{name}\" is not lower-case letters, digits and -, starting with a letter; set its component_name"
-            ),
-            CodegenError::CardinalityWithoutEmits { message, optional } => write!(
-                f,
-                "{message} declares no emits and the emits cardinality {}; only MANY is accepted without emits",
-                if *optional { "OPTIONAL" } else { "ONE" }
-            ),
-            CodegenError::EmitsTuple { message, count } => write!(
-                f,
-                "{message} emits {count} types as one tuple, more than the markup's four; declare it MANY"
-            ),
-            CodegenError::RefusalChoiceName {
-                message,
-                name,
-                command,
-            } => write!(
-                f,
-                "{message} is named {name}, which the generated domain layer gives the refusals of {command}; rename it"
-            ),
-            CodegenError::RefusalStatusMisplaced { value } => write!(
-                f,
-                "{value} is marked (io.angzarr.v1.refusal_status), which marks a refusal's code alone: a non-zero value of the nested Reason of a message a command refuses with"
-            ),
-            _ => unreachable!("{self:?} is not a markup error: Concern routes it"),
-        }
-    }
-
-    /// The message of a translate, scaffold, Python or host-config refusal ([`Concern::Use`]).
-    fn fmt_use(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CodegenError::TranslateUnknownPolicy { policy } => {
-                write!(
-                    f,
-                    "translate names the policy {policy}, which no message declares"
-                )
-            }
-            CodegenError::TranslateNotATargetCommand { policy, command } => write!(
-                f,
-                "translate names {command}, which is not a command of {policy}'s target"
-            ),
-            CodegenError::TranslateNotASourceFact { policy, fact } => write!(
-                f,
-                "translate names {fact}, which is not an input of {policy}'s source"
-            ),
-            CodegenError::ScaffoldImplNotFound { path, component } => write!(
-                f,
-                "{path} holds no decorated impl of {component}; it is left as it is"
-            ),
-            CodegenError::TranslateNotAFact { policy, fact } => write!(
-                f,
-                "translate names {fact}, a command of {policy}'s source; it must name a fact"
-            ),
-            CodegenError::InputMismatch {
-                path,
-                message,
-                expected,
-                found,
-            } => write!(
-                f,
-                "{path} takes {message} as {found}, but the proto declares it a {expected}"
-            ),
-            CodegenError::PythonNoDomain { domain } => {
-                write!(
-                    f,
-                    "the protos declare no component of the domain, or named, {domain}"
-                )
-            }
-            CodegenError::AppConfig { cause } => {
-                write!(f, "the host config does not read as one: {cause}")
-            }
-            CodegenError::AppRefused { lints } => write!(
-                f,
-                "the host config has {} lints; nothing is written",
-                lints.len()
-            ),
-            CodegenError::AppManifest { detail } => {
-                write!(f, "the manifest does not read as one: {detail}")
-            }
-            CodegenError::AppDomainPath { path } => write!(
-                f,
-                "the domain crate's {path} is no Rust path: name it as Rust does (examples_proto, not examples-proto)"
-            ),
-            _ => unreachable!("{self:?} is not a use error: Concern routes it"),
-        }
-    }
-
-    /// The arguments of a descriptor set this generator cannot read or map ([`Concern::Shape`]).
-    fn shape_args(&self) -> Vec<(&'static str, Arg)> {
-        let s = |v: &String| Arg::from(v.as_str());
-        match self {
-            CodegenError::Descriptors { detail } => vec![("detail", s(detail))],
-            CodegenError::FileNotInSet { file } => vec![("file", s(file))],
-            CodegenError::UnknownComponent { message, component } => {
-                vec![("message", s(message)), ("component", s(component))]
-            }
-            CodegenError::UnknownEmit { command, event } => {
-                vec![("command", s(command)), ("event", s(event))]
-            }
-            CodegenError::UnknownRefusal { command, refusal } => {
-                vec![("command", s(command)), ("refusal", s(refusal))]
-            }
-            CodegenError::UnownedDomain { policy, domain } => {
-                vec![("policy", s(policy)), ("domain", s(domain))]
-            }
-            CodegenError::UnsupportedKind { component, kind } => {
-                vec![("component", s(component)), ("kind", (*kind).into())]
-            }
-            CodegenError::Commutative { component } => vec![("component", s(component))],
-            CodegenError::Oneof { message, oneof } => {
-                vec![("message", s(message)), ("oneof", s(oneof))]
-            }
-            CodegenError::NestedType { message, nested } => {
-                vec![("message", s(message)), ("nested", s(nested))]
-            }
-            CodegenError::WellKnownType {
-                message,
-                field,
-                type_name,
-            } => vec![
-                ("message", s(message)),
-                ("field", s(field)),
-                ("type_name", s(type_name)),
-            ],
-            CodegenError::EnumZero { enum_name, value } => {
-                vec![("enum_name", s(enum_name)), ("value", s(value))]
-            }
-            CodegenError::NoWirePath { package } => vec![("package", s(package))],
-            _ => unreachable!("{self:?} is not a shape error: Concern routes it"),
-        }
-    }
-
-    /// The arguments of markup that breaks a rule of the generated domain layer ([`Concern::Markup`]).
-    fn markup_args(&self) -> Vec<(&'static str, Arg)> {
-        let s = |v: &String| Arg::from(v.as_str());
-        match self {
-            CodegenError::RefusesOnFact { message } => vec![("message", s(message))],
-            CodegenError::ReservedName { message, name } => {
-                vec![("message", s(message)), ("name", s(name))]
-            }
-            CodegenError::ComponentName { component, name } => {
-                vec![("component", s(component)), ("name", s(name))]
-            }
-            CodegenError::InputDomainsOnNonProjector { component }
-            | CodegenError::InputDomainsWithInputDomain { component } => {
-                vec![("component", s(component))]
-            }
-            CodegenError::DuplicateSource { component, domain }
-            | CodegenError::UnprojectedSource { component, domain } => {
-                vec![("component", s(component)), ("domain", s(domain))]
-            }
-            CodegenError::UnlistedSource {
-                component,
-                event,
-                domain,
-            } => vec![
-                ("component", s(component)),
-                ("event", s(event)),
-                ("domain", s(domain)),
-            ],
-            CodegenError::CardinalityWithoutEmits { message, optional } => vec![
-                ("message", s(message)),
-                (
-                    "cardinality",
-                    Arg::from(if *optional { "OPTIONAL" } else { "ONE" }),
-                ),
-            ],
-            CodegenError::EmitsTuple { message, count } => {
-                vec![("message", s(message)), ("count", (*count).into())]
-            }
-            CodegenError::RefusalChoiceName {
-                message,
-                name,
-                command,
-            } => vec![
-                ("message", s(message)),
-                ("name", s(name)),
-                ("command", s(command)),
-            ],
-            CodegenError::RefusalStatusMisplaced { value } => vec![("value", s(value))],
-            _ => unreachable!("{self:?} is not a markup error: Concern routes it"),
-        }
-    }
-
-    /// The arguments of a translate, scaffold, Python or host-config refusal ([`Concern::Use`]).
-    fn use_args(&self) -> Vec<(&'static str, Arg)> {
-        let s = |v: &String| Arg::from(v.as_str());
-        match self {
-            CodegenError::TranslateUnknownPolicy { policy } => vec![("policy", s(policy))],
-            CodegenError::TranslateNotATargetCommand { policy, command } => {
-                vec![("policy", s(policy)), ("command", s(command))]
-            }
-            CodegenError::TranslateNotASourceFact { policy, fact } => {
-                vec![("policy", s(policy)), ("fact", s(fact))]
-            }
-            CodegenError::ScaffoldImplNotFound { path, component } => {
-                vec![("path", s(path)), ("component", s(component))]
-            }
-            CodegenError::TranslateNotAFact { policy, fact } => {
-                vec![("policy", s(policy)), ("fact", s(fact))]
-            }
-            CodegenError::InputMismatch {
-                path,
-                message,
-                expected,
-                found,
-            } => vec![
-                ("path", s(path)),
-                ("message", s(message)),
-                ("expected", s(expected)),
-                ("found", s(found)),
-            ],
-            CodegenError::PythonNoDomain { domain } => vec![("domain", s(domain))],
-            CodegenError::AppConfig { cause } => vec![("cause", Arg::nested(cause))],
-            CodegenError::AppManifest { detail } => vec![("detail", s(detail))],
-            CodegenError::AppDomainPath { path } => vec![("path", s(path))],
-            CodegenError::AppRefused { lints } => {
-                vec![(
-                    "count",
-                    i64::try_from(lints.len()).unwrap_or(i64::MAX).into(),
-                )]
-            }
-            _ => unreachable!("{self:?} is not a use error: Concern routes it"),
-        }
-    }
-}
-
 impl fmt::Display for CodegenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.concern() {
-            Concern::Shape => self.fmt_shape(f),
-            Concern::Markup => self.fmt_markup(f),
-            Concern::Use => self.fmt_use(f),
-        }
+        english(self, f)
     }
 }
 
@@ -573,145 +202,353 @@ impl Diagnostic for CodegenError {
     }
 
     fn args(&self) -> Vec<(&'static str, Arg)> {
-        match self.concern() {
-            Concern::Shape => self.shape_args(),
-            Concern::Markup => self.markup_args(),
-            Concern::Use => self.use_args(),
+        use CodegenError as E;
+        match self {
+            E::Descriptors { detail } | E::AppManifest { detail } => texts![detail],
+            E::FileNotInSet { file } => texts![file],
+            E::UnknownComponent { message, component } => texts![message, component],
+            E::UnknownEmit { command, event } => texts![command, event],
+            E::UnknownRefusal { command, refusal } => texts![command, refusal],
+            E::UnownedDomain { policy, domain } => texts![policy, domain],
+            E::UnsupportedKind { component, kind } => {
+                vec![
+                    ("component", component.as_str().into()),
+                    ("kind", (*kind).into()),
+                ]
+            }
+            E::Commutative { component }
+            | E::InputDomainsOnNonProjector { component }
+            | E::InputDomainsWithInputDomain { component } => texts![component],
+            E::Oneof { message, oneof } => texts![message, oneof],
+            E::NestedType { message, nested } => texts![message, nested],
+            E::WellKnownType {
+                message,
+                field,
+                type_name,
+            } => texts![message, field, type_name],
+            E::EnumZero { enum_name, value } => texts![enum_name, value],
+            E::NoWirePath { package } => texts![package],
+            E::TranslateUnknownPolicy { policy } => texts![policy],
+            E::TranslateNotATargetCommand { policy, command } => texts![policy, command],
+            E::TranslateNotASourceFact { policy, fact } | E::TranslateNotAFact { policy, fact } => {
+                texts![policy, fact]
+            }
+            E::ScaffoldImplNotFound { path, component } => texts![path, component],
+            E::RefusesOnFact { message } => texts![message],
+            E::ReservedName { message, name } => texts![message, name],
+            E::DuplicateSource { component, domain }
+            | E::UnprojectedSource { component, domain } => {
+                texts![component, domain]
+            }
+            E::UnlistedSource {
+                component,
+                event,
+                domain,
+            } => texts![component, event, domain],
+            E::ComponentName { component, name } => texts![component, name],
+            E::CardinalityWithoutEmits { message, optional } => {
+                let cardinality = if *optional { "OPTIONAL" } else { "ONE" };
+                vec![
+                    ("message", message.as_str().into()),
+                    ("cardinality", cardinality.into()),
+                ]
+            }
+            E::EmitsTuple { message, count } => {
+                vec![
+                    ("message", message.as_str().into()),
+                    ("count", (*count).into()),
+                ]
+            }
+            E::RefusalChoiceName {
+                message,
+                name,
+                command,
+            } => texts![message, name, command],
+            E::InputMismatch {
+                path,
+                message,
+                expected,
+                found,
+            } => texts![path, message, expected, found],
+            E::PythonNoDomain { domain } => texts![domain],
+            E::AppConfig { cause } => vec![("cause", Arg::nested(cause))],
+            E::AppRefused { lints } => {
+                vec![(
+                    "count",
+                    i64::try_from(lints.len()).unwrap_or(i64::MAX).into(),
+                )]
+            }
+            E::AppDomainPath { path } => texts![path],
+            E::RefusalStatusMisplaced { value } => texts![value],
         }
     }
 }
 
 /// One value of every error this crate defines, for the catalog test.
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
-    shape_samples()
+    protos_samples()
         .into_iter()
-        .chain(rule_samples())
+        .chain(use_samples())
+        .map(|e| Box::new(e) as Box<dyn Diagnostic>)
         .chain(crate::app::app_lint_samples())
         .collect()
 }
 
-/// One value of every [`Concern::Shape`] error.
-fn shape_samples() -> Vec<Box<dyn Diagnostic>> {
-    let s = || "x".to_string();
+/// A text sample: the field's own name, so a message filling one arg's
+/// place with another's reads wrong.
+pub(crate) fn text(field: &str) -> String {
+    field.to_string()
+}
+
+/// One value of every refusal of the protos themselves: a descriptor set
+/// this generator cannot read or map, or markup breaking a rule of the
+/// generated domain layer.
+fn protos_samples() -> Vec<CodegenError> {
+    use CodegenError as E;
     vec![
-        Box::new(CodegenError::Descriptors { detail: s() }),
-        Box::new(CodegenError::FileNotInSet { file: s() }),
-        Box::new(CodegenError::UnknownComponent {
-            message: s(),
-            component: s(),
-        }),
-        Box::new(CodegenError::UnknownEmit {
-            command: s(),
-            event: s(),
-        }),
-        Box::new(CodegenError::UnknownRefusal {
-            command: s(),
-            refusal: s(),
-        }),
-        Box::new(CodegenError::UnownedDomain {
-            policy: s(),
-            domain: s(),
-        }),
-        Box::new(CodegenError::UnsupportedKind {
-            component: s(),
+        E::Descriptors {
+            detail: text("detail"),
+        },
+        E::FileNotInSet { file: text("file") },
+        E::UnknownComponent {
+            message: text("message"),
+            component: text("component"),
+        },
+        E::UnknownEmit {
+            command: text("command"),
+            event: text("event"),
+        },
+        E::UnknownRefusal {
+            command: text("command"),
+            refusal: text("refusal"),
+        },
+        E::UnownedDomain {
+            policy: text("policy"),
+            domain: text("domain"),
+        },
+        E::UnsupportedKind {
+            component: text("component"),
             kind: 4,
-        }),
-        Box::new(CodegenError::Commutative { component: s() }),
-        Box::new(CodegenError::Oneof {
-            message: s(),
-            oneof: s(),
-        }),
-        Box::new(CodegenError::NestedType {
-            message: s(),
-            nested: s(),
-        }),
-        Box::new(CodegenError::WellKnownType {
-            message: s(),
-            field: s(),
-            type_name: s(),
-        }),
-        Box::new(CodegenError::EnumZero {
-            enum_name: s(),
-            value: s(),
-        }),
-        Box::new(CodegenError::NoWirePath { package: s() }),
+        },
+        E::Commutative {
+            component: text("component"),
+        },
+        E::Oneof {
+            message: text("message"),
+            oneof: text("oneof"),
+        },
+        E::NestedType {
+            message: text("message"),
+            nested: text("nested"),
+        },
+        E::WellKnownType {
+            message: text("message"),
+            field: text("field"),
+            type_name: text("type_name"),
+        },
+        E::EnumZero {
+            enum_name: text("enum_name"),
+            value: text("value"),
+        },
+        E::NoWirePath {
+            package: text("package"),
+        },
+        E::RefusesOnFact {
+            message: text("message"),
+        },
+        E::ReservedName {
+            message: text("message"),
+            name: text("name"),
+        },
+        E::ComponentName {
+            component: text("component"),
+            name: text("name"),
+        },
+        E::InputDomainsOnNonProjector {
+            component: text("component"),
+        },
+        E::InputDomainsWithInputDomain {
+            component: text("component"),
+        },
+        E::DuplicateSource {
+            component: text("component"),
+            domain: text("domain"),
+        },
+        E::UnlistedSource {
+            component: text("component"),
+            event: text("event"),
+            domain: text("domain"),
+        },
+        E::UnprojectedSource {
+            component: text("component"),
+            domain: text("domain"),
+        },
+        E::CardinalityWithoutEmits {
+            message: text("message"),
+            optional: true,
+        },
+        E::EmitsTuple {
+            message: text("message"),
+            count: 5,
+        },
+        E::RefusalChoiceName {
+            message: text("message"),
+            name: text("name"),
+            command: text("command"),
+        },
+        E::RefusalStatusMisplaced {
+            value: text("value"),
+        },
     ]
 }
 
-/// One value of every other error, a [`Concern::Markup`] or
-/// [`Concern::Use`] one.
-fn rule_samples() -> Vec<Box<dyn Diagnostic>> {
-    let s = || "x".to_string();
+/// One value of every refusal of a use of the protos: a translate
+/// selection, a user's file, the Python domain asked for, an
+/// application's host config or manifest.
+fn use_samples() -> Vec<CodegenError> {
+    use CodegenError as E;
     vec![
-        Box::new(CodegenError::TranslateUnknownPolicy { policy: s() }),
-        Box::new(CodegenError::TranslateNotATargetCommand {
-            policy: s(),
-            command: s(),
-        }),
-        Box::new(CodegenError::TranslateNotASourceFact {
-            policy: s(),
-            fact: s(),
-        }),
-        Box::new(CodegenError::ScaffoldImplNotFound {
-            path: s(),
-            component: s(),
-        }),
-        Box::new(CodegenError::RefusesOnFact { message: s() }),
-        Box::new(CodegenError::TranslateNotAFact {
-            policy: s(),
-            fact: s(),
-        }),
-        Box::new(CodegenError::ComponentName {
-            component: s(),
-            name: s(),
-        }),
-        Box::new(CodegenError::InputDomainsOnNonProjector { component: s() }),
-        Box::new(CodegenError::InputDomainsWithInputDomain { component: s() }),
-        Box::new(CodegenError::DuplicateSource {
-            component: s(),
-            domain: s(),
-        }),
-        Box::new(CodegenError::UnlistedSource {
-            component: s(),
-            event: s(),
-            domain: s(),
-        }),
-        Box::new(CodegenError::UnprojectedSource {
-            component: s(),
-            domain: s(),
-        }),
-        Box::new(CodegenError::CardinalityWithoutEmits {
-            message: s(),
-            optional: true,
-        }),
-        Box::new(CodegenError::EmitsTuple {
-            message: s(),
-            count: 5,
-        }),
-        Box::new(CodegenError::RefusalChoiceName {
-            message: s(),
-            name: s(),
-            command: s(),
-        }),
-        Box::new(CodegenError::InputMismatch {
-            path: s(),
-            message: s(),
-            expected: s(),
-            found: s(),
-        }),
-        Box::new(CodegenError::PythonNoDomain { domain: s() }),
-        Box::new(CodegenError::ReservedName {
-            message: s(),
-            name: s(),
-        }),
-        Box::new(CodegenError::AppConfig {
+        E::TranslateUnknownPolicy {
+            policy: text("policy"),
+        },
+        E::TranslateNotATargetCommand {
+            policy: text("policy"),
+            command: text("command"),
+        },
+        E::TranslateNotASourceFact {
+            policy: text("policy"),
+            fact: text("fact"),
+        },
+        E::TranslateNotAFact {
+            policy: text("policy"),
+            fact: text("fact"),
+        },
+        E::ScaffoldImplNotFound {
+            path: text("path"),
+            component: text("component"),
+        },
+        E::InputMismatch {
+            path: text("path"),
+            message: text("message"),
+            expected: text("expected"),
+            found: text("found"),
+        },
+        E::PythonNoDomain {
+            domain: text("domain"),
+        },
+        E::AppConfig {
             cause: angzarr_diagnostic::Report::new("angzarr-yaml-load-failed-at")
                 .arg("kind", "angzarr-host-config")
                 .arg("source", "angzarr.yaml"),
-        }),
-        Box::new(CodegenError::AppRefused { lints: Vec::new() }),
-        Box::new(CodegenError::AppManifest { detail: s() }),
-        Box::new(CodegenError::AppDomainPath { path: s() }),
-        Box::new(CodegenError::RefusalStatusMisplaced { value: s() }),
+        },
+        E::AppRefused { lints: Vec::new() },
+        E::AppManifest {
+            detail: text("detail"),
+        },
+        E::AppDomainPath { path: text("path") },
     ]
+}
+
+/// `d` in English, its `Display`: its en-US message ([`crate::EN_US`]) with
+/// each `{ $arg }` its arg's value, a nested cause's its own `Display`. The
+/// English is written once, in the catalog; a code with no message there,
+/// or one naming an arg `d` lacks, is shown as its code and args.
+pub(crate) fn english(d: &dyn Diagnostic, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match filled(crate::EN_US, d) {
+        Some(text) => f.write_str(&text),
+        None => angzarr_diagnostic::display(d, f),
+    }
+}
+
+/// `d`'s message in `catalog`, one `id = text` a line, filled with its args;
+/// `None` when the catalog has no message of its code, or the message names
+/// an arg it lacks or leaves a `{` unclosed.
+fn filled(catalog: &str, d: &dyn Diagnostic) -> Option<String> {
+    let code = d.code();
+    let mut rest = catalog
+        .lines()
+        .find_map(|line| line.strip_prefix(code)?.strip_prefix(" = "))?;
+    let args = d.args();
+    let mut out = String::new();
+    while let Some((before, after)) = rest.split_once("{ $") {
+        let (name, after) = after.split_once(" }")?;
+        let (_, arg) = args.iter().find(|(n, _)| *n == name)?;
+        out.push_str(before);
+        match arg {
+            Arg::Int(n) => out.push_str(&n.to_string()),
+            Arg::Uint(n) => out.push_str(&n.to_string()),
+            Arg::Str(s) => out.push_str(s),
+            Arg::Nested(cause) => out.push_str(&cause.to_string()),
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fmt;
+
+    use angzarr_diagnostic::{Arg, Diagnostic, Report};
+
+    use super::{english, filled};
+
+    /// A report shown through [`english`].
+    #[derive(Debug)]
+    struct Shown(Report);
+
+    impl fmt::Display for Shown {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            english(self, f)
+        }
+    }
+
+    impl Diagnostic for Shown {
+        fn code(&self) -> &str {
+            self.0.code()
+        }
+
+        fn args(&self) -> Vec<(&str, Arg)> {
+            self.0.args()
+        }
+    }
+
+    const CATALOG: &str = "t-other = other\n\
+                           t-shown-more = not this one\n\
+                           t-shown = { $b } before { $a }: { $n }, { $u } and { $cause }.\n\
+                           t-absent = { $missing }\n\
+                           t-open = { $a\n";
+
+    #[test]
+    fn a_message_is_filled_by_arg_name_each_kind_of_arg_its_own_way() {
+        let cause = Report::new("t-cause").arg("k", "v w");
+        let shown = Report::new("t-shown")
+            .arg("a", "first")
+            .arg("b", "second")
+            .arg("n", -3i64)
+            .arg("u", 7u64)
+            .arg("cause", Arg::Nested(Box::new(cause)));
+        assert_eq!(
+            filled(CATALOG, &shown).as_deref(),
+            Some("second before first: -3, 7 and t-cause k=\"v w\".")
+        );
+    }
+
+    #[test]
+    fn no_message_of_the_code_an_absent_arg_or_an_open_place_fills_nothing() {
+        let a = |code: &'static str| Report::new(code).arg("a", "x");
+        assert_eq!(filled(CATALOG, &a("t-none")), None);
+        assert_eq!(filled(CATALOG, &a("t-absent")), None);
+        assert_eq!(filled(CATALOG, &a("t-open")), None);
+        assert_eq!(filled(CATALOG, &a("t-other")).as_deref(), Some("other"));
+    }
+
+    #[test]
+    fn english_with_no_message_is_the_code_and_args() {
+        let shown = Shown(Report::new("angzarr-codegen-none").arg("a", "x y"));
+        assert_eq!(shown.to_string(), "angzarr-codegen-none a=\"x y\"");
+        let known = Shown(Report::new("angzarr-codegen-file-not-in-set").arg("file", "a.proto"));
+        assert_eq!(known.to_string(), "a.proto is not in the descriptor set");
+    }
 }

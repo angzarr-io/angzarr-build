@@ -37,7 +37,7 @@ use angzarr_embedded_host_config::{
 use serde::Deserialize;
 
 use crate::common::snake;
-use crate::error::CodegenError;
+use crate::error::{CodegenError, english, text, texts};
 use crate::model::{self, Component, ComponentKind};
 use crate::scaffold::{Owner, ScaffoldFile};
 
@@ -293,35 +293,7 @@ pub enum AppLint {
 
 impl fmt::Display for AppLint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AppLint::UnknownComponent { name, kind } => {
-                write!(f, "the {kind} {name} is no component of the protos")
-            }
-            AppLint::DuplicateComponent { name } => {
-                write!(f, "the component {name} is listed more than once")
-            }
-            AppLint::UnlistedDomain { domain } => write!(
-                f,
-                "the protos declare the domain {domain}, which the config does not list"
-            ),
-            AppLint::PolicySourceAbsent { policy, domain } => write!(
-                f,
-                "the policy {policy} reads the domain {domain}, which no component of the application owns"
-            ),
-            AppLint::PolicyTargetAbsent { policy, domain } => write!(
-                f,
-                "the policy {policy} sends to the domain {domain}, which no component of the application owns; list it, remote if it runs elsewhere"
-            ),
-            AppLint::NotExposable { name, kind } => write!(
-                f,
-                "{name} is a {kind}, which cannot be exposed: only an aggregate is"
-            ),
-            AppLint::UnknownLanguage { name, language } => write!(
-                f,
-                "{name} is in {language}, which has no default launch; give it a launch"
-            ),
-            AppLint::EmptyLaunch { name } => write!(f, "{name}'s launch names no program"),
-        }
+        english(self, f)
     }
 }
 
@@ -340,53 +312,47 @@ impl Diagnostic for AppLint {
     }
 
     fn args(&self) -> Vec<(&'static str, Arg)> {
-        let s = |v: &String| Arg::from(v.as_str());
         match self {
             AppLint::UnknownComponent { name, kind } | AppLint::NotExposable { name, kind } => {
-                vec![("name", s(name)), ("kind", s(kind))]
+                texts![name, kind]
             }
-            AppLint::DuplicateComponent { name } | AppLint::EmptyLaunch { name } => {
-                vec![("name", s(name))]
-            }
-            AppLint::UnlistedDomain { domain } => vec![("domain", s(domain))],
+            AppLint::DuplicateComponent { name } | AppLint::EmptyLaunch { name } => texts![name],
+            AppLint::UnlistedDomain { domain } => texts![domain],
             AppLint::PolicySourceAbsent { policy, domain }
-            | AppLint::PolicyTargetAbsent { policy, domain } => {
-                vec![("policy", s(policy)), ("domain", s(domain))]
-            }
-            AppLint::UnknownLanguage { name, language } => {
-                vec![("name", s(name)), ("language", s(language))]
-            }
+            | AppLint::PolicyTargetAbsent { policy, domain } => texts![policy, domain],
+            AppLint::UnknownLanguage { name, language } => texts![name, language],
         }
     }
 }
 
 /// One value of every lint, for the catalog test.
 pub fn app_lint_samples() -> Vec<Box<dyn Diagnostic>> {
-    let s = || "x".to_string();
     vec![
         Box::new(AppLint::UnknownComponent {
-            name: s(),
-            kind: s(),
+            name: text("name"),
+            kind: text("kind"),
         }),
-        Box::new(AppLint::DuplicateComponent { name: s() }),
-        Box::new(AppLint::UnlistedDomain { domain: s() }),
+        Box::new(AppLint::DuplicateComponent { name: text("name") }),
+        Box::new(AppLint::UnlistedDomain {
+            domain: text("domain"),
+        }),
         Box::new(AppLint::PolicySourceAbsent {
-            policy: s(),
-            domain: s(),
+            policy: text("policy"),
+            domain: text("domain"),
         }),
         Box::new(AppLint::PolicyTargetAbsent {
-            policy: s(),
-            domain: s(),
+            policy: text("policy"),
+            domain: text("domain"),
         }),
         Box::new(AppLint::NotExposable {
-            name: s(),
-            kind: s(),
+            name: text("name"),
+            kind: text("kind"),
         }),
         Box::new(AppLint::UnknownLanguage {
-            name: s(),
-            language: s(),
+            name: text("name"),
+            language: text("language"),
         }),
-        Box::new(AppLint::EmptyLaunch { name: s() }),
+        Box::new(AppLint::EmptyLaunch { name: text("name") }),
     ]
 }
 
