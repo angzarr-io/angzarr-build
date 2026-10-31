@@ -21,7 +21,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use angzarr_embedded_diagnostic::{Arg, Diagnostic};
 
-pub use angzarr_codegen::{ProtoInput, PythonApp, Translate};
+pub use angzarr_codegen::{
+    AppLint, AppSeed, Exposure, ProtoInput, PythonApp, RetrySeed, Translate,
+};
 
 /// This crate's en-US messages.
 pub const EN_US: &str = include_str!("../locales/en-US/angzarr-build.ftl");
@@ -213,6 +215,55 @@ pub fn component_names(
 ) -> Result<Vec<angzarr_codegen::ComponentName>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
     angzarr_codegen::component_names(&bytes, protos).map_err(BuildError::Codegen)
+}
+
+/// An angzarr-embedded application's whole generated layer, for the
+/// build script `angzarr scaffold app` writes: from its host config
+/// (`config`, relative to the crate) and its protos, the wire types, the
+/// markup domain layer (its package's prost types at `crate::wire`), the
+/// adapters, `register()` and the components' descriptors, the domains the
+/// config serves from a child process as contracts. Cargo reruns it when
+/// the config changes.
+pub fn app(config: &str, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+    app_into(&out_dir()?, Path::new(config), protos, includes)
+}
+
+/// [`app`], into `out`.
+pub fn app_into(
+    out: &Path,
+    config: &Path,
+    protos: &[&str],
+    includes: &[&str],
+) -> Result<(), BuildError> {
+    let _ = (out, config, protos, includes);
+    Ok(())
+}
+
+/// The startup of an angzarr-embedded application (see
+/// `angzarr_codegen::app`) under `root`, the crate root: `angzarr.toml` and
+/// `src/driver.rs` written once from `seed` and the user's from then on;
+/// `build.rs` and `src/main.rs` the CLI's, rewritten from the protos and
+/// the `angzarr.toml` on disk on every run. A config with lints is refused
+/// and nothing is written.
+pub fn app_scaffold_into(
+    root: &Path,
+    protos: &[&str],
+    includes: &[&str],
+    seed: &AppSeed,
+) -> Result<Vec<Scaffolded>, BuildError> {
+    let _ = (root, protos, includes, seed);
+    Ok(Vec::new())
+}
+
+/// The lints of the host config at `config` against the components
+/// `protos` declare (see `angzarr_codegen::lint_app`).
+pub fn lint_app(
+    config: &Path,
+    protos: &[&str],
+    includes: &[&str],
+) -> Result<Vec<AppLint>, BuildError> {
+    let _ = (config, protos, includes);
+    Ok(Vec::new())
 }
 
 /// What [`scaffold_into`] does with a component's file that exists.

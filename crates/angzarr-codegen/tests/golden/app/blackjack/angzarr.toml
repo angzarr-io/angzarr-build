@@ -1,0 +1,18 @@
+# The host config of blackjack on angzarr-embedded: every domain, the language it
+# is written in and, for one served by a child process, how it is launched.
+# Written once by `angzarr scaffold app` and yours from then on: each run
+# regenerates build.rs and src/main.rs from it, and `angzarr lint app`
+# checks it against the protos.
+
+[[component]]
+name = "table"
+language = "rust"
+
+[[component]]
+name = "player"
+language = "python"
+dir = "player"
+entry = ["angzarr-player"]
+
+[store]
+in_memory = true
