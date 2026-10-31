@@ -6,9 +6,11 @@
 // are the user's and are never touched.
 
 #[allow(unused_imports)]
-use ::angzarr_embedded::next::markup::{Context, Emit, Record, Refuses};
+use ::angzarr_embedded::next::markup::{Context, Emit, Record, Refuses, Report};
 #[allow(unused_imports)]
-use ::angzarr_embedded_macros::{aggregate, applies, handles_cmd, handles_fact};
+use ::angzarr_embedded_macros::{
+    aggregate, applies, handles_cmd, handles_fact, projector, projects,
+};
 use crate::domain::*;
 /// `kinds.v1.LedgerState`, delegating to `crate::ledger_state::LedgerState`.
 #[derive(Clone, Debug, Default)]
@@ -180,5 +182,51 @@ impl LedgerState {
     #[applies(Closed)]
     fn closed(&mut self, event: Closed) {
         crate::ledger_state::LedgerState::apply_closed(&mut self.0, &event);
+    }
+}
+/// `kinds.v1.AuditState`, delegating to `crate::audit_state::AuditState`.
+#[derive(Clone, Debug, Default)]
+pub struct AuditState(pub crate::audit_state_impl::AuditStateImpl);
+impl std::ops::Deref for AuditState {
+    type Target = crate::audit_state_impl::AuditStateImpl;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+#[aggregate(domain = "audit")]
+impl AuditState {
+    #[handles_cmd(Audit)]
+    fn audit(&self, cmd: Audit, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+        crate::audit_state::AuditState::audit(&self.0, &cmd, ctx).map(Emit::of)
+    }
+    #[applies(Audited)]
+    fn audited(&mut self, event: Audited) {
+        crate::audit_state::AuditState::apply_audited(&mut self.0, &event);
+    }
+}
+/// `kinds.v1.LedgerView`, delegating to `crate::ledger_view::LedgerView`.
+#[derive(Clone, Debug, Default)]
+pub struct LedgerView(pub crate::ledger_view_impl::LedgerViewImpl);
+#[projector(name = "projector-ledger-view", sources = ["ledger", "audit"])]
+impl LedgerView {
+    #[projects(Posted)]
+    async fn posted(
+        &mut self,
+        event: &Posted,
+        ctx: &ProjectionContext,
+    ) -> Result<(), Report> {
+        crate::ledger_view::LedgerView::posted(&mut self.0, event, ctx)
+            .await
+            .map_err(|bug| Report::of(&bug))
+    }
+    #[projects(Audited)]
+    async fn audited(
+        &mut self,
+        event: &Audited,
+        ctx: &ProjectionContext,
+    ) -> Result<(), Report> {
+        crate::ledger_view::LedgerView::audited(&mut self.0, event, ctx)
+            .await
+            .map_err(|bug| Report::of(&bug))
     }
 }

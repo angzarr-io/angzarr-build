@@ -1,0 +1,27 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+}
+
+message Poked {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+  option (io.angzarr.v1.event) = {
+    component: "bad.v1.ThingView"
+    domain: "things"
+  };
+}
+
+// input_domains on a policy, which has exactly one source.
+message ThingView {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_POLICY
+    input_domains: "things"
+    output_domain: "things"
+  };
+}

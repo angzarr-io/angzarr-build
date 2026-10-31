@@ -1,0 +1,25 @@
+# The kinds app's config: every component in process, each listed (the
+# generated ones by their component names, the hand-written projector by
+# its own), the store in memory.
+[[component]]
+name = "ledger"
+language = "rust"
+kind = "domain"
+
+[[component]]
+name = "audit"
+language = "rust"
+kind = "domain"
+
+[[component]]
+name = "projector-ledger-view"
+language = "rust"
+kind = "projector"
+
+[[component]]
+name = "projector-tally"
+language = "rust"
+kind = "projector"
+
+[store]
+in_memory = true

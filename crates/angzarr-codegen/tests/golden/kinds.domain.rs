@@ -480,6 +480,32 @@ impl TryFrom<crate::wire::Closed> for Closed {
         Ok(Closed {})
     }
 }
+#[derive(Clone, Debug, PartialEq)]
+pub struct Audit {}
+impl From<Audit> for crate::wire::Audit {
+    fn from(_value: Audit) -> Self {
+        crate::wire::Audit {}
+    }
+}
+impl TryFrom<crate::wire::Audit> for Audit {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Audit) -> Result<Self, Self::Error> {
+        Ok(Audit {})
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct Audited {}
+impl From<Audited> for crate::wire::Audited {
+    fn from(_value: Audited) -> Self {
+        crate::wire::Audited {}
+    }
+}
+impl TryFrom<crate::wire::Audited> for Audited {
+    type Error = ::angzarr_embedded::next::WireError;
+    fn try_from(_value: crate::wire::Audited) -> Result<Self, Self::Error> {
+        Ok(Audited {})
+    }
+}
 /// Why a command is rejected: a business "no", never a fault, the
 /// command refused under a business status (this one crosses as
 /// FAILED_PRECONDITION) and the issuing policy's refusal handler
@@ -527,6 +553,10 @@ pub use ::angzarr_embedded::next::markup::PolicyContext;
 /// The refused command's context, whole, as its target's handler
 /// was handed it: what a `<command>_refused` method reads.
 pub use ::angzarr_embedded::next::markup::CommandContext;
+/// What a projector's handler reads besides the event: the stream
+/// it is from (its source domain and root), its sequence there and
+/// when it was recorded.
+pub use ::angzarr_embedded::next::markup::ProjectionContext;
 /// What a command handler fails with, one of four classes:
 /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
 /// a [`BusinessStatus`], FAILED_PRECONDITION unless `with_status`
@@ -661,6 +691,26 @@ impl From<Cleared> for LedgerStateEvent {
 impl From<Closed> for LedgerStateEvent {
     fn from(value: Closed) -> Self {
         LedgerStateEvent::Closed(value)
+    }
+}
+/// A command of AuditState, as a policy sends it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuditStateCommand {
+    Audit(Audit),
+}
+impl From<Audit> for AuditStateCommand {
+    fn from(value: Audit) -> Self {
+        AuditStateCommand::Audit(value)
+    }
+}
+/// An event of AuditState, for a decision recording any number of them.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuditStateEvent {
+    Audited(Audited),
+}
+impl From<Audited> for AuditStateEvent {
+    fn from(value: Audited) -> Self {
+        AuditStateEvent::Audited(value)
     }
 }
 /// A bug of the handler refusing with this, as it fails:
@@ -1181,5 +1231,27 @@ impl ::angzarr_embedded::next::markup::DomainMessage for Closed {
         wire: crate::wire::Closed,
     ) -> Result<Self, ::angzarr_embedded::next::WireError> {
         Closed::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Audit {
+    type Wire = crate::wire::Audit;
+    fn to_wire(&self) -> crate::wire::Audit {
+        crate::wire::Audit::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Audit,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Audit::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::next::markup::DomainMessage for Audited {
+    type Wire = crate::wire::Audited;
+    fn to_wire(&self) -> crate::wire::Audited {
+        crate::wire::Audited::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::Audited,
+    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+        Audited::try_from(wire)
     }
 }

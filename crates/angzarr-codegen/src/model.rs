@@ -72,14 +72,16 @@ impl ComponentKind {
     }
 }
 
-/// The kinds the markup (scaffold, register, markup domain layer) emits.
-pub(crate) const MARKUP_KINDS: &[ComponentKind] = &[
+/// The write side's kinds: what the Python scaffold emits, and what owns
+/// a policy's domains.
+pub(crate) const WRITE_KINDS: &[ComponentKind] = &[
     ComponentKind::Aggregate,
     ComponentKind::Policy,
     ComponentKind::ProcessManager,
 ];
-/// The kinds a descriptor is generated for: every kind.
-pub(crate) const DESCRIPTOR_KINDS: &[ComponentKind] = &[
+/// Every kind: what the Rust markup (scaffold, adapters, register, domain
+/// layer) and the descriptors are generated for.
+pub(crate) const ALL_KINDS: &[ComponentKind] = &[
     ComponentKind::Aggregate,
     ComponentKind::Policy,
     ComponentKind::ProcessManager,
@@ -138,8 +140,9 @@ pub(crate) struct Component {
     /// An aggregate's or a process manager's events (folded), or the events
     /// a policy reacts to.
     pub events: Vec<MessageDescriptor>,
-    /// The source domains its `(event)` entries name, each once, in order:
-    /// a projector's subscriptions when it names no `input_domain`.
+    /// The source domains its `(event)` entries name, each once, in order;
+    /// a projector's are its `input_domains` (or its one `input_domain`)
+    /// when it lists them: its subscriptions.
     pub sources: Vec<String>,
     /// The conflict resolutions its state's `(state)` option lists.
     pub resolutions: Vec<i32>,
@@ -164,14 +167,14 @@ pub(crate) struct Package {
 }
 
 /// The markup domain layer's packages by name: every type the inputs,
-/// events and refusals of each aggregate and process manager reach. The
-/// state is the implementation's (its wire type), and a policy holds no
-/// domain type.
+/// events and refusals of each aggregate and process manager reach, and the
+/// events each projector projects. The state is the implementation's (its
+/// wire type), and a policy holds no domain type.
 pub(crate) fn build_markup(
     descriptor_set: &[u8],
     files: &[&str],
 ) -> Result<BTreeMap<String, Package>, CodegenError> {
-    let components = components(descriptor_set, files, MARKUP_KINDS)?
+    let components = components(descriptor_set, files, ALL_KINDS)?
         .into_iter()
         .filter(|c| c.kind != ComponentKind::Policy)
         .collect();
@@ -215,7 +218,8 @@ pub(crate) fn build_markup(
 
 /// The names the generated domain layers give the runtime's types, which no
 /// domain type may take: a handler's `Context`, a policy reaction's
-/// `PolicyContext`, a refused command's `CommandContext`, the two classes
+/// `PolicyContext`, a refused command's `CommandContext`, a projector's
+/// `ProjectionContext`, the two classes
 /// a handler fails with, the business `Rejection` and the defect `Bug`, and
 /// Rust's `Failed` of either, with its `BusinessStatus` and its
 /// `RetryableStatus`.
@@ -223,6 +227,7 @@ pub(crate) const RESERVED: &[&str] = &[
     "Context",
     "PolicyContext",
     "CommandContext",
+    "ProjectionContext",
     "Rejection",
     "Bug",
     "Failed",
@@ -256,7 +261,7 @@ pub(crate) fn pool_components(descriptor_set: &[u8]) -> Result<Vec<Component>, C
     })?;
     let names: Vec<String> = pool.files().map(|f| f.name().to_string()).collect();
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
-    components(descriptor_set, &names, MARKUP_KINDS)
+    components(descriptor_set, &names, WRITE_KINDS)
 }
 
 /// `components` grouped by their anchor's package, with every type `roots`
@@ -330,6 +335,9 @@ pub(crate) fn components(
         .map(|v| v.number());
 
     let mut components: Vec<Component> = Vec::new();
+    // Each component's listed sources (a projector's input_domains or
+    // input_domain), by index: what its (event) entries are held to.
+    let mut listed: Vec<Option<Vec<String>>> = Vec::new();
     for message in &messages {
         let options = message.options();
         if !options.has_extension(&component_ext) {
@@ -372,6 +380,7 @@ pub(crate) fn components(
             string_field(&declared, "input_domain"),
             string_field(&declared, "output_domain"),
         );
+        let input_domains = projector_sources(message, kind, &declared, &input_domain)?;
         let component_name = crate::names::unchecked(&crate::names::NameOf {
             kind: kind.name_kind(),
             component_name: &string_field(&declared, "component_name"),
@@ -396,12 +405,14 @@ pub(crate) fn components(
             output_domain,
             inputs: Vec::new(),
             events: Vec::new(),
-            sources: Vec::new(),
+            sources: input_domains.clone().unwrap_or_default(),
             resolutions,
         });
+        listed.push(input_domains);
     }
 
     // Events first, so a command's `emits` can be checked against them.
+    let mut seen: Vec<Vec<String>> = vec![Vec::new(); components.len()];
     if let Some(event_ext) = &event_ext {
         for message in &declaring {
             let options = message.options();
@@ -415,20 +426,50 @@ pub(crate) fn components(
                 let named = string_field(consumer, "component");
                 // A consumer outside the set is a reference to a component
                 // generated elsewhere (decision 14.50), skipped.
-                let Some(component) = components
-                    .iter_mut()
-                    .find(|c| c.anchor.full_name() == named)
+                let Some(index) = components
+                    .iter()
+                    .position(|c| c.anchor.full_name() == named)
                 else {
                     continue;
                 };
+                let component = &mut components[index];
                 if !component.events.contains(message) {
                     component.events.push(message.clone());
                 }
                 let source = string_field(consumer, "domain");
-                if !source.is_empty() && !component.sources.contains(&source) {
-                    component.sources.push(source);
+                match &listed[index] {
+                    // A projector listing its sources: each entry names one
+                    // of them (an entry of one input_domain may leave it
+                    // unset).
+                    Some(list) => {
+                        let unset_of_one = source.is_empty() && component.input_domain == list[0];
+                        if !unset_of_one && !list.contains(&source) {
+                            return Err(CodegenError::UnlistedSource {
+                                component: component.anchor.full_name().to_string(),
+                                event: message.full_name().to_string(),
+                                domain: source,
+                            });
+                        }
+                        seen[index].push(source);
+                    }
+                    None => {
+                        if !source.is_empty() && !component.sources.contains(&source) {
+                            component.sources.push(source);
+                        }
+                    }
                 }
             }
+        }
+    }
+    for ((component, list), seen) in components.iter().zip(&listed).zip(&seen) {
+        let Some(list) = list.as_ref().filter(|_| component.input_domain.is_empty()) else {
+            continue;
+        };
+        if let Some(unnamed) = list.iter().find(|d| !seen.contains(d)) {
+            return Err(CodegenError::UnprojectedSource {
+                component: component.anchor.full_name().to_string(),
+                domain: unnamed.clone(),
+            });
         }
     }
     if let Some(command_ext) = &command_ext {
@@ -508,6 +549,49 @@ pub(crate) fn components(
         }
     }
     Ok(components)
+}
+
+/// A projector's listed sources (decision 14.50): its `input_domains`, or
+/// its one `input_domain`; `None` for a projector listing neither (its
+/// entries name its sources) and for every other kind. Refused: both set,
+/// a domain listed twice, and `input_domains` on another kind.
+fn projector_sources(
+    message: &MessageDescriptor,
+    kind: ComponentKind,
+    declared: &DynamicMessage,
+    input_domain: &str,
+) -> Result<Option<Vec<String>>, CodegenError> {
+    let component = || message.full_name().to_string();
+    let domains: Vec<String> = list_field(declared, "input_domains")
+        .into_iter()
+        .filter_map(|v| match v {
+            Value::String(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    if !domains.is_empty() && kind != ComponentKind::Projector {
+        return Err(CodegenError::InputDomainsOnNonProjector {
+            component: component(),
+        });
+    }
+    if !domains.is_empty() && !input_domain.is_empty() {
+        return Err(CodegenError::InputDomainsWithInputDomain {
+            component: component(),
+        });
+    }
+    for (i, domain) in domains.iter().enumerate() {
+        if domains[..i].contains(domain) {
+            return Err(CodegenError::DuplicateSource {
+                component: component(),
+                domain: domain.clone(),
+            });
+        }
+    }
+    Ok(match (kind, domains.is_empty(), input_domain.is_empty()) {
+        (ComponentKind::Projector, false, _) => Some(domains),
+        (ComponentKind::Projector, true, false) => Some(vec![input_domain.to_string()]),
+        _ => None,
+    })
 }
 
 /// The component a `(command)` names: `Some` when it is generated here,

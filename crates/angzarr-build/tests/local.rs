@@ -137,11 +137,15 @@ fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
 }
 
 /// `tests/local/kinds-app`: the generated domain layer of a typed refusal
-/// of each field kind and a command refusing several, with its adapter,
-/// built against angzarr-embedded and run: each refusal's code and args.
+/// of each field kind and a command refusing several, inputs of each emits
+/// cardinality and a projector of two domains, with their adapters, built
+/// against angzarr-embedded and run: each refusal's code and args, then
+/// commands whose events the generated projector and one written by hand
+/// (registered through angzarr-embedded's public API beside the generated
+/// register()) project.
 #[test]
 #[ignore = "builds angzarr-embedded and its dependencies: slow; run with --ignored"]
-fn test_typed_refusals_carry_their_reason_key_and_their_set_fields() {
+fn test_the_kinds_app_refuses_records_and_projects_as_generated() {
     let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/local/kinds-app");
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/kinds-app");
     let out = Command::new(env!("CARGO"))
@@ -165,7 +169,14 @@ fn test_typed_refusals_carry_their_reason_key_and_their_set_fields() {
             "kinds-v1-listed ",
             "kinds-v1-elsewhere why=AWAY",
             "kinds-v1-mislabeled reason=LATE",
-            "registered ledger",
+            // Open: Posted and Noted; the view projects Posted only.
+            "view: Posted from ledger (1)",
+            "tally: 2 events from ledger",
+            // Batch: Noted then Posted, one step each.
+            "view: Posted from ledger (2)",
+            "tally: 2 events from ledger",
+            // Audit, the view's other source.
+            "view: Audited from audit (3)",
             "",
         ]
         .join("\n")

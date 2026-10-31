@@ -23,7 +23,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::error::CodegenError;
-use crate::model::{self, Cardinality, Component, ComponentKind, Input, MARKUP_KINDS};
+use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Input};
 use crate::rust::{RUNTIME, ident, next, refusal_choice_name, runtime_macros, snake};
 use crate::{Generated, generate};
 
@@ -74,7 +74,7 @@ pub fn scaffold(
     files: &[&str],
     translate: &[Translate],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
-    let components = model::components(descriptor_set, files, MARKUP_KINDS)?;
+    let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let pool = model::pool_components(descriptor_set)?;
     for selection in translate {
         check_translate(&pool, selection)?;
@@ -153,27 +153,39 @@ struct Method {
     /// `(param, type)`, after the receiver.
     params: Vec<(String, String)>,
     output: Option<String>,
+    /// An async method's output as its implementation's `async fn` returns
+    /// it, the interface's `output` being the future's
+    /// (`impl Future<Output = ..> + Send`).
+    awaited: Option<String>,
 }
 
 impl Method {
     /// The signature as rustfmt lays it out at an indent of 4: on one line
-    /// when it fits in 100 columns, else one parameter a line. `params`
-    /// names the parameters (prefixed `_` in an implementation).
-    fn signature(&self, prefix: &str, end: &str) -> String {
-        let output = self
-            .output
-            .as_ref()
-            .map(|o| format!(" -> {o}"))
-            .unwrap_or_default();
+    /// when it fits in 100 columns, else one parameter a line. `prefix`
+    /// prefixes the parameters (`_` in an implementation, which writes an
+    /// async method as an `async fn`: `implementation`).
+    fn signature(&self, prefix: &str, end: &str, implementation: bool) -> String {
+        let (asyncness, output) = match (&self.awaited, implementation) {
+            (Some(awaited), true) => ("async ", Some(awaited)),
+            _ => ("", self.output.as_ref()),
+        };
+        let output = output.map(|o| format!(" -> {o}")).unwrap_or_default();
         let params: Vec<String> = std::iter::once(self.receiver.to_string())
             .chain(self.params.iter().map(|(p, t)| format!("{prefix}{p}: {t}")))
             .collect();
-        let line = format!("    fn {}({}){output}{end}", self.name, params.join(", "));
+        let line = format!(
+            "    {asyncness}fn {}({}){output}{end}",
+            self.name,
+            params.join(", ")
+        );
         if line.len() <= MAX_WIDTH {
             return line;
         }
         let params: String = params.iter().map(|p| format!("        {p},\n")).collect();
-        format!("    fn {}(\n{params}    ){output}{end}", self.name)
+        format!(
+            "    {asyncness}fn {}(\n{params}    ){output}{end}",
+            self.name
+        )
     }
 }
 
@@ -209,6 +221,23 @@ fn interface_methods(
     translate: &[&Translate],
 ) -> Result<Vec<Method>, CodegenError> {
     let mut methods = Vec::new();
+    if component.kind == ComponentKind::Projector {
+        for event in &component.events {
+            methods.push(Method {
+                name: method(event.name()),
+                receiver: "&mut self",
+                params: vec![
+                    ("event".to_string(), format!("&{}", event.name())),
+                    ("ctx".to_string(), "&ProjectionContext".to_string()),
+                ],
+                output: Some(
+                    "impl std::future::Future<Output = Result<(), Bug>> + Send".to_string(),
+                ),
+                awaited: Some("Result<(), Bug>".to_string()),
+            });
+        }
+        return Ok(methods);
+    }
     if component.kind == ComponentKind::Policy {
         let target =
             owner(pool, &component.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
@@ -228,6 +257,7 @@ fn interface_methods(
                     "Result<Vec<(Vec<u8>, {}Command)>, Bug>",
                     target.name
                 )),
+                awaited: None,
             });
         }
         for selection in translate {
@@ -250,6 +280,7 @@ fn interface_methods(
                 receiver: "&self",
                 params,
                 output: Some(format!("Result<{fact}, Bug>")),
+                awaited: None,
             });
         }
         return Ok(methods);
@@ -266,6 +297,7 @@ fn interface_methods(
                     ("ctx".to_string(), "&Context".to_string()),
                 ],
                 output: Some(out),
+                awaited: None,
             });
             continue;
         }
@@ -282,6 +314,7 @@ fn interface_methods(
                 ("ctx".to_string(), "&Context".to_string()),
             ],
             output: Some(format!("Result<{out}, {error}>")),
+            awaited: None,
         });
     }
     for event in &component.events {
@@ -290,6 +323,7 @@ fn interface_methods(
             receiver: "&mut self",
             params: vec![("event".to_string(), format!("&{}", event.name()))],
             output: None,
+            awaited: None,
         });
     }
     Ok(methods)
@@ -298,7 +332,16 @@ fn interface_methods(
 fn interface_source(component: &Component, methods: &[Method]) -> String {
     let name = &component.name;
     let anchor = component.anchor.full_name();
-    let mut out = if component.kind == ComponentKind::Policy {
+    let mut out = if component.kind == ComponentKind::Projector {
+        format!(
+            "//! {name}: the interface of `{anchor}`, written once by\n\
+             //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
+             //! methods it lacks. One async method per projected event, of any of its\n\
+             //! source domains (`ctx.stream()` says which), returning its `Bug` when\n\
+             //! the projection fails. The generated adapter\n\
+             //! (`crate::adapters::{name}`) carries the markup.\n\n"
+        )
+    } else if component.kind == ComponentKind::Policy {
         format!(
             "//! {name}: the interface of `{anchor}`, written once by\n\
              //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
@@ -321,7 +364,7 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
     out.push_str(&format!("pub trait {name} {{\n"));
     let body: Vec<String> = methods
         .iter()
-        .map(|m| format!("{}\n", m.signature("", ";")))
+        .map(|m| format!("{}\n", m.signature("", ";", false)))
         .collect();
     out.push_str(&body.join("\n"));
     out.push_str("}\n");
@@ -346,6 +389,13 @@ fn impl_source(component: &Component, methods: &[Method]) -> String {
         out.push_str(&format!(
             "#[derive(Clone, Debug, Default)]\npub struct {name}Impl;\n\n"
         ));
+    } else if component.kind == ComponentKind::Projector {
+        out.push_str(&format!(
+            "/// The projection the methods update.\n\
+             #[derive(Clone, Debug, Default)]\n\
+             pub struct {name}Impl {{\n    pub state: crate::wire::{},\n}}\n\n",
+            component.anchor.name()
+        ));
     } else {
         out.push_str(&format!(
             "/// The state the `apply_` methods fold.\n\
@@ -357,7 +407,12 @@ fn impl_source(component: &Component, methods: &[Method]) -> String {
     out.push_str(&format!("impl {name} for {name}Impl {{\n"));
     let body: Vec<String> = methods
         .iter()
-        .map(|m| format!("{}\n        todo!()\n    }}\n", m.signature("_", " {")))
+        .map(|m| {
+            format!(
+                "{}\n        todo!()\n    }}\n",
+                m.signature("_", " {", true)
+            )
+        })
         .collect();
     out.push_str(&body.join("\n"));
     out.push_str("}\n");
@@ -634,7 +689,7 @@ pub fn adapters(
     remote: &[&str],
     interface: &dyn Fn(&str) -> Option<String>,
 ) -> Result<String, CodegenError> {
-    let components = model::components(descriptor_set, files, MARKUP_KINDS)?;
+    let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let next = next();
     let mut items = TokenStream::new();
     let mut markup = vec!["Context", "Emit"];
@@ -643,6 +698,11 @@ pub fn adapters(
     for component in application(&components) {
         let is_remote = remote.contains(&component.domain.as_str());
         let tokens = match component.kind {
+            ComponentKind::Projector => {
+                markup.push("Report");
+                macros.extend(["projector", "projects"]);
+                projector_adapter(component)
+            }
             ComponentKind::Policy => {
                 has_policy = true;
                 markup.extend(["Commands", "PolicyContext"]);
@@ -1112,6 +1172,40 @@ fn policy_adapter(
     }
 }
 
+fn projector_adapter(component: &Component) -> TokenStream {
+    let name = ident(&component.name);
+    let (interface, implementation) = user_paths(component);
+    let doc = format!(
+        " `{}`, delegating to `{}`.",
+        component.anchor.full_name(),
+        interface.to_string().replace(' ', "")
+    );
+    let projector_name = &component.component_name;
+    let sources = &component.sources;
+    let methods = component.events.iter().map(|event| {
+        let ty = ident(event.name());
+        let m = format_ident!("{}", method(event.name()));
+        quote! {
+            #[projects(#ty)]
+            async fn #m(&mut self, event: &#ty, ctx: &ProjectionContext) -> Result<(), Report> {
+                #interface::#m(&mut self.0, event, ctx)
+                    .await
+                    .map_err(|bug| Report::of(&bug))
+            }
+        }
+    });
+    quote! {
+        #[doc = #doc]
+        #[derive(Clone, Debug, Default)]
+        pub struct #name(pub #implementation);
+
+        #[projector(name = #projector_name, sources = [#(#sources),*])]
+        impl #name {
+            #(#methods)*
+        }
+    }
+}
+
 /// The generated `register(&mut Registry)`: every adapter of the
 /// application declared in `files` registered with the runtime, the
 /// `remote` domains (served by a child process) left to the host.
@@ -1120,7 +1214,7 @@ pub fn register(
     files: &[&str],
     remote: &[&str],
 ) -> Result<String, CodegenError> {
-    let components = model::components(descriptor_set, files, MARKUP_KINDS)?;
+    let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let registrations = application(&components)
         .into_iter()
         .filter(|c| c.kind == ComponentKind::Policy || !remote.contains(&c.domain.as_str()))
@@ -1133,7 +1227,7 @@ pub fn register(
                     quote!(registry.process_manager::<#ty>(#ty::default);)
                 }
                 ComponentKind::Policy => quote!(registry.policy(#ty::default());),
-                ComponentKind::Projector => unreachable!("the markup's kinds hold no projector"),
+                ComponentKind::Projector => quote!(registry.projector(#ty::default());),
             }
         })
         .collect::<Vec<_>>();

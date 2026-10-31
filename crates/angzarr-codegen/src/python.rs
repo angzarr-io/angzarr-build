@@ -22,7 +22,7 @@ use std::collections::BTreeSet;
 use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 
 use crate::error::CodegenError;
-use crate::model::{self, Component, ComponentKind, MARKUP_KINDS};
+use crate::model::{self, Component, ComponentKind, WRITE_KINDS};
 use crate::rust::snake;
 use crate::scaffold::{Owner, ScaffoldFile};
 
@@ -81,7 +81,7 @@ pub fn scaffold_python(
     files: &[&str],
     app: &PythonApp,
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
-    let components: Vec<Component> = model::components(descriptor_set, files, MARKUP_KINDS)?
+    let components: Vec<Component> = model::components(descriptor_set, files, WRITE_KINDS)?
         .into_iter()
         .filter(|c| c.domain == app.domain && c.kind != ComponentKind::Policy)
         .collect();

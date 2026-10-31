@@ -1,0 +1,22 @@
+//! LedgerViewImpl: the implementation of `LedgerView`, written once by
+//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
+//! methods it lacks, each `todo!()`.
+
+use crate::domain::*;
+use crate::ledger_view::LedgerView;
+
+/// The projection the methods update.
+#[derive(Clone, Debug, Default)]
+pub struct LedgerViewImpl {
+    pub state: crate::wire::LedgerView,
+}
+
+impl LedgerView for LedgerViewImpl {
+    async fn posted(&mut self, _event: &Posted, _ctx: &ProjectionContext) -> Result<(), Bug> {
+        todo!()
+    }
+
+    async fn audited(&mut self, _event: &Audited, _ctx: &ProjectionContext) -> Result<(), Bug> {
+        todo!()
+    }
+}

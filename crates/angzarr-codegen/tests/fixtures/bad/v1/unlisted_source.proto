@@ -1,0 +1,26 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+}
+
+message Poked {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+  option (io.angzarr.v1.event) = {
+    component: "bad.v1.ThingView"
+    domain: "things"
+  };
+}
+
+// An (event) entry naming a domain the projector does not list.
+message ThingView {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROJECTOR
+    input_domains: "others"
+  };
+}

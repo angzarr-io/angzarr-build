@@ -1,5 +1,6 @@
 // Typed refusals of every field kind, a command refusing several of them,
-// and inputs of each emits cardinality (decision 14.50). Each field set is
+// inputs of each emits cardinality, and a projector of two source domains
+// (decision 14.50). Each field set is
 // an arg (an integer its number,
 // a string itself, an enum its value's name without the enum's prefix,
 // bytes their hex, a bool or a float its text), a message, list or map
@@ -30,6 +31,10 @@ message Post {
 
 message Posted {
   option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerState"};
+  option (io.angzarr.v1.event) = {
+    component: "kinds.v1.LedgerView"
+    domain: "ledger"
+  };
 }
 
 message Noted {
@@ -177,4 +182,36 @@ message Mislabeled {
     CAUSE_LATE = 1;
   }
   Cause reason = 1;
+}
+
+// A second domain, a source of the projector.
+message AuditState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "audit"
+  };
+}
+
+message Audit {
+  option (io.angzarr.v1.command) = {
+    component: "kinds.v1.AuditState"
+    emits: "kinds.v1.Audited"
+  };
+}
+
+message Audited {
+  option (io.angzarr.v1.event) = {component: "kinds.v1.AuditState"};
+  option (io.angzarr.v1.event) = {
+    component: "kinds.v1.LedgerView"
+    domain: "audit"
+  };
+}
+
+// One projector of both domains.
+message LedgerView {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROJECTOR
+    input_domains: ["ledger", "audit"]
+  };
+  int64 seen = 1;
 }

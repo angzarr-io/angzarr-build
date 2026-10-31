@@ -1,7 +1,9 @@
 # The end-to-end fixture of angzarr-build's tests/local.rs: an application on
 # angzarr-embedded, its domain layer and register() generated from the
 # kinds fixture proto (a typed refusal of each field kind, a command
-# refusing several), its component the scaffold with its body written.
+# refusing several, each emits cardinality, a projector of two domains),
+# its components the scaffold with their bodies written, and a projector
+# written by hand beside them, run by angzarr-embedded-host.
 # Built and run by that test only; a workspace of its own, outside
 # angzarr-cli's. Its Cargo.lock is a build artifact, ignored.
 [package]
@@ -17,11 +19,15 @@ publish = false
 # it names, so the app has one router and one angzarr-proto (angzarr core's,
 # at the rev angzarr-embedded and angzarr-cli both pin).
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c0a8bb904c202d18356d9627db8f37b54fc50bc" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c0a8bb904c202d18356d9627db8f37b54fc50bc" }
-angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "7c0a8bb904c202d18356d9627db8f37b54fc50bc" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
+angzarr-embedded-diagnostic = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5265e5cd51701f236d1cde87124a89274d16fd79" }
 angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "d83c85460c662f35ff4f888e77004267c5054c2a" }
 prost = "0.14"
+# The App is async, on the caller's runtime, which is tokio's
+# (angzarr-embedded-host), already in the graph through it.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]
 angzarr-build = { path = "../../.." }

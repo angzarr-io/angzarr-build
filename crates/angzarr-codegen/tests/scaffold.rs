@@ -240,23 +240,6 @@ fn test_scaffold_refuses_refuses_on_a_fact() {
 // --------------------------------------------------------------- blackjack
 
 #[test]
-fn test_scaffold_skips_a_projector_beside_the_markup() {
-    let files = scaffold(&descriptors(BLACKJACK), BLACKJACK, &[]).expect("a projector is skipped");
-    assert!(
-        !files
-            .iter()
-            .any(|f| f.component == "io.angzarr.examples.v1.LedgerProjection"),
-        "{:?}",
-        files.iter().map(|f| &f.component).collect::<Vec<_>>()
-    );
-    assert!(
-        files
-            .iter()
-            .any(|f| f.component == "io.angzarr.examples.v1.TableState")
-    );
-}
-
-#[test]
 fn test_scaffold_of_one_file_finds_its_policies_owners_and_events_elsewhere() {
     // policies.proto alone: the table and the player owning the policies'
     // domains, and the events they react to, are declared in other files.

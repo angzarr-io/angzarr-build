@@ -63,9 +63,8 @@ fn test_markup_domain_of_table_proto_alone_takes_unknown_consumers_as_references
 
 // ------------------------------------------------------------ projectors
 
-/// RED: Ok(vec![]) today, the projector skipped. The projector's domain
-/// layer: every event it projects (the table's and the wallet's) as a
-/// domain type, and the context its handlers read.
+/// The projector's domain layer: every event it projects (the table's and
+/// the wallet's) as a domain type, and the context its handlers read.
 #[test]
 fn test_markup_domain_generates_the_ledger_projectors_events_and_context() {
     let source =
@@ -88,9 +87,10 @@ fn test_markup_domain_generates_the_ledger_projectors_events_and_context() {
     );
 }
 
-/// RED: no file for LedgerProjection today. The user's two files for a
-/// projector, as for every other kind: its interface, one method per
-/// projected event, and its implementation holding the projection.
+/// The user's two files for a projector, as for every other kind: its
+/// interface, one async method per projected event (decision 14.50's
+/// ruling: an async user interface), and its implementation holding the
+/// projection.
 #[test]
 fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
     let files = scaffold(&descriptors(BLACKJACK), &[LEDGER], &[]).unwrap();
@@ -105,8 +105,8 @@ fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
         });
     for expected in [
         "pub trait LedgerProjector {",
-        "fn round_settled(&mut self, event: &RoundSettled, ctx: &ProjectionContext) -> Result<(), Bug>;",
-        "fn funds_held(&mut self, event: &FundsHeld, ctx: &ProjectionContext) -> Result<(), Bug>;",
+        "    fn round_settled(\n        &mut self,\n        event: &RoundSettled,\n        ctx: &ProjectionContext,\n    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;",
+        "    fn funds_held(\n        &mut self,\n        event: &FundsHeld,\n        ctx: &ProjectionContext,\n    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;",
     ] {
         assert!(
             interface.source.contains(expected),
@@ -127,19 +127,25 @@ fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
     );
 }
 
-/// RED: no `#[projector]` today. The adapter marks the projector up for
-/// angzarr-embedded, one `#[projector]` per source domain (the markup
-/// takes one source each), delegating to the user's one implementation.
+/// The adapter marks the projector up for angzarr-embedded: ONE
+/// `#[projector]` over every source domain (the owner's ruling: the markup
+/// takes a list of sources), named by its component_name, delegating to
+/// the user's one implementation.
 #[test]
 fn test_adapters_mark_up_the_ledger_projector_for_each_source_domain() {
     let source = adapters(&descriptors(BLACKJACK), &[LEDGER], &[], &|_| None).unwrap();
-    assert_eq!(source.matches("#[projector(").count(), 2, "{source}");
+    assert_eq!(source.matches("#[projector(").count(), 1, "{source}");
+    assert!(
+        source.contains(
+            "#[projector(name = \"projector-wallet-table-ledger\", sources = [\"table\", \"wallet\"])]"
+        ),
+        "{source}"
+    );
     assert!(source.contains("#[projects(RoundSettled)]"), "{source}");
     assert!(source.contains("#[projects(FundsHeld)]"), "{source}");
 }
 
-/// RED: `register` registers no projector today (the markup's kinds hold
-/// none).
+/// `register` registers the projector, as every other kind.
 #[test]
 fn test_register_registers_the_ledger_projector() {
     let source = register(&descriptors(BLACKJACK), BLACKJACK, &[]).unwrap();
@@ -229,8 +235,10 @@ fn test_policy_adapters_carry_the_spec_names() {
 /// GREEN pin of the escape hatch: the generated `register` is a plain
 /// public function the application composes with components it writes by
 /// hand, registered through angzarr-embedded's own public API
-/// (`Registry::projector_handler`), nothing of the generator's. Compiled
-/// with warnings denied against a stub of that API.
+/// (`Registry::projector_handler`, which takes its source domains),
+/// nothing of the generator's. Compiled with warnings denied against a stub
+/// of that API; angzarr-build's kinds-app does the same on the real
+/// angzarr-embedded.
 #[test]
 fn test_generated_register_composes_with_a_hand_written_component() {
     const SHOP: &str = "shop/v1/shop.proto";
@@ -242,12 +250,12 @@ fn test_generated_register_composes_with_a_hand_written_component() {
          /// The application's registration: the generated, then its own.\n\
          pub fn register_all(registry: &mut ::angzarr_embedded::next::Registry) {{\n\
              register(registry);\n\
-             registry.projector_handler(\"carts\", HandWrittenLedger);\n\
+             registry.projector_handler(&[\"carts\"], HandWrittenLedger);\n\
          }}\n"
     );
     let stub = "pub mod router { pub trait ProjectorHandler {} }\n\
                 pub mod next { pub struct Registry; impl Registry {\n\
-                    pub fn projector_handler(&mut self, _source: &str, _p: impl crate::router::ProjectorHandler + 'static) -> &mut Self { self }\n\
+                    pub fn projector_handler(&mut self, _sources: &[&str], _p: impl crate::router::ProjectorHandler + 'static) -> &mut Self { self }\n\
                 } }";
     if let Err(diagnostics) = compile_with_stub(stub, &app) {
         panic!("{app}\n{diagnostics}");

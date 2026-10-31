@@ -1,0 +1,20 @@
+//! AuditStateImpl: the implementation of `AuditState`, written once by
+//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
+//! methods it lacks, each `todo!()`.
+
+use crate::audit_state::AuditState;
+use crate::domain::*;
+
+/// The state the `apply_` methods fold.
+#[derive(Clone, Debug, Default)]
+pub struct AuditStateImpl {
+    pub state: crate::wire::AuditState,
+}
+
+impl AuditState for AuditStateImpl {
+    fn audit(&self, _cmd: &Audit, _ctx: &Context) -> Result<Audited, Failed<Rejection>> {
+        Ok(Audited {})
+    }
+
+    fn apply_audited(&mut self, _event: &Audited) {}
+}

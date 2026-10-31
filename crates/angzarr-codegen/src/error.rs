@@ -64,6 +64,21 @@ pub enum CodegenError {
     /// A translate selection's fact is an input of the policy's source, but
     /// a command, not a fact.
     TranslateNotAFact { policy: String, fact: String },
+    /// `input_domains` on a component that is not a projector.
+    InputDomainsOnNonProjector { component: String },
+    /// A projector setting both `input_domains` and `input_domain`.
+    InputDomainsWithInputDomain { component: String },
+    /// A projector listing one source domain twice.
+    DuplicateSource { component: String, domain: String },
+    /// A projector's `(event)` entry whose domain (empty: unset) is not one
+    /// of its listed sources.
+    UnlistedSource {
+        component: String,
+        event: String,
+        domain: String,
+    },
+    /// A projector listing a source domain no `(event)` entry names.
+    UnprojectedSource { component: String, domain: String },
     /// A component's name in an application (declared, or its kind's
     /// default) that is not lower-case ASCII letters, digits and `-`,
     /// starting with a letter.
@@ -187,6 +202,29 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} is named {name}, which the generated domain layer gives the runtime's own {name}; rename it"
             ),
+            CodegenError::InputDomainsOnNonProjector { component } => write!(
+                f,
+                "{component} sets input_domains, which only a projector takes"
+            ),
+            CodegenError::InputDomainsWithInputDomain { component } => write!(
+                f,
+                "{component} sets both input_domains and input_domain; list its sources in input_domains"
+            ),
+            CodegenError::DuplicateSource { component, domain } => {
+                write!(f, "{component} lists the source domain {domain} twice")
+            }
+            CodegenError::UnlistedSource {
+                component,
+                event,
+                domain,
+            } => write!(
+                f,
+                "{event}'s entry for {component} names the domain \"{domain}\", which is not one of its input_domains"
+            ),
+            CodegenError::UnprojectedSource { component, domain } => write!(
+                f,
+                "{component} lists the source domain {domain}, which no (event) entry for it names"
+            ),
             CodegenError::ComponentName { component, name } => write!(
                 f,
                 "{component}'s name \"{name}\" is not lower-case letters, digits and -, starting with a letter; set its component_name"
@@ -273,6 +311,15 @@ impl Diagnostic for CodegenError {
             CodegenError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
             CodegenError::RefusalChoiceName { .. } => "angzarr-codegen-refusal-choice-name",
             CodegenError::ComponentName { .. } => "angzarr-codegen-component-name",
+            CodegenError::InputDomainsOnNonProjector { .. } => {
+                "angzarr-codegen-input-domains-on-non-projector"
+            }
+            CodegenError::InputDomainsWithInputDomain { .. } => {
+                "angzarr-codegen-input-domains-with-input-domain"
+            }
+            CodegenError::DuplicateSource { .. } => "angzarr-codegen-duplicate-source",
+            CodegenError::UnlistedSource { .. } => "angzarr-codegen-unlisted-source",
+            CodegenError::UnprojectedSource { .. } => "angzarr-codegen-unprojected-source",
             CodegenError::CardinalityWithoutEmits { .. } => {
                 "angzarr-codegen-cardinality-without-emits"
             }
@@ -345,6 +392,23 @@ impl Diagnostic for CodegenError {
             CodegenError::ComponentName { component, name } => {
                 vec![("component", s(component)), ("name", s(name))]
             }
+            CodegenError::InputDomainsOnNonProjector { component }
+            | CodegenError::InputDomainsWithInputDomain { component } => {
+                vec![("component", s(component))]
+            }
+            CodegenError::DuplicateSource { component, domain }
+            | CodegenError::UnprojectedSource { component, domain } => {
+                vec![("component", s(component)), ("domain", s(domain))]
+            }
+            CodegenError::UnlistedSource {
+                component,
+                event,
+                domain,
+            } => vec![
+                ("component", s(component)),
+                ("event", s(event)),
+                ("domain", s(domain)),
+            ],
             CodegenError::CardinalityWithoutEmits { message, optional } => vec![
                 ("message", s(message)),
                 (
@@ -450,6 +514,21 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::ComponentName {
             component: s(),
             name: s(),
+        }),
+        Box::new(CodegenError::InputDomainsOnNonProjector { component: s() }),
+        Box::new(CodegenError::InputDomainsWithInputDomain { component: s() }),
+        Box::new(CodegenError::DuplicateSource {
+            component: s(),
+            domain: s(),
+        }),
+        Box::new(CodegenError::UnlistedSource {
+            component: s(),
+            event: s(),
+            domain: s(),
+        }),
+        Box::new(CodegenError::UnprojectedSource {
+            component: s(),
+            domain: s(),
         }),
         Box::new(CodegenError::CardinalityWithoutEmits {
             message: s(),

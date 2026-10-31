@@ -59,6 +59,10 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
                 refusals.push(refusal);
             }
         }
+        // A projector decides nothing: no command or event enum.
+        if component.kind == crate::model::ComponentKind::Projector {
+            continue;
+        }
         let commands: Vec<MessageDescriptor> = component
             .inputs
             .iter()
@@ -205,6 +209,11 @@ fn handler_context() -> TokenStream {
         /// The refused command's context, whole, as its target's handler
         /// was handed it: what a `<command>_refused` method reads.
         pub use #next::markup::CommandContext;
+
+        /// What a projector's handler reads besides the event: the stream
+        /// it is from (its source domain and root), its sequence there and
+        /// when it was recorded.
+        pub use #next::markup::ProjectionContext;
 
         /// What a command handler fails with, one of four classes:
         /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under

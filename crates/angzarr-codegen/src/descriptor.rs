@@ -17,7 +17,7 @@ use prost_reflect::{DescriptorPool, DynamicMessage, ReflectMessage, Value};
 use quote::quote;
 
 use crate::error::CodegenError;
-use crate::model::{self, Component, ComponentKind, DESCRIPTOR_KINDS};
+use crate::model::{self, ALL_KINDS, Component, ComponentKind};
 
 const COMPONENT_DESCRIPTOR: &str = "io.angzarr.v1.ComponentDescriptor";
 /// `ConflictResolution`'s implicit base (types.proto): STRICT and
@@ -54,7 +54,7 @@ pub(crate) fn build(
     files: &[&str],
     rules_version: &str,
 ) -> Result<Vec<(Component, Descriptor)>, CodegenError> {
-    let components = model::components(descriptor_set, files, DESCRIPTOR_KINDS)?;
+    let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let pool = DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
         detail: e.to_string(),
     })?;

@@ -103,15 +103,13 @@ pub fn component_names(
     descriptor_set: &[u8],
     files: &[&str],
 ) -> Result<Vec<ComponentName>, CodegenError> {
-    Ok(
-        model::components(descriptor_set, files, model::DESCRIPTOR_KINDS)?
-            .into_iter()
-            .map(|c| ComponentName {
-                component: c.anchor.full_name().to_string(),
-                kind: c.kind.name_kind(),
-                name: c.component_name,
-                domain: c.domain,
-            })
-            .collect(),
-    )
+    Ok(model::components(descriptor_set, files, model::ALL_KINDS)?
+        .into_iter()
+        .map(|c| ComponentName {
+            component: c.anchor.full_name().to_string(),
+            kind: c.kind.name_kind(),
+            name: c.component_name,
+            domain: c.domain,
+        })
+        .collect())
 }

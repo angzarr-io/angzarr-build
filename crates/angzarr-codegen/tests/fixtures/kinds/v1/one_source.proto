@@ -1,0 +1,32 @@
+syntax = "proto3";
+package one.v1;
+import "io/angzarr/v1/options.proto";
+
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+  };
+}
+
+// A projector of one input_domain, its entries leaving the domain unset or
+// naming it: the one-entry list.
+message ThingView {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_PROJECTOR
+    input_domain: "things"
+  };
+}
+
+message Poked {
+  option (io.angzarr.v1.event) = {component: "one.v1.ThingState"};
+  option (io.angzarr.v1.event) = {component: "one.v1.ThingView"};
+}
+
+message Prodded {
+  option (io.angzarr.v1.event) = {component: "one.v1.ThingState"};
+  option (io.angzarr.v1.event) = {
+    component: "one.v1.ThingView"
+    domain: "things"
+  };
+}
