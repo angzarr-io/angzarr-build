@@ -14,38 +14,38 @@ use common::*;
 use proc_macro2::{TokenStream, TokenTree};
 
 /// Every runtime path the generator may emit, each public and documented
-/// in angzarr-embedded (`next`, `next::markup`), its macros and its
+/// in angzarr-embedded (its root, `markup`), its macros and its
 /// diagnostics.
 const ALLOWED: &[&str] = &[
-    "angzarr_embedded::next::Registry",
-    "angzarr_embedded::next::Timestamp",
-    "angzarr_embedded::next::WireError",
-    "angzarr_embedded::next::WireError::Missing",
-    "angzarr_embedded::next::WireError::UnknownEnum",
-    "angzarr_embedded::next::v1::Uuid",
-    "angzarr_embedded::next::markup::BusinessStatus",
-    "angzarr_embedded::next::markup::CommandContext",
-    "angzarr_embedded::next::markup::CommandTarget",
-    "angzarr_embedded::next::markup::Commands",
-    "angzarr_embedded::next::markup::Context",
-    "angzarr_embedded::next::markup::Decides",
-    "angzarr_embedded::next::markup::DomainMessage",
-    "angzarr_embedded::next::markup::Emit",
-    "angzarr_embedded::next::markup::EventSource",
-    "angzarr_embedded::next::markup::Failed",
-    "angzarr_embedded::next::markup::Ingests",
-    "angzarr_embedded::next::markup::PolicyContext",
-    "angzarr_embedded::next::markup::ProjectionContext",
-    "angzarr_embedded::next::markup::Record",
-    "angzarr_embedded::next::markup::Refusal",
-    "angzarr_embedded::next::markup::Refuses",
-    "angzarr_embedded::next::markup::Report",
-    "angzarr_embedded::next::markup::RetryableStatus",
-    "angzarr_embedded_diagnostic::Arg",
-    "angzarr_embedded_diagnostic::Arg::from",
-    "angzarr_embedded_diagnostic::Diagnostic",
-    "angzarr_embedded_diagnostic::Diagnostic::args",
-    "angzarr_embedded_diagnostic::Diagnostic::code",
+    "angzarr_embedded::Registry",
+    "angzarr_embedded::Timestamp",
+    "angzarr_embedded::WireError",
+    "angzarr_embedded::WireError::Missing",
+    "angzarr_embedded::WireError::UnknownEnum",
+    "angzarr_embedded::v1::Uuid",
+    "angzarr_embedded::markup::BusinessStatus",
+    "angzarr_embedded::markup::CommandContext",
+    "angzarr_embedded::markup::CommandTarget",
+    "angzarr_embedded::markup::Commands",
+    "angzarr_embedded::markup::Context",
+    "angzarr_embedded::markup::Decides",
+    "angzarr_embedded::markup::DomainMessage",
+    "angzarr_embedded::markup::Emit",
+    "angzarr_embedded::markup::EventSource",
+    "angzarr_embedded::markup::Failed",
+    "angzarr_embedded::markup::Ingests",
+    "angzarr_embedded::markup::PolicyContext",
+    "angzarr_embedded::markup::ProjectionContext",
+    "angzarr_embedded::markup::Record",
+    "angzarr_embedded::markup::Refusal",
+    "angzarr_embedded::markup::Refuses",
+    "angzarr_embedded::markup::Report",
+    "angzarr_embedded::markup::RetryableStatus",
+    "angzarr_embedded::angzarr_diagnostic::Arg",
+    "angzarr_embedded::angzarr_diagnostic::Arg::from",
+    "angzarr_embedded::angzarr_diagnostic::Diagnostic",
+    "angzarr_embedded::angzarr_diagnostic::Diagnostic::args",
+    "angzarr_embedded::angzarr_diagnostic::Diagnostic::code",
     "angzarr_embedded_macros::aggregate",
     "angzarr_embedded_macros::applies",
     "angzarr_embedded_macros::handles_cmd",
@@ -170,9 +170,9 @@ fn test_generated_code_names_only_the_runtimes_public_api() {
     );
     // The walk sees the paths it is checking.
     for expected in [
-        "angzarr_embedded::next::markup::Emit",
+        "angzarr_embedded::markup::Emit",
         "angzarr_embedded_macros::projector",
-        "angzarr_embedded::next::Registry",
+        "angzarr_embedded::Registry",
     ] {
         assert!(found.contains(expected), "{expected}: {found:?}");
     }
@@ -181,17 +181,17 @@ fn test_generated_code_names_only_the_runtimes_public_api() {
 #[test]
 fn test_the_walk_finds_each_path_and_each_use_groups_member() {
     let mut found = BTreeSet::new();
-    let tokens: TokenStream = "use ::angzarr_embedded::next::markup::{Emit, Record}; \
-         fn f() { ::angzarr_embedded::next::markup::__pack(x); }"
+    let tokens: TokenStream = "use ::angzarr_embedded::markup::{Emit, Record}; \
+         fn f() { ::angzarr_embedded::markup::__pack(x); }"
         .parse()
         .unwrap();
     runtime_paths(tokens, &mut found);
     assert_eq!(
         found.into_iter().collect::<Vec<_>>(),
         [
-            "angzarr_embedded::next::markup::Emit",
-            "angzarr_embedded::next::markup::Record",
-            "angzarr_embedded::next::markup::__pack",
+            "angzarr_embedded::markup::Emit",
+            "angzarr_embedded::markup::Record",
+            "angzarr_embedded::markup::__pack",
         ]
     );
 }

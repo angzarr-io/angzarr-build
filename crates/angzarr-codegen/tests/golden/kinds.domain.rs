@@ -110,7 +110,7 @@ impl From<Post> for crate::wire::Post {
     }
 }
 impl TryFrom<crate::wire::Post> for Post {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Post) -> Result<Self, Self::Error> {
         Ok(Post {})
     }
@@ -157,11 +157,11 @@ impl From<PostRefused> for crate::wire::PostRefused {
     }
 }
 impl TryFrom<crate::wire::PostRefused> for PostRefused {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(value: crate::wire::PostRefused) -> Result<Self, Self::Error> {
         Ok(PostRefused {
             reason: PostRefusedReason::try_from(value.reason)
-                .map_err(|value| ::angzarr_embedded::next::WireError::UnknownEnum {
+                .map_err(|value| ::angzarr_embedded::WireError::UnknownEnum {
                     message: "kinds.v1.PostRefused",
                     field: "reason",
                     value,
@@ -176,7 +176,7 @@ impl TryFrom<crate::wire::PostRefused> for PostRefused {
             ratio: value.ratio,
             share: value.share,
             tone: Tone::try_from(value.tone)
-                .map_err(|value| ::angzarr_embedded::next::WireError::UnknownEnum {
+                .map_err(|value| ::angzarr_embedded::WireError::UnknownEnum {
                     message: "kinds.v1.PostRefused",
                     field: "tone",
                     value,
@@ -186,7 +186,7 @@ impl TryFrom<crate::wire::PostRefused> for PostRefused {
                 .maybe
                 .map(|v| {
                     Tone::try_from(v)
-                        .map_err(|value| ::angzarr_embedded::next::WireError::UnknownEnum {
+                        .map_err(|value| ::angzarr_embedded::WireError::UnknownEnum {
                             message: "kinds.v1.PostRefused",
                             field: "maybe",
                             value,
@@ -196,7 +196,7 @@ impl TryFrom<crate::wire::PostRefused> for PostRefused {
             note: Note::try_from(
                 value
                     .note
-                    .ok_or(::angzarr_embedded::next::WireError::Missing {
+                    .ok_or(::angzarr_embedded::WireError::Missing {
                         message: "kinds.v1.PostRefused",
                         field: "note",
                     })?,
@@ -218,7 +218,7 @@ impl From<Note> for crate::wire::Note {
     }
 }
 impl TryFrom<crate::wire::Note> for Note {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(value: crate::wire::Note) -> Result<Self, Self::Error> {
         Ok(Note { text: value.text })
     }
@@ -235,11 +235,11 @@ impl From<Unreasoned> for crate::wire::Unreasoned {
     }
 }
 impl TryFrom<crate::wire::Unreasoned> for Unreasoned {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(value: crate::wire::Unreasoned) -> Result<Self, Self::Error> {
         Ok(Unreasoned {
             reason: Tone::try_from(value.reason)
-                .map_err(|value| ::angzarr_embedded::next::WireError::UnknownEnum {
+                .map_err(|value| ::angzarr_embedded::WireError::UnknownEnum {
                     message: "kinds.v1.Unreasoned",
                     field: "reason",
                     value,
@@ -259,7 +259,7 @@ impl From<Listed> for crate::wire::Listed {
     }
 }
 impl TryFrom<crate::wire::Listed> for Listed {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(value: crate::wire::Listed) -> Result<Self, Self::Error> {
         Ok(Listed {
             reason: value
@@ -267,7 +267,7 @@ impl TryFrom<crate::wire::Listed> for Listed {
                 .into_iter()
                 .map(|v| {
                     ListedReason::try_from(v)
-                        .map_err(|value| ::angzarr_embedded::next::WireError::UnknownEnum {
+                        .map_err(|value| ::angzarr_embedded::WireError::UnknownEnum {
                             message: "kinds.v1.Listed",
                             field: "reason",
                             value,
@@ -289,11 +289,11 @@ impl From<Elsewhere> for crate::wire::Elsewhere {
     }
 }
 impl TryFrom<crate::wire::Elsewhere> for Elsewhere {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(value: crate::wire::Elsewhere) -> Result<Self, Self::Error> {
         Ok(Elsewhere {
             why: ElsewhereReason::try_from(value.why)
-                .map_err(|value| ::angzarr_embedded::next::WireError::UnknownEnum {
+                .map_err(|value| ::angzarr_embedded::WireError::UnknownEnum {
                     message: "kinds.v1.Elsewhere",
                     field: "why",
                     value,
@@ -313,11 +313,11 @@ impl From<Mislabeled> for crate::wire::Mislabeled {
     }
 }
 impl TryFrom<crate::wire::Mislabeled> for Mislabeled {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(value: crate::wire::Mislabeled) -> Result<Self, Self::Error> {
         Ok(Mislabeled {
             reason: MislabeledCause::try_from(value.reason)
-                .map_err(|value| ::angzarr_embedded::next::WireError::UnknownEnum {
+                .map_err(|value| ::angzarr_embedded::WireError::UnknownEnum {
                     message: "kinds.v1.Mislabeled",
                     field: "reason",
                     value,
@@ -333,7 +333,7 @@ impl From<Open> for crate::wire::Open {
     }
 }
 impl TryFrom<crate::wire::Open> for Open {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Open) -> Result<Self, Self::Error> {
         Ok(Open {})
     }
@@ -346,7 +346,7 @@ impl From<Four> for crate::wire::Four {
     }
 }
 impl TryFrom<crate::wire::Four> for Four {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Four) -> Result<Self, Self::Error> {
         Ok(Four {})
     }
@@ -359,7 +359,7 @@ impl From<Maybe> for crate::wire::Maybe {
     }
 }
 impl TryFrom<crate::wire::Maybe> for Maybe {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Maybe) -> Result<Self, Self::Error> {
         Ok(Maybe {})
     }
@@ -372,7 +372,7 @@ impl From<MaybeBoth> for crate::wire::MaybeBoth {
     }
 }
 impl TryFrom<crate::wire::MaybeBoth> for MaybeBoth {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::MaybeBoth) -> Result<Self, Self::Error> {
         Ok(MaybeBoth {})
     }
@@ -385,7 +385,7 @@ impl From<Batch> for crate::wire::Batch {
     }
 }
 impl TryFrom<crate::wire::Batch> for Batch {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Batch) -> Result<Self, Self::Error> {
         Ok(Batch {})
     }
@@ -398,7 +398,7 @@ impl From<Raw> for crate::wire::Raw {
     }
 }
 impl TryFrom<crate::wire::Raw> for Raw {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Raw) -> Result<Self, Self::Error> {
         Ok(Raw {})
     }
@@ -411,7 +411,7 @@ impl From<Arrived> for crate::wire::Arrived {
     }
 }
 impl TryFrom<crate::wire::Arrived> for Arrived {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Arrived) -> Result<Self, Self::Error> {
         Ok(Arrived {})
     }
@@ -424,7 +424,7 @@ impl From<Swept> for crate::wire::Swept {
     }
 }
 impl TryFrom<crate::wire::Swept> for Swept {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Swept) -> Result<Self, Self::Error> {
         Ok(Swept {})
     }
@@ -437,7 +437,7 @@ impl From<Posted> for crate::wire::Posted {
     }
 }
 impl TryFrom<crate::wire::Posted> for Posted {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Posted) -> Result<Self, Self::Error> {
         Ok(Posted {})
     }
@@ -450,7 +450,7 @@ impl From<Noted> for crate::wire::Noted {
     }
 }
 impl TryFrom<crate::wire::Noted> for Noted {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Noted) -> Result<Self, Self::Error> {
         Ok(Noted {})
     }
@@ -463,7 +463,7 @@ impl From<Cleared> for crate::wire::Cleared {
     }
 }
 impl TryFrom<crate::wire::Cleared> for Cleared {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Cleared) -> Result<Self, Self::Error> {
         Ok(Cleared {})
     }
@@ -476,7 +476,7 @@ impl From<Closed> for crate::wire::Closed {
     }
 }
 impl TryFrom<crate::wire::Closed> for Closed {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Closed) -> Result<Self, Self::Error> {
         Ok(Closed {})
     }
@@ -489,7 +489,7 @@ impl From<Audit> for crate::wire::Audit {
     }
 }
 impl TryFrom<crate::wire::Audit> for Audit {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Audit) -> Result<Self, Self::Error> {
         Ok(Audit {})
     }
@@ -502,7 +502,7 @@ impl From<Audited> for crate::wire::Audited {
     }
 }
 impl TryFrom<crate::wire::Audited> for Audited {
-    type Error = ::angzarr_embedded::next::WireError;
+    type Error = ::angzarr_embedded::WireError;
     fn try_from(_value: crate::wire::Audited) -> Result<Self, Self::Error> {
         Ok(Audited {})
     }
@@ -535,11 +535,11 @@ impl ::std::fmt::Display for Rejection {
     }
 }
 impl ::std::error::Error for Rejection {}
-impl ::angzarr_embedded_diagnostic::Diagnostic for Rejection {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Rejection {
+    fn code(&self) -> &str {
         self.key
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         self.args.iter().map(|(name, value)| (*name, value.as_str().into())).collect()
     }
 }
@@ -547,17 +547,17 @@ impl ::angzarr_embedded_diagnostic::Diagnostic for Rejection {
 /// instant its events are recorded at, and the router's context of
 /// the input (its stream, sequences, resolution, conflict and
 /// identity) as `ctx.command`.
-pub use ::angzarr_embedded::next::markup::Context;
+pub use ::angzarr_embedded::markup::Context;
 /// What a policy reaction reads: its trigger, the trigger's
 /// correlation and when it was recorded.
-pub use ::angzarr_embedded::next::markup::PolicyContext;
+pub use ::angzarr_embedded::markup::PolicyContext;
 /// The refused command's context, whole, as its target's handler
 /// was handed it: what a `<command>_refused` method reads.
-pub use ::angzarr_embedded::next::markup::CommandContext;
+pub use ::angzarr_embedded::markup::CommandContext;
 /// What a projector's handler reads besides the event: the stream
 /// it is from (its source domain and root), its sequence there and
 /// when it was recorded.
-pub use ::angzarr_embedded::next::markup::ProjectionContext;
+pub use ::angzarr_embedded::markup::ProjectionContext;
 /// What a command handler fails with, one of four classes:
 /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
 /// a [`BusinessStatus`], FAILED_PRECONDITION unless `with_status`
@@ -575,7 +575,7 @@ pub use ::angzarr_embedded::next::markup::ProjectionContext;
 /// since the work may have happened (a command is, by its
 /// `command_id`); `ResourceExhausted` means wait longer before
 /// resending (a quota or a capacity limit was hit).
-pub use ::angzarr_embedded::next::markup::{BusinessStatus, Failed, RetryableStatus};
+pub use ::angzarr_embedded::markup::{BusinessStatus, Failed, RetryableStatus};
 /// A bug: a defect, never a business answer. The other of the two
 /// classes a handler fails with; the first is [`Rejection`], a
 /// business "no". A command handler fails with it as
@@ -606,11 +606,11 @@ impl ::std::fmt::Display for Bug {
     }
 }
 impl ::std::error::Error for Bug {}
-impl ::angzarr_embedded_diagnostic::Diagnostic for Bug {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Bug {
+    fn code(&self) -> &str {
         self.key
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         self.args.iter().map(|(name, value)| (*name, value.as_str().into())).collect()
     }
 }
@@ -748,22 +748,22 @@ impl ::core::convert::From<Bug> for Failed<PostRefused> {
 }
 impl ::std::fmt::Display for PostRefused {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        f.write_str(::angzarr_embedded_diagnostic::Diagnostic::code(self))
+        f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
     }
 }
-impl ::angzarr_embedded_diagnostic::Diagnostic for PostRefused {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for PostRefused {
+    fn code(&self) -> &str {
         match self.reason {
             PostRefusedReason::Closed => "kinds-v1-postrefused-closed",
             PostRefusedReason::OverLimit => "kinds-v1-postrefused-over-limit",
         }
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         let mut args = Vec::new();
         let value = &self.reason;
         args.push((
             "reason",
-            ::angzarr_embedded_diagnostic::Arg::from(
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(
                 match value {
                     PostRefusedReason::Closed => "CLOSED",
                     PostRefusedReason::OverLimit => "OVER_LIMIT",
@@ -771,50 +771,59 @@ impl ::angzarr_embedded_diagnostic::Diagnostic for PostRefused {
             ),
         ));
         let value = &self.small;
-        args.push(("small", ::angzarr_embedded_diagnostic::Arg::from(*value)));
+        args.push(("small", ::angzarr_embedded::angzarr_diagnostic::Arg::from(*value)));
         let value = &self.big;
-        args.push(("big", ::angzarr_embedded_diagnostic::Arg::from(*value)));
+        args.push(("big", ::angzarr_embedded::angzarr_diagnostic::Arg::from(*value)));
         let value = &self.count;
-        args.push(("count", ::angzarr_embedded_diagnostic::Arg::from(*value)));
+        args.push(("count", ::angzarr_embedded::angzarr_diagnostic::Arg::from(*value)));
         let value = &self.total;
-        args.push(("total", ::angzarr_embedded_diagnostic::Arg::from(*value)));
+        args.push(("total", ::angzarr_embedded::angzarr_diagnostic::Arg::from(*value)));
         let value = &self.text;
-        args.push(("text", ::angzarr_embedded_diagnostic::Arg::from(value.as_str())));
+        args.push((
+            "text",
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(value.as_str()),
+        ));
         let value = &self.data;
         args.push((
             "data",
-            ::angzarr_embedded_diagnostic::Arg::from(
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(
                 value.iter().map(|b| format!("{b:02x}")).collect::<String>(),
             ),
         ));
         let value = &self.flag;
-        args.push(("flag", ::angzarr_embedded_diagnostic::Arg::from(value.to_string())));
+        args.push((
+            "flag",
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(value.to_string()),
+        ));
         let value = &self.ratio;
         args.push((
             "ratio",
-            ::angzarr_embedded_diagnostic::Arg::from(value.to_string()),
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(value.to_string()),
         ));
         let value = &self.share;
         args.push((
             "share",
-            ::angzarr_embedded_diagnostic::Arg::from(value.to_string()),
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(value.to_string()),
         ));
         let value = &self.tone;
         args.push((
             "tone",
-            ::angzarr_embedded_diagnostic::Arg::from(
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(
                 match value {
                     Tone::Loud => "LOUD",
                 },
             ),
         ));
         if let Some(value) = &self.limit {
-            args.push(("limit", ::angzarr_embedded_diagnostic::Arg::from(*value)));
+            args.push((
+                "limit",
+                ::angzarr_embedded::angzarr_diagnostic::Arg::from(*value),
+            ));
         }
         if let Some(value) = &self.maybe {
             args.push((
                 "maybe",
-                ::angzarr_embedded_diagnostic::Arg::from(
+                ::angzarr_embedded::angzarr_diagnostic::Arg::from(
                     match value {
                         Tone::Loud => "LOUD",
                     },
@@ -833,19 +842,19 @@ impl ::core::convert::From<Bug> for Failed<Unreasoned> {
 }
 impl ::std::fmt::Display for Unreasoned {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        f.write_str(::angzarr_embedded_diagnostic::Diagnostic::code(self))
+        f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
     }
 }
-impl ::angzarr_embedded_diagnostic::Diagnostic for Unreasoned {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Unreasoned {
+    fn code(&self) -> &str {
         "kinds-v1-unreasoned"
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         let mut args = Vec::new();
         let value = &self.reason;
         args.push((
             "reason",
-            ::angzarr_embedded_diagnostic::Arg::from(
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(
                 match value {
                     Tone::Loud => "LOUD",
                 },
@@ -863,14 +872,14 @@ impl ::core::convert::From<Bug> for Failed<Listed> {
 }
 impl ::std::fmt::Display for Listed {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        f.write_str(::angzarr_embedded_diagnostic::Diagnostic::code(self))
+        f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
     }
 }
-impl ::angzarr_embedded_diagnostic::Diagnostic for Listed {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Listed {
+    fn code(&self) -> &str {
         "kinds-v1-listed"
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         Vec::new()
     }
 }
@@ -883,19 +892,19 @@ impl ::core::convert::From<Bug> for Failed<Elsewhere> {
 }
 impl ::std::fmt::Display for Elsewhere {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        f.write_str(::angzarr_embedded_diagnostic::Diagnostic::code(self))
+        f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
     }
 }
-impl ::angzarr_embedded_diagnostic::Diagnostic for Elsewhere {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Elsewhere {
+    fn code(&self) -> &str {
         "kinds-v1-elsewhere"
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         let mut args = Vec::new();
         let value = &self.why;
         args.push((
             "why",
-            ::angzarr_embedded_diagnostic::Arg::from(
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(
                 match value {
                     ElsewhereReason::Away => "AWAY",
                 },
@@ -913,19 +922,19 @@ impl ::core::convert::From<Bug> for Failed<Mislabeled> {
 }
 impl ::std::fmt::Display for Mislabeled {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        f.write_str(::angzarr_embedded_diagnostic::Diagnostic::code(self))
+        f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
     }
 }
-impl ::angzarr_embedded_diagnostic::Diagnostic for Mislabeled {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Mislabeled {
+    fn code(&self) -> &str {
         "kinds-v1-mislabeled"
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         let mut args = Vec::new();
         let value = &self.reason;
         args.push((
             "reason",
-            ::angzarr_embedded_diagnostic::Arg::from(
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(
                 match value {
                     MislabeledCause::Late => "LATE",
                 },
@@ -1045,42 +1054,42 @@ impl ::std::fmt::Display for PostRefuses {
         }
     }
 }
-impl ::angzarr_embedded_diagnostic::Diagnostic for PostRefuses {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for PostRefuses {
+    fn code(&self) -> &str {
         match self {
             PostRefuses::PostRefused(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal)
             }
             PostRefuses::Unreasoned(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal)
             }
             PostRefuses::Listed(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal)
             }
             PostRefuses::Elsewhere(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal)
             }
             PostRefuses::Mislabeled(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal)
             }
         }
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         match self {
             PostRefuses::PostRefused(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal)
             }
             PostRefuses::Unreasoned(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal)
             }
             PostRefuses::Listed(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal)
             }
             PostRefuses::Elsewhere(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal)
             }
             PostRefuses::Mislabeled(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal)
             }
         }
     }
@@ -1166,24 +1175,24 @@ impl ::std::fmt::Display for AuditRefuses {
         }
     }
 }
-impl ::angzarr_embedded_diagnostic::Diagnostic for AuditRefuses {
-    fn code(&self) -> &'static str {
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for AuditRefuses {
+    fn code(&self) -> &str {
         match self {
             AuditRefuses::PostRefused(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal)
             }
             AuditRefuses::Unreasoned(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::code(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal)
             }
         }
     }
-    fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         match self {
             AuditRefuses::PostRefused(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal)
             }
             AuditRefuses::Unreasoned(refusal) => {
-                ::angzarr_embedded_diagnostic::Diagnostic::args(refusal)
+                ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal)
             }
         }
     }
@@ -1212,223 +1221,221 @@ const _: fn(&crate::wire::PostRefused) = |wire| {
     wire_settings::bytes(&wire.data);
     wire_settings::map(&wire.table);
 };
-impl ::angzarr_embedded::next::markup::DomainMessage for Post {
+impl ::angzarr_embedded::markup::DomainMessage for Post {
     type Wire = crate::wire::Post;
     fn to_wire(&self) -> crate::wire::Post {
         crate::wire::Post::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Post,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Post::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for PostRefused {
+impl ::angzarr_embedded::markup::DomainMessage for PostRefused {
     type Wire = crate::wire::PostRefused;
     fn to_wire(&self) -> crate::wire::PostRefused {
         crate::wire::PostRefused::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::PostRefused,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         PostRefused::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Unreasoned {
+impl ::angzarr_embedded::markup::DomainMessage for Unreasoned {
     type Wire = crate::wire::Unreasoned;
     fn to_wire(&self) -> crate::wire::Unreasoned {
         crate::wire::Unreasoned::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Unreasoned,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Unreasoned::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Listed {
+impl ::angzarr_embedded::markup::DomainMessage for Listed {
     type Wire = crate::wire::Listed;
     fn to_wire(&self) -> crate::wire::Listed {
         crate::wire::Listed::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Listed,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Listed::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Elsewhere {
+impl ::angzarr_embedded::markup::DomainMessage for Elsewhere {
     type Wire = crate::wire::Elsewhere;
     fn to_wire(&self) -> crate::wire::Elsewhere {
         crate::wire::Elsewhere::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Elsewhere,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Elsewhere::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Mislabeled {
+impl ::angzarr_embedded::markup::DomainMessage for Mislabeled {
     type Wire = crate::wire::Mislabeled;
     fn to_wire(&self) -> crate::wire::Mislabeled {
         crate::wire::Mislabeled::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Mislabeled,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Mislabeled::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Open {
+impl ::angzarr_embedded::markup::DomainMessage for Open {
     type Wire = crate::wire::Open;
     fn to_wire(&self) -> crate::wire::Open {
         crate::wire::Open::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Open,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Open::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Four {
+impl ::angzarr_embedded::markup::DomainMessage for Four {
     type Wire = crate::wire::Four;
     fn to_wire(&self) -> crate::wire::Four {
         crate::wire::Four::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Four,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Four::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Maybe {
+impl ::angzarr_embedded::markup::DomainMessage for Maybe {
     type Wire = crate::wire::Maybe;
     fn to_wire(&self) -> crate::wire::Maybe {
         crate::wire::Maybe::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Maybe,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Maybe::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for MaybeBoth {
+impl ::angzarr_embedded::markup::DomainMessage for MaybeBoth {
     type Wire = crate::wire::MaybeBoth;
     fn to_wire(&self) -> crate::wire::MaybeBoth {
         crate::wire::MaybeBoth::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::MaybeBoth,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         MaybeBoth::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Batch {
+impl ::angzarr_embedded::markup::DomainMessage for Batch {
     type Wire = crate::wire::Batch;
     fn to_wire(&self) -> crate::wire::Batch {
         crate::wire::Batch::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Batch,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Batch::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Raw {
+impl ::angzarr_embedded::markup::DomainMessage for Raw {
     type Wire = crate::wire::Raw;
     fn to_wire(&self) -> crate::wire::Raw {
         crate::wire::Raw::from(self.clone())
     }
-    fn from_wire(
-        wire: crate::wire::Raw,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    fn from_wire(wire: crate::wire::Raw) -> Result<Self, ::angzarr_embedded::WireError> {
         Raw::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Arrived {
+impl ::angzarr_embedded::markup::DomainMessage for Arrived {
     type Wire = crate::wire::Arrived;
     fn to_wire(&self) -> crate::wire::Arrived {
         crate::wire::Arrived::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Arrived,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Arrived::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Swept {
+impl ::angzarr_embedded::markup::DomainMessage for Swept {
     type Wire = crate::wire::Swept;
     fn to_wire(&self) -> crate::wire::Swept {
         crate::wire::Swept::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Swept,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Swept::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Posted {
+impl ::angzarr_embedded::markup::DomainMessage for Posted {
     type Wire = crate::wire::Posted;
     fn to_wire(&self) -> crate::wire::Posted {
         crate::wire::Posted::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Posted,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Posted::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Noted {
+impl ::angzarr_embedded::markup::DomainMessage for Noted {
     type Wire = crate::wire::Noted;
     fn to_wire(&self) -> crate::wire::Noted {
         crate::wire::Noted::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Noted,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Noted::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Cleared {
+impl ::angzarr_embedded::markup::DomainMessage for Cleared {
     type Wire = crate::wire::Cleared;
     fn to_wire(&self) -> crate::wire::Cleared {
         crate::wire::Cleared::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Cleared,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Cleared::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Closed {
+impl ::angzarr_embedded::markup::DomainMessage for Closed {
     type Wire = crate::wire::Closed;
     fn to_wire(&self) -> crate::wire::Closed {
         crate::wire::Closed::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Closed,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Closed::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Audit {
+impl ::angzarr_embedded::markup::DomainMessage for Audit {
     type Wire = crate::wire::Audit;
     fn to_wire(&self) -> crate::wire::Audit {
         crate::wire::Audit::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Audit,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Audit::try_from(wire)
     }
 }
-impl ::angzarr_embedded::next::markup::DomainMessage for Audited {
+impl ::angzarr_embedded::markup::DomainMessage for Audited {
     type Wire = crate::wire::Audited;
     fn to_wire(&self) -> crate::wire::Audited {
         crate::wire::Audited::from(self.clone())
     }
     fn from_wire(
         wire: crate::wire::Audited,
-    ) -> Result<Self, ::angzarr_embedded::next::WireError> {
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
         Audited::try_from(wire)
     }
 }

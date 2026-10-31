@@ -1,13 +1,13 @@
 //! Prints each typed refusal's diagnostic as the generated domain layer
 //! has it, one line each, `code arg=value ..`; then runs the app from its
-//! angzarr.toml (the generated register() and a projector written by hand)
+//! angzarr.yaml (the generated register() and a projector written by hand)
 //! and sends a command to each domain: the generated projector projects
 //! both, the hand-written one the ledger's.
 
-use angzarr_embedded::next::markup::DomainMessage;
-use angzarr_embedded::next::v1::{Command, CommandBook, CommandPage, Cover, Uuid, command_page};
-use angzarr_embedded::next::{Sampled, Timestamp, pack};
-use angzarr_embedded_diagnostic::{Arg, Diagnostic};
+use angzarr_embedded::markup::DomainMessage;
+use angzarr_embedded::v1::{Command, CommandBook, CommandPage, Cover, Uuid, command_page};
+use angzarr_embedded::{Sampled, Timestamp, pack};
+use angzarr_embedded::angzarr_diagnostic::{Arg, Diagnostic};
 use angzarr_embedded_host::App;
 use kinds_app::domain::*;
 use kinds_app::ledger_state::LedgerState;
@@ -34,7 +34,7 @@ async fn handle<C: DomainMessage>(
     n: u8,
     domain: &str,
     command: C,
-) -> Result<(), angzarr_embedded::next::Failure<angzarr_embedded::next::Rejected>> {
+) -> Result<(), angzarr_embedded::Failure<angzarr_embedded::Rejected>> {
     let book = CommandBook {
         cover: Some(Cover {
             domain: domain.to_string(),
@@ -97,7 +97,7 @@ async fn main() {
         })
     );
 
-    let config = concat!(env!("CARGO_MANIFEST_DIR"), "/angzarr.toml");
+    let config = concat!(env!("CARGO_MANIFEST_DIR"), "/angzarr.yaml");
     let app = angzarr_embedded_host::run(config, kinds_app::register_all)
         .await
         .expect("the app runs");
@@ -110,7 +110,7 @@ async fn main() {
     send(&app, 3, "audit", Audit {}).await;
     // Post refuses OVER_LIMIT, marked OUT_OF_RANGE: refused under it.
     match handle(&app, 4, "ledger", Post {}).await {
-        Err(angzarr_embedded::next::Failure::Rejected(rejected)) => {
+        Err(angzarr_embedded::Failure::Rejected(rejected)) => {
             println!("post refused: {:?}", rejected.status())
         }
         other => panic!("post refuses: {other:?}"),
@@ -137,7 +137,7 @@ async fn audit_command(app: &App, n: u8) -> String {
     };
     let pages = app.events(&cover).await.expect("the stream reads");
     let meta = pages[0].meta.as_ref().expect("an event records its meta");
-    let Some(angzarr_embedded::next::v1::event_meta::Causation::CommandId(id)) = &meta.causation
+    let Some(angzarr_embedded::v1::event_meta::Causation::CommandId(id)) = &meta.causation
     else {
         panic!("the event records its command id");
     };

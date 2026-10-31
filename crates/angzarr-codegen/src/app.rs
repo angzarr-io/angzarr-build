@@ -42,9 +42,9 @@ use crate::model::{self, Component, ComponentKind};
 use crate::scaffold::{Owner, ScaffoldFile};
 
 /// The angzarr-embedded commit a generated application's `Cargo.toml` pins
-/// (its markup, diagnostics and host): the one this generator's output is
+/// (its kernel, which re-exports the diagnostics, its markup and its host): the one this generator's output is
 /// written against.
-pub const ANGZARR_EMBEDDED_REV: &str = "c23457c14c857fc457324c563a12ca14fe4e7e79";
+pub const ANGZARR_EMBEDDED_REV: &str = "77e62062765446d0a339f05bcb69a9593a30b94e";
 /// Where [`ANGZARR_EMBEDDED_REV`] is fetched from.
 pub const ANGZARR_EMBEDDED_GIT: &str = "https://github.com/angzarr-io/angzarr-embedded";
 /// Where angzarr-build is fetched from when a seed names no other source.
@@ -737,7 +737,6 @@ fn manifest(seed: &AppSeed) -> String {
          \n\
          [dependencies]\n\
          angzarr-embedded = {embedded}\n\
-         angzarr-embedded-diagnostic = {embedded}\n\
          angzarr-embedded-host = {embedded}\n\
          angzarr-embedded-macros = {embedded}\n\
          prost = \"0.14\"\n\

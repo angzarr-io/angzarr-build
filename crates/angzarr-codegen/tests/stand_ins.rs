@@ -78,7 +78,7 @@ fn test_every_domain_of_the_files_gets_a_stand_in_and_nothing_else_does() {
 }
 
 /// The stand-in compiles, warnings denied, against the markup's traits
-/// (a stub of angzarr-embedded's, their shapes as its `next::markup`'s)
+/// (a stub of angzarr-embedded's, their shapes as its `markup`'s)
 /// and the domain layer's types, and a policy's bounds take it.
 #[test]
 fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
@@ -89,13 +89,13 @@ fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
         dir.join("stub.rs"),
-        "pub mod next { pub mod markup {\n\
+        "pub mod markup {\n\
          pub trait DomainMessage: Clone + Send + Sync + Sized + 'static {}\n\
          pub trait CommandTarget: 'static { const DOMAIN: &'static str; fn command_types() -> Vec<String>; }\n\
          pub trait EventSource: 'static { const DOMAIN: &'static str; fn event_types() -> Vec<String>; }\n\
          pub trait Decides<C: DomainMessage>: CommandTarget {}\n\
          pub trait Ingests<F: DomainMessage>: EventSource {}\n\
-         } }\n",
+         }\n",
     )
     .unwrap();
     std::fs::write(
@@ -103,12 +103,12 @@ fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
         format!(
             "pub mod domain {{\n\
              #[derive(Clone)] pub struct DecideMove;\n\
-             impl ::angzarr_embedded::next::markup::DomainMessage for DecideMove {{}}\n\
+             impl ::angzarr_embedded::markup::DomainMessage for DecideMove {{}}\n\
              }}\n\
              pub mod stand_ins {{\n{source}\n}}\n\
-             fn target<T: ::angzarr_embedded::next::markup::Decides<domain::DecideMove>>() -> &'static str {{\n\
-             <T as ::angzarr_embedded::next::markup::CommandTarget>::DOMAIN\n}}\n\
-             fn source<T: ::angzarr_embedded::next::markup::EventSource>() -> Vec<String> {{ T::event_types() }}\n\
+             fn target<T: ::angzarr_embedded::markup::Decides<domain::DecideMove>>() -> &'static str {{\n\
+             <T as ::angzarr_embedded::markup::CommandTarget>::DOMAIN\n}}\n\
+             fn source<T: ::angzarr_embedded::markup::EventSource>() -> Vec<String> {{ T::event_types() }}\n\
              pub fn check() -> (&'static str, Vec<String>) {{\n\
              (target::<stand_ins::PlayerAggregate>(), source::<stand_ins::PlayerAggregate>())\n}}\n"
         ),

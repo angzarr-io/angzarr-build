@@ -34,11 +34,11 @@ pub(crate) fn runtime_macros() -> syn::Ident {
     format_ident!("{RUNTIME}_macros")
 }
 
-/// `::<runtime>::next`, the runtime API the generated code is written
-/// against.
-pub(crate) fn next() -> TokenStream {
+/// `::<runtime>`, the runtime's crate root: the API the generated code is
+/// written against, its kernel, `markup` and re-exported diagnostics.
+pub(crate) fn root() -> TokenStream {
     let runtime = runtime();
-    quote!(::#runtime::next)
+    quote!(::#runtime)
 }
 
 /// The markup domain layer for one package: its domain types with their
@@ -109,18 +109,18 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         }
     }
     items.extend(wire_settings(&package.messages, wire));
-    let next = next();
+    let root = root();
     for message in messages {
         let name = ident(message.name());
         items.extend(quote! {
-            impl #next::markup::DomainMessage for #name {
+            impl #root::markup::DomainMessage for #name {
                 type Wire = #wire::#name;
 
                 fn to_wire(&self) -> #wire::#name {
                     #wire::#name::from(self.clone())
                 }
 
-                fn from_wire(wire: #wire::#name) -> Result<Self, #next::WireError> {
+                fn from_wire(wire: #wire::#name) -> Result<Self, #root::WireError> {
                     #name::try_from(wire)
                 }
             }
@@ -248,12 +248,12 @@ fn rejection() -> TokenStream {
 
         impl ::std::error::Error for Rejection {}
 
-        impl ::angzarr_embedded_diagnostic::Diagnostic for Rejection {
-            fn code(&self) -> &'static str {
+        impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Rejection {
+            fn code(&self) -> &str {
                 self.key
             }
 
-            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+            fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
                 self.args
                     .iter()
                     .map(|(name, value)| (*name, value.as_str().into()))
@@ -269,26 +269,26 @@ fn rejection() -> TokenStream {
 /// re-exported, and `Bug`,
 /// a defect: a diagnostic key and its args, never text (decision 14.37).
 fn handler_context() -> TokenStream {
-    let next = next();
+    let root = root();
     quote! {
         /// What a command handler reads besides its command and state: the
         /// instant its events are recorded at, and the router's context of
         /// the input (its stream, sequences, resolution, conflict and
         /// identity) as `ctx.command`.
-        pub use #next::markup::Context;
+        pub use #root::markup::Context;
 
         /// What a policy reaction reads: its trigger, the trigger's
         /// correlation and when it was recorded.
-        pub use #next::markup::PolicyContext;
+        pub use #root::markup::PolicyContext;
 
         /// The refused command's context, whole, as its target's handler
         /// was handed it: what a `<command>_refused` method reads.
-        pub use #next::markup::CommandContext;
+        pub use #root::markup::CommandContext;
 
         /// What a projector's handler reads besides the event: the stream
         /// it is from (its source domain and root), its sequence there and
         /// when it was recorded.
-        pub use #next::markup::ProjectionContext;
+        pub use #root::markup::ProjectionContext;
 
         /// What a command handler fails with, one of four classes:
         /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
@@ -307,7 +307,7 @@ fn handler_context() -> TokenStream {
         /// since the work may have happened (a command is, by its
         /// `command_id`); `ResourceExhausted` means wait longer before
         /// resending (a quota or a capacity limit was hit).
-        pub use #next::markup::{BusinessStatus, Failed, RetryableStatus};
+        pub use #root::markup::{BusinessStatus, Failed, RetryableStatus};
 
         /// A bug: a defect, never a business answer. The other of the two
         /// classes a handler fails with; the first is [`Rejection`], a
@@ -344,12 +344,12 @@ fn handler_context() -> TokenStream {
 
         impl ::std::error::Error for Bug {}
 
-        impl ::angzarr_embedded_diagnostic::Diagnostic for Bug {
-            fn code(&self) -> &'static str {
+        impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Bug {
+            fn code(&self) -> &str {
                 self.key
             }
 
-            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+            fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
                 self.args
                     .iter()
                     .map(|(name, value)| (*name, value.as_str().into()))
@@ -441,16 +441,16 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
 
         impl ::std::fmt::Display for #name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                f.write_str(::angzarr_embedded_diagnostic::Diagnostic::code(self))
+                f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
             }
         }
 
-        impl ::angzarr_embedded_diagnostic::Diagnostic for #name {
-            fn code(&self) -> &'static str {
+        impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for #name {
+            fn code(&self) -> &str {
                 #code
             }
 
-            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+            fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
                 #args
             }
         }
@@ -546,16 +546,16 @@ fn refusal_choice(input: &crate::model::Input) -> TokenStream {
             }
         }
 
-        impl ::angzarr_embedded_diagnostic::Diagnostic for #name {
-            fn code(&self) -> &'static str {
+        impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for #name {
+            fn code(&self) -> &str {
                 match self {
-                    #(#name::#types(refusal) => ::angzarr_embedded_diagnostic::Diagnostic::code(refusal),)*
+                    #(#name::#types(refusal) => ::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(refusal),)*
                 }
             }
 
-            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+            fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
                 match self {
-                    #(#name::#types(refusal) => ::angzarr_embedded_diagnostic::Diagnostic::args(refusal),)*
+                    #(#name::#types(refusal) => ::angzarr_embedded::angzarr_diagnostic::Diagnostic::args(refusal),)*
                 }
             }
         }
@@ -588,7 +588,7 @@ fn field_arg(field: &FieldDescriptor) -> Option<TokenStream> {
     if field.is_list() || field.is_map() {
         return None;
     }
-    let arg = quote!(::angzarr_embedded_diagnostic::Arg);
+    let arg = quote!(::angzarr_embedded::angzarr_diagnostic::Arg);
     let value = match field.kind() {
         Kind::Message(_) => return None,
         Kind::Enum(e) => {
@@ -684,7 +684,7 @@ fn enumeration(e: &EnumDescriptor) -> TokenStream {
 }
 
 fn structure(message: &MessageDescriptor, wire: &syn::Path, anchor: bool) -> TokenStream {
-    let next = next();
+    let root = root();
     let name = ident(message.name());
     let full = message.full_name();
     let fields: Vec<Field> = message.fields().map(|f| Field::of(&f, wire)).collect();
@@ -723,7 +723,7 @@ fn structure(message: &MessageDescriptor, wire: &syn::Path, anchor: bool) -> Tok
         }
 
         impl TryFrom<#wire::#name> for #name {
-            type Error = #next::WireError;
+            type Error = #root::WireError;
 
             fn try_from(#param: #wire::#name) -> Result<Self, Self::Error> {
                 Ok(#name { #(#from),* })
@@ -798,10 +798,10 @@ impl Elem {
     }
 
     fn domain_type(&self) -> TokenStream {
-        let next = next();
+        let root = root();
         match self {
             Elem::Scalar(ty) => ty.clone(),
-            Elem::Timestamp => quote!(#next::Timestamp),
+            Elem::Timestamp => quote!(#root::Timestamp),
             Elem::Enum(name) | Elem::Message(name, _) => quote!(#name),
         }
     }
@@ -865,12 +865,12 @@ impl Shape {
     /// `value`, a wire value of this shape, as its domain value, refusing
     /// what the domain type cannot hold.
     fn decoded(&self, value: TokenStream, message: &str, field: &str) -> TokenStream {
-        let next = next();
+        let root = root();
         let missing = quote! {
-            #next::WireError::Missing { message: #message, field: #field }
+            #root::WireError::Missing { message: #message, field: #field }
         };
         let unknown = quote! {
-            |value| #next::WireError::UnknownEnum { message: #message, field: #field, value }
+            |value| #root::WireError::UnknownEnum { message: #message, field: #field, value }
         };
         match self {
             Shape::Single(Elem::Scalar(_)) => value,

@@ -91,7 +91,7 @@ fn test_markup_domain_implements_domain_message_for_every_input_event_and_refusa
     let impls = impls(&buyin());
     let mut messages: Vec<&str> = impls
         .iter()
-        .filter(|(t, _)| t == "::angzarr_embedded::next::markup::DomainMessage")
+        .filter(|(t, _)| t == "::angzarr_embedded::markup::DomainMessage")
         .map(|(_, ty)| ty.as_str())
         .collect();
     messages.sort();
@@ -118,9 +118,7 @@ fn test_markup_domain_leaves_state_and_payloads_to_the_markup() {
     let impls = impls(&buyin());
     let left: Vec<&(String, String)> = impls
         .iter()
-        .filter(|(t, _)| {
-            t == "::angzarr_embedded::next::State" || t == "::angzarr_embedded::next::Payload"
-        })
+        .filter(|(t, _)| t == "::angzarr_embedded::State" || t == "::angzarr_embedded::Payload")
         .collect();
     assert_eq!(left, Vec::<&(String, String)>::new());
 }
@@ -267,7 +265,7 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_bug() {
         "{BusinessStatus,Failed,RetryableStatus}",
     ] {
         assert!(
-            reexports.contains(&format!("angzarr_embedded::next::markup::{name}")),
+            reexports.contains(&format!("angzarr_embedded::markup::{name}")),
             "{name}: {reexports:?}"
         );
     }
@@ -278,7 +276,7 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_bug() {
     );
     let impls = impls(&file);
     assert!(impls.contains(&(
-        "::angzarr_embedded_diagnostic::Diagnostic".to_string(),
+        "::angzarr_embedded::angzarr_diagnostic::Diagnostic".to_string(),
         "Bug".to_string()
     )));
     for failed in ["Failed<Rejection>", "Failed<InsufficientFunds>"] {
@@ -292,7 +290,7 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_bug() {
 #[test]
 fn test_markup_domain_gives_a_typed_refusal_its_diagnostic() {
     assert!(impls(&buyin()).contains(&(
-        "::angzarr_embedded_diagnostic::Diagnostic".to_string(),
+        "::angzarr_embedded::angzarr_diagnostic::Diagnostic".to_string(),
         "InsufficientFunds".to_string()
     )));
 }
@@ -365,7 +363,7 @@ fn test_markup_domain_message_fields_are_required_and_optional_scalars_stay_opti
             ("lines", "Vec<Line>"),
             ("totals", "::std::collections::BTreeMap<String,i64>"),
             ("discount", "Option<i32>"),
-            ("opened_at", "::angzarr_embedded::next::Timestamp"),
+            ("opened_at", "::angzarr_embedded::Timestamp"),
             ("by_sku", "::std::collections::BTreeMap<String,Line>"),
         ])
     );

@@ -1,12 +1,12 @@
 //! The buy-in on angzarr-embedded: `angzarr_embedded_host::run` reads the
-//! app's angzarr.toml and calls the generated `register`, which wires the
+//! app's angzarr.yaml and calls the generated `register`, which wires the
 //! wallet, the buy-in and both policies into angzarr-embedded, which
 //! dispatches each through angzarr-router. Prints what happened, one line
 //! per fact the test checks. The App is async, on the caller's tokio runtime.
 
-use angzarr_embedded::next::markup::DomainMessage;
-use angzarr_embedded::next::v1::{Command, CommandBook, CommandPage, Cover, Uuid, command_page};
-use angzarr_embedded::next::{Domain, Payload, Sampled, Timestamp, pack};
+use angzarr_embedded::markup::DomainMessage;
+use angzarr_embedded::v1::{Command, CommandBook, CommandPage, Cover, Uuid, command_page};
+use angzarr_embedded::{Domain, Payload, Sampled, Timestamp, pack};
 use angzarr_embedded_host::App;
 use buyin_app::domain::{Deposit, StartBuyIn};
 use buyin_app::{adapters, register};
@@ -68,7 +68,7 @@ async fn state<D: Domain<State = D, Rules = ()> + Default>(app: &App, root: Uuid
 
 #[tokio::main]
 async fn main() {
-    let config = concat!(env!("CARGO_MANIFEST_DIR"), "/angzarr.toml");
+    let config = concat!(env!("CARGO_MANIFEST_DIR"), "/angzarr.yaml");
     let app = angzarr_embedded_host::run(config, register)
         .await
         .expect("the app runs");

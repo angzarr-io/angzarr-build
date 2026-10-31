@@ -34,7 +34,7 @@ fn registrations(source: &str) -> Vec<String> {
     assert_eq!(
         // syn keeps `pub` in `vis`, apart from the signature.
         format!("{}{}", text(&body.vis), text(&body.sig)),
-        "pubfnregister(registry:&mut::angzarr_embedded::next::Registry)"
+        "pubfnregister(registry:&mut::angzarr_embedded::Registry)"
     );
     body.block.stmts.iter().map(text).collect()
 }
@@ -97,7 +97,7 @@ fn test_register_leaves_out_a_policy_whose_domain_is_not_in_the_files() {
 }
 
 /// rustc with warnings denied on `source` as a library, `::angzarr_embedded`
-/// a stub holding only the `next::Registry` the signature names: the
+/// a stub holding only the `Registry` the signature names: the
 /// diagnostics, if rustc refused it.
 fn compile_denying_warnings(source: &str) -> Result<(), String> {
     use std::process::Command;
@@ -118,7 +118,7 @@ fn compile_denying_warnings(source: &str) -> Result<(), String> {
             .output()
             .expect("rustc on PATH")
     };
-    std::fs::write(dir.join("stub.rs"), "pub mod next { pub struct Registry; }").unwrap();
+    std::fs::write(dir.join("stub.rs"), "pub struct Registry;").unwrap();
     let stub = rustc(&["--crate-name=angzarr_embedded", "stub.rs"]);
     assert!(
         stub.status.success(),

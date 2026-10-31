@@ -4,7 +4,7 @@
 //! registered with `Registry::projector_handler`, and a policy in the
 //! markup standing in for the generated one under its name.
 
-use angzarr_embedded::next::markup::{Commands, PolicyContext};
+use angzarr_embedded::markup::{Commands, PolicyContext};
 use angzarr_embedded_macros::{on_event, policy};
 use angzarr_router::error::CodedError;
 use angzarr_router::pb;

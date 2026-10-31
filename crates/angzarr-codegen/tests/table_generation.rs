@@ -82,7 +82,7 @@ fn test_markup_domain_generates_the_ledger_projectors_events_and_context() {
         );
     }
     assert!(
-        source.contains("pub use ::angzarr_embedded::next::markup::ProjectionContext;"),
+        source.contains("pub use ::angzarr_embedded::markup::ProjectionContext;"),
         "{source}"
     );
 }
@@ -161,7 +161,7 @@ fn test_a_typed_refusals_fields_are_its_diagnostic_args() {
     let source = one(markup_domain(&descriptors(BLACKJACK), &[TABLE], WIRE).unwrap());
     let diagnostic = impl_text(
         &source,
-        "::angzarr_embedded_diagnostic::Diagnostic",
+        "::angzarr_embedded::angzarr_diagnostic::Diagnostic",
         "SeatNotConfirmable",
     );
     assert!(diagnostic.contains("(\"reason\","), "{diagnostic}");
@@ -183,7 +183,7 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
     assert!(source.contains("pub enum BetRefusedReason"), "{source}");
     let diagnostic = impl_text(
         &source,
-        "::angzarr_embedded_diagnostic::Diagnostic",
+        "::angzarr_embedded::angzarr_diagnostic::Diagnostic",
         "BetRefused",
     );
     for expected in [
@@ -246,15 +246,15 @@ fn test_generated_register_composes_with_a_hand_written_component() {
          pub struct HandWrittenLedger;\n\
          impl ::angzarr_embedded::router::ProjectorHandler for HandWrittenLedger {{}}\n\
          /// The application's registration: the generated, then its own.\n\
-         pub fn register_all(registry: &mut ::angzarr_embedded::next::Registry) {{\n\
+         pub fn register_all(registry: &mut ::angzarr_embedded::Registry) {{\n\
              register(registry);\n\
              registry.projector_handler(&[\"carts\"], HandWrittenLedger);\n\
          }}\n"
     );
     let stub = "pub mod router { pub trait ProjectorHandler {} }\n\
-                pub mod next { pub struct Registry; impl Registry {\n\
+                pub struct Registry; impl Registry {\n\
                     pub fn projector_handler(&mut self, _sources: &[&str], _p: impl crate::router::ProjectorHandler + 'static) -> &mut Self { self }\n\
-                } }";
+                }";
     if let Err(diagnostics) = compile_with_stub(stub, &app) {
         panic!("{app}\n{diagnostics}");
     }

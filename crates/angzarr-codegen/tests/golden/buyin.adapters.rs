@@ -9,10 +9,10 @@
 // choose: its impl allows `clippy::result_large_err`.
 
 #[allow(unused_imports)]
-use ::angzarr_embedded::next::markup::{
+use ::angzarr_embedded::markup::{
     Commands, Context, Emit, PolicyContext, Record, Refuses,
 };
-use ::angzarr_embedded::next::v1::Uuid;
+use ::angzarr_embedded::v1::Uuid;
 #[allow(unused_imports)]
 use ::angzarr_embedded_macros::{
     aggregate, applies, handles_cmd, handles_fact, on_event, policy, process_manager,

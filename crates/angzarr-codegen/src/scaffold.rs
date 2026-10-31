@@ -25,7 +25,7 @@ use quote::{format_ident, quote};
 use crate::common::{has_code_status, refusal_choice_name, snake};
 use crate::error::CodegenError;
 use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Input};
-use crate::rust::{RUNTIME, ident, next, runtime_macros};
+use crate::rust::{RUNTIME, ident, root, runtime_macros};
 use crate::{Generated, generate};
 
 /// One file of a scaffold.
@@ -699,7 +699,7 @@ pub fn adapters(
     interface: &dyn Fn(&str) -> Option<String>,
 ) -> Result<String, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
-    let next = next();
+    let root = root();
     let mut items = TokenStream::new();
     let mut markup = vec!["Context", "Emit"];
     let mut macros = vec![];
@@ -770,13 +770,13 @@ pub fn adapters(
         }
     };
     let uuid = if has_policy {
-        quote!(use #next::v1::Uuid;)
+        quote!(use #root::v1::Uuid;)
     } else {
         quote!()
     };
     let source = file(quote! {
         #[allow(unused_imports)]
-        use #next::markup::{#(#markup),*};
+        use #root::markup::{#(#markup),*};
         #uuid
         #macros
         use crate::domain::*;
@@ -1008,11 +1008,11 @@ pub fn stand_ins(descriptor_set: &[u8], files: &[&str]) -> Result<String, Codege
     }
     markup.sort_unstable();
     let markup: Vec<syn::Ident> = markup.iter().map(|m| format_ident!("{m}")).collect();
-    let next = next();
+    let root = root();
     let items = domains.into_iter().map(remote_domain);
     let source = file(quote! {
         #[allow(unused_imports)]
-        use #next::markup::{#(#markup),*};
+        use #root::markup::{#(#markup),*};
         #[allow(unused_imports)]
         use crate::domain::*;
         #(#items)*
@@ -1348,14 +1348,14 @@ fn registration(
     // Every domain remote leaves the body empty: the registry is still
     // taken, for one signature, and bound so the build warns of nothing.
     let unused = registrations.is_empty().then(|| quote!(let _ = registry;));
-    let next = next();
+    let root = root();
     let doc = [
         format!(" Registers every component of the project with {RUNTIME}, which dispatches"),
         " each through angzarr-router: an application calls this once, at startup.".to_string(),
     ];
     let source = file(quote! {
         #(#[doc = #doc])*
-        pub fn register(registry: &mut #next::Registry) {
+        pub fn register(registry: &mut #root::Registry) {
             #unused
             #(#registrations)*
         }
