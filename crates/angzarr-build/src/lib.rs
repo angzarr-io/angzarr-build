@@ -203,6 +203,18 @@ pub fn descriptors_into(
     std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
+/// Every component of `protos` with its name in an application (see
+/// `angzarr_codegen::component_names`): what a build script writes for
+/// hand-written code and its config to name components as the generator
+/// does.
+pub fn component_names(
+    protos: &[&str],
+    includes: &[&str],
+) -> Result<Vec<angzarr_codegen::ComponentName>, BuildError> {
+    let bytes = scaffold_descriptors(protos, includes)?;
+    angzarr_codegen::component_names(&bytes, protos).map_err(BuildError::Codegen)
+}
+
 /// What [`scaffold_into`] does with a component's file that exists.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Existing {

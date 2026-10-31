@@ -6,10 +6,13 @@
 // are the user's and are never touched.
 
 #[allow(unused_imports)]
-use ::angzarr_embedded::next::markup::{Context, Emit, Record, Refuses, Report};
+use ::angzarr_embedded::next::markup::{
+    Commands, Context, Emit, PolicyContext, Record, Refuses, Report,
+};
+use ::angzarr_embedded::next::v1::Uuid;
 #[allow(unused_imports)]
 use ::angzarr_embedded_macros::{
-    aggregate, applies, handles_cmd, handles_fact, projector, projects,
+    aggregate, applies, handles_cmd, handles_fact, on_event, policy, projector, projects,
 };
 use crate::domain::*;
 /// `kinds.v1.LedgerState`, delegating to `crate::ledger_state::LedgerState`.
@@ -228,5 +231,39 @@ impl LedgerView {
         crate::ledger_view::LedgerView::audited(&mut self.0, event, ctx)
             .await
             .map_err(|bug| Report::of(&bug))
+    }
+}
+/// `kinds.v1.LedgerAuditPolicy`, delegating to `crate::ledger_audit_policy::LedgerAuditPolicy`.
+#[derive(Clone, Debug, Default)]
+pub struct LedgerAuditPolicy(pub crate::ledger_audit_policy_impl::LedgerAuditPolicyImpl);
+#[policy(name = "policy-ledger-audit", source = LedgerState, target = AuditState)]
+impl LedgerAuditPolicy {
+    #[on_event(Noted)]
+    fn noted(
+        &self,
+        event: &Noted,
+        ctx: &PolicyContext,
+    ) -> ::core::result::Result<Commands<AuditState>, Bug> {
+        let orders = crate::ledger_audit_policy::LedgerAuditPolicy::noted(
+            &self.0,
+            &ctx.source_root().value,
+            event,
+            ctx,
+        )?;
+        ::core::result::Result::Ok(
+            orders
+                .into_iter()
+                .fold(
+                    Commands::none(),
+                    |commands, (root, command)| {
+                        let root = Uuid { value: root.into() };
+                        match command {
+                            AuditStateCommand::Audit(command) => {
+                                commands.to(root, command)
+                            }
+                        }
+                    },
+                ),
+        )
     }
 }

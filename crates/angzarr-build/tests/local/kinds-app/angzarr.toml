@@ -12,6 +12,11 @@ language = "rust"
 kind = "domain"
 
 [[component]]
+name = "policy-ledger-audit"
+language = "rust"
+kind = "policy"
+
+[[component]]
 name = "projector-ledger-view"
 language = "rust"
 kind = "projector"

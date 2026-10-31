@@ -142,7 +142,9 @@ fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
 /// against angzarr-embedded and run: each refusal's code and args, then
 /// commands whose events the generated projector and one written by hand
 /// (registered through angzarr-embedded's public API beside the generated
-/// register()) project.
+/// register()) project and a generated policy reacts to; then the policy
+/// swapped for one written by hand under the generated one's name
+/// (`angzarr_build::component_names`): the same derived command id.
 #[test]
 #[ignore = "builds angzarr-embedded and its dependencies: slow; run with --ignored"]
 fn test_the_kinds_app_refuses_records_and_projects_as_generated() {
@@ -169,14 +171,25 @@ fn test_the_kinds_app_refuses_records_and_projects_as_generated() {
             "kinds-v1-listed ",
             "kinds-v1-elsewhere why=AWAY",
             "kinds-v1-mislabeled reason=LATE",
-            // Open: Posted and Noted; the view projects Posted only.
+            // Open: Posted and Noted; the view projects Posted, and Noted
+            // sets the policy off, whose Audit the view projects too.
             "view: Posted from ledger (1)",
+            "view: Audited from audit (2)",
             "tally: 2 events from ledger",
+            "generated policy: 49bd00eef2815f39bc2a91179c4619f9",
             // Batch: Noted then Posted, one step each.
-            "view: Posted from ledger (2)",
+            "view: Posted from ledger (3)",
+            "view: Audited from audit (4)",
             "tally: 2 events from ledger",
             // Audit, the view's other source.
-            "view: Audited from audit (3)",
+            "view: Audited from audit (5)",
+            // The policy swapped for one written by hand under the
+            // generated one's name: the same command id.
+            "swapped",
+            "view: Posted from ledger (1)",
+            "view: Audited from audit (2)",
+            "tally: 2 events from ledger",
+            "hand-written policy: 49bd00eef2815f39bc2a91179c4619f9",
             "",
         ]
         .join("\n")

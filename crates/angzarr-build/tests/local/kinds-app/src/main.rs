@@ -89,9 +89,38 @@ async fn main() {
     let app = angzarr_embedded_host::run(config, kinds_app::register_all)
         .await
         .expect("the app runs");
-    // ONE of two: both recorded, the projectors run once for the book.
+    // ONE of two: both recorded, the projectors run once for the book;
+    // Noted sets the policy off, auditing the same root.
     send(&app, 1, "ledger", Open {}).await;
+    println!("generated policy: {}", audit_command(&app, 1).await);
     // MANY: Noted, then Posted, as the handler ordered them.
     send(&app, 2, "ledger", Batch {}).await;
     send(&app, 3, "audit", Audit {}).await;
+    drop(app);
+
+    // The policy swapped for the hand-written one of the same name: the
+    // same trigger derives the same command id.
+    println!("swapped");
+    let app = angzarr_embedded_host::run(config, kinds_app::register_swapped)
+        .await
+        .expect("the swapped app runs");
+    send(&app, 1, "ledger", Open {}).await;
+    println!("hand-written policy: {}", audit_command(&app, 1).await);
+}
+
+/// The id of the command recorded first on the audit stream at root `n`,
+/// in hex.
+async fn audit_command(app: &App, n: u8) -> String {
+    let cover = Cover {
+        domain: "audit".to_string(),
+        root: Some(Uuid::from_bytes([n; 16])),
+        edition: None,
+    };
+    let pages = app.events(&cover).await.expect("the stream reads");
+    let meta = pages[0].meta.as_ref().expect("an event records its meta");
+    let Some(angzarr_embedded::next::v1::event_meta::Causation::CommandId(id)) = &meta.causation
+    else {
+        panic!("the event records its command id");
+    };
+    id.value.iter().map(|b| format!("{b:02x}")).collect()
 }

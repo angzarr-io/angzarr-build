@@ -1,6 +1,6 @@
 // Typed refusals of every field kind, a command refusing several of them,
-// inputs of each emits cardinality, and a projector of two source domains
-// (decision 14.50). Each field set is
+// inputs of each emits cardinality, a projector of two source domains, and
+// a policy between the two domains (decision 14.50). Each field set is
 // an arg (an integer its number,
 // a string itself, an enum its value's name without the enum's prefix,
 // bytes their hex, a bool or a float its text), a message, list or map
@@ -39,6 +39,10 @@ message Posted {
 
 message Noted {
   option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerState"};
+  option (io.angzarr.v1.event) = {
+    component: "kinds.v1.LedgerAuditPolicy"
+    domain: "ledger"
+  };
 }
 
 // ONE of two types: a tuple.
@@ -214,4 +218,13 @@ message LedgerView {
     input_domains: ["ledger", "audit"]
   };
   int64 seen = 1;
+}
+
+// Each Noted on the ledger audits the same root.
+message LedgerAuditPolicy {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_POLICY
+    input_domain: "ledger"
+    output_domain: "audit"
+  };
 }
