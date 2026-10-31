@@ -395,14 +395,14 @@ fn test_the_dispatch_refuses_with_a_returned_typed_refusal() {
         &[
             "_REFUSALS = {_d.TillRefused: _from_till_refused, _d.CardDeclined: _from_card_declined, _d.Unbalanced: _from_unbalanced,}",
             "to_wire = _REFUSALS.get(type(result))",
-            "refused = _az.Refused(to_wire(result))",
-            "refused.grpc = result.status()",
-            "raise refused",
+            "raise _az.Refused(to_wire(result), result.status())",
             "return _decided(logic.charge(cmd, _to_till_state(state), cctx))",
             // A command refusing nothing answers its events as before.
             "return _book(logic.settle(cmd, _to_till_state(state), cctx))",
         ],
     );
+    // The client's Refused takes the status: nothing sets it afterwards.
+    assert!(!dispatch.contains(".grpc"), "{dispatch}");
 }
 
 /// A refusal's codes are its Reason enum, each value by its name without
