@@ -25,7 +25,9 @@ pub fn spec() -> PathBuf {
 }
 
 /// protoc's descriptor set for `files` under `tests/fixtures` or the spec's
-/// protos ([`spec`]), with angzarr's protos importable.
+/// protos ([`spec`]), with angzarr's protos importable: the spec's own
+/// `io/angzarr/v1` first, so its options are the submodule's (angzarr-proto's
+/// copy can trail the spec draft).
 pub fn descriptors(files: &[&str]) -> Vec<u8> {
     static RUN: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
@@ -41,8 +43,8 @@ pub fn descriptors(files: &[&str]) -> Vec<u8> {
         .arg("--include_imports")
         .arg(format!("--descriptor_set_out={}", out.display()))
         .arg(format!("-I{}", fixtures.display()))
-        .arg(format!("-I{}", angzarr.display()))
         .arg(format!("-I{}", spec().display()))
+        .arg(format!("-I{}", angzarr.display()))
         .args(files)
         .status()
         .expect("protoc on PATH");
