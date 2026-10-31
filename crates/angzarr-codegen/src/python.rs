@@ -1631,33 +1631,20 @@ fn pyproject(app: &PythonApp, served: &str, units: &[Unit]) -> String {
     )
 }
 
-/// Every proto file the units' plain types reach, and every file those
-/// import (a pb2 module imports each of its file's imports, used or not),
-/// angzarr's own and google's excepted.
+/// Every proto file declaring a unit's root, and every file those import
+/// (a pb2 module imports each of its file's imports, used or not; a field's
+/// type is always among them), angzarr's own and google's excepted.
 fn proto_paths(units: &[Unit]) -> BTreeSet<String> {
-    let ours =
-        |package: &str| !FRAMEWORK_PACKAGES.contains(&package) && !package.starts_with("google.");
-    let mut seen = BTreeSet::new();
     let mut files = BTreeSet::new();
-    let mut reached = Vec::new();
-    let mut stack: Vec<MessageDescriptor> = units.iter().flat_map(roots).collect();
-    while let Some(message) = stack.pop() {
-        if !seen.insert(message.full_name().to_string()) {
-            continue;
-        }
-        if ours(message.package_name()) {
-            reached.push(message.parent_file());
-        }
-        for field in message.fields() {
-            match field.kind() {
-                Kind::Message(m) => stack.push(m),
-                Kind::Enum(e) if ours(e.package_name()) => reached.push(e.parent_file()),
-                _ => {}
-            }
-        }
-    }
+    let mut reached: Vec<_> = units
+        .iter()
+        .flat_map(roots)
+        .map(|m| m.parent_file())
+        .collect();
     while let Some(file) = reached.pop() {
-        if ours(file.package_name()) && files.insert(file.name().to_string()) {
+        let package = file.package_name();
+        let ours = !FRAMEWORK_PACKAGES.contains(&package) && !package.starts_with("google.");
+        if ours && files.insert(file.name().to_string()) {
             reached.extend(file.dependencies());
         }
     }
@@ -1859,7 +1846,8 @@ fn class(source: &str, name: Option<&str>) -> Option<Class> {
     }
     let end = lines[last].0 + lines[last].1.len();
     let mut methods = Vec::new();
-    let defs: Vec<usize> = (start + 1..=last)
+    // The header is never a `def`: the range may hold it.
+    let defs: Vec<usize> = (start..=last)
         .filter(|&i| {
             let line = lines[i].1;
             line.starts_with("    def ") || line.starts_with("    async def ")

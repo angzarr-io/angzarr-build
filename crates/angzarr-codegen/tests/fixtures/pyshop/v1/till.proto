@@ -5,6 +5,7 @@ syntax = "proto3";
 // (decision 14.50), and whose inputs declare each emits cardinality.
 package pyshop.v1;
 
+import "google/protobuf/timestamp.proto";
 import "io/angzarr/v1/options.proto";
 
 message TillState {
@@ -14,6 +15,13 @@ message TillState {
   };
 
   int64 balance = 1;
+  map<string, Drawer> drawers = 2;
+  map<string, int64> floats = 3;
+}
+
+enum Drawer {
+  DRAWER_UNSPECIFIED = 0;
+  DRAWER_OPEN = 1;
 }
 
 // Two refusals: the till's codes, and the card's own.
@@ -85,6 +93,7 @@ message Charged {
   option (io.angzarr.v1.event) = {component: "pyshop.v1.TillState"};
 
   int64 amount = 1;
+  google.protobuf.Timestamp at = 2;
 }
 
 message Refunded {

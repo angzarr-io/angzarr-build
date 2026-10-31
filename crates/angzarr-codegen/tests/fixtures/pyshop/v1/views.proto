@@ -32,6 +32,10 @@ message PageViewed {
     component: "pyshop.v1.PageCounter"
     domain: "pages"
   };
+  option (io.angzarr.v1.event) = {
+    component: "pyshop.v1.PagesTallyPolicy"
+    domain: "pages"
+  };
 
   string path = 1;
 }
@@ -50,4 +54,30 @@ message PageCounter {
   };
 
   int64 views = 1;
+}
+
+// An aggregate taking facts only, and a policy sending it nothing it can
+// type: its reactions' commands are any object.
+message TallyState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "tally"
+  };
+
+  int64 count = 1;
+}
+
+message Tallied {
+  option (io.angzarr.v1.command) = {
+    component: "pyshop.v1.TallyState"
+    fact: true
+  };
+}
+
+message PagesTallyPolicy {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_POLICY
+    input_domain: "pages"
+    output_domain: "tally"
+  };
 }

@@ -166,6 +166,8 @@ fn test_a_map_field_is_a_dict_of_its_plain_type() {
         ],
     );
     assert!(!domain.contains("CommandContext"), "{domain}");
+    // A map's entry is no plain type of its own.
+    assert!(!domain.contains("Entry"), "{domain}");
     let dispatch = source(&files, "ledger_projector_angzarr.py");
     assert_has(
         dispatch,
@@ -622,4 +624,38 @@ fn test_a_projectors_input_domain_is_its_one_source() {
         flat(dispatch).contains("dispatch.for_domains(\"visits\")"),
         "{dispatch}"
     );
+}
+
+/// A map of an enum converts each value through the enum, a map of a
+/// scalar as it is; a well-known type is never a plain type of the domain.
+#[test]
+fn test_a_map_converts_each_value_by_its_kind() {
+    let files = till();
+    let dispatch = source(&files, "till_state_angzarr.py");
+    assert_has(
+        dispatch,
+        &[
+            "drawers={k: _d.Drawer(v) for k, v in pb.drawers.items()},",
+            "drawers={k: int(v) for k, v in value.drawers.items()},",
+            "floats=dict(pb.floats)",
+            "floats=dict(value.floats)",
+        ],
+    );
+    let domain = source(&files, "/domain.py");
+    assert!(
+        domain.contains("    drawers: dict[str, Drawer] = field(default_factory=dict)\n"),
+        "{domain}"
+    );
+    assert!(!domain.contains("class Timestamp"), "{domain}");
+}
+
+/// A policy whose target takes no command it can send types its
+/// reactions' commands as any object.
+#[test]
+fn test_a_policy_whose_target_takes_facts_only_sends_any_object() {
+    const FILE: &str = "pyshop/v1/views.proto";
+    let files = scaffold_python(&descriptors(&[FILE]), &[FILE], &app("policy-pages-tally"))
+        .unwrap_or_else(|e| panic!("{e:?}"));
+    let logic = source(&files, "/logic.py");
+    assert_has(logic, &["-> list[tuple[bytes, object]]: ..."]);
 }
