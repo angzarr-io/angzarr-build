@@ -50,6 +50,17 @@ impl ComponentKind {
         }
     }
 
+    /// The kind its name's default reads.
+    pub(crate) fn name_kind(self) -> crate::names::NameKind {
+        use crate::names::NameKind;
+        match self {
+            ComponentKind::Aggregate => NameKind::Aggregate,
+            ComponentKind::Policy => NameKind::Policy,
+            ComponentKind::ProcessManager => NameKind::ProcessManager,
+            ComponentKind::Projector => NameKind::Projector,
+        }
+    }
+
     /// Its `ComponentKind` number (types.proto).
     pub(crate) fn number(self) -> i32 {
         match self {
@@ -114,6 +125,9 @@ pub(crate) struct Component {
     pub kind: ComponentKind,
     /// The generated names' stem: `ComponentOptions.name`, else the anchor's.
     pub name: String,
+    /// Its name in an application (`ComponentOptions.component_name`, else
+    /// its kind's default: [`crate::component_name`]).
+    pub component_name: String,
     /// The stream domain it owns (an aggregate's or a process manager's).
     pub domain: String,
     /// A policy's source domain.
@@ -353,13 +367,33 @@ pub(crate) fn components(
             n if n.is_empty() => message.name().to_string(),
             n => n,
         };
+        let (domain, input_domain, output_domain) = (
+            string_field(&declared, "domain"),
+            string_field(&declared, "input_domain"),
+            string_field(&declared, "output_domain"),
+        );
+        let component_name = crate::names::unchecked(&crate::names::NameOf {
+            kind: kind.name_kind(),
+            component_name: &string_field(&declared, "component_name"),
+            domain: &domain,
+            input_domain: &input_domain,
+            output_domain: &output_domain,
+            anchor: message.name(),
+        });
+        if !crate::names::well_formed(&component_name) {
+            return Err(CodegenError::ComponentName {
+                component: message.full_name().to_string(),
+                name: component_name,
+            });
+        }
         components.push(Component {
             anchor: message.clone(),
             kind,
             name,
-            domain: string_field(&declared, "domain"),
-            input_domain: string_field(&declared, "input_domain"),
-            output_domain: string_field(&declared, "output_domain"),
+            component_name,
+            domain,
+            input_domain,
+            output_domain,
             inputs: Vec::new(),
             events: Vec::new(),
             sources: Vec::new(),

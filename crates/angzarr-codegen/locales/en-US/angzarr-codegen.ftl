@@ -18,6 +18,7 @@ angzarr-codegen-scaffold-impl-not-found = { $path } holds no decorated impl of {
 angzarr-codegen-refuses-on-fact = { $message } is a fact and declares refuses; a fact cannot be refused
 angzarr-codegen-reserved-name = { $message } is named { $name }, which the generated domain layer gives the runtime's own { $name }; rename it
 angzarr-codegen-translate-not-a-fact = translate names { $fact }, a command of { $policy }'s source; it must name a fact
+angzarr-codegen-component-name = { $component }'s name "{ $name }" is not lower-case letters, digits and -, starting with a letter; set its component_name
 angzarr-codegen-cardinality-without-emits = { $message } declares no emits and the emits cardinality { $cardinality }; only MANY is accepted without emits
 angzarr-codegen-emits-tuple = { $message } emits { $count } types as one tuple, more than the markup's four; declare it MANY
 angzarr-codegen-refusal-choice-name = { $message } is named { $name }, which the generated domain layer gives the refusals of { $command }; rename it

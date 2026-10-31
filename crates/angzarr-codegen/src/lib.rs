@@ -9,12 +9,14 @@
 mod descriptor;
 mod error;
 mod model;
+mod names;
 mod python;
 mod rust;
 mod scaffold;
 
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
 pub use error::{CodegenError, diagnostic_samples};
+pub use names::{ComponentName, NameKind, NameOf, component_name, component_names, kebab};
 pub use rust::refusal_key;
 
 /// This crate's en-US messages.

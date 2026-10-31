@@ -1042,10 +1042,7 @@ fn policy_adapter(
     ) else {
         return quote!();
     };
-    let policy_name = format!(
-        "policy-{}-{}",
-        component.input_domain, component.output_domain
-    );
+    let policy_name = &component.component_name;
     let source_ty = ident(&source.name);
     let target_ty = ident(&target.name);
     let command_enum = format_ident!("{}Command", target.name);

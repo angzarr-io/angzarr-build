@@ -1,0 +1,12 @@
+syntax = "proto3";
+package bad.v1;
+import "io/angzarr/v1/options.proto";
+
+// A component_name that is not lower-case letters, digits and -.
+message ThingState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "things"
+    component_name: "Things_1"
+  };
+}

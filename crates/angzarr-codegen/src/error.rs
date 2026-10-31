@@ -64,6 +64,10 @@ pub enum CodegenError {
     /// A translate selection's fact is an input of the policy's source, but
     /// a command, not a fact.
     TranslateNotAFact { policy: String, fact: String },
+    /// A component's name in an application (declared, or its kind's
+    /// default) that is not lower-case ASCII letters, digits and `-`,
+    /// starting with a letter.
+    ComponentName { component: String, name: String },
     /// An input with no emits whose `emits_cardinality` is ONE (`optional`
     /// false) or OPTIONAL: only MANY is accepted without emits.
     CardinalityWithoutEmits { message: String, optional: bool },
@@ -183,6 +187,10 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} is named {name}, which the generated domain layer gives the runtime's own {name}; rename it"
             ),
+            CodegenError::ComponentName { component, name } => write!(
+                f,
+                "{component}'s name \"{name}\" is not lower-case letters, digits and -, starting with a letter; set its component_name"
+            ),
             CodegenError::CardinalityWithoutEmits { message, optional } => write!(
                 f,
                 "{message} declares no emits and the emits cardinality {}; only MANY is accepted without emits",
@@ -264,6 +272,7 @@ impl Diagnostic for CodegenError {
             CodegenError::ReservedName { .. } => "angzarr-codegen-reserved-name",
             CodegenError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
             CodegenError::RefusalChoiceName { .. } => "angzarr-codegen-refusal-choice-name",
+            CodegenError::ComponentName { .. } => "angzarr-codegen-component-name",
             CodegenError::CardinalityWithoutEmits { .. } => {
                 "angzarr-codegen-cardinality-without-emits"
             }
@@ -332,6 +341,9 @@ impl Diagnostic for CodegenError {
             }
             CodegenError::TranslateNotAFact { policy, fact } => {
                 vec![("policy", s(policy)), ("fact", s(fact))]
+            }
+            CodegenError::ComponentName { component, name } => {
+                vec![("component", s(component)), ("name", s(name))]
             }
             CodegenError::CardinalityWithoutEmits { message, optional } => vec![
                 ("message", s(message)),
@@ -434,6 +446,10 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CodegenError::TranslateNotAFact {
             policy: s(),
             fact: s(),
+        }),
+        Box::new(CodegenError::ComponentName {
+            component: s(),
+            name: s(),
         }),
         Box::new(CodegenError::CardinalityWithoutEmits {
             message: s(),
