@@ -25,7 +25,7 @@ use quote::{format_ident, quote};
 
 use crate::error::CodegenError;
 use crate::model::{self, Component, ComponentKind, MARKUP_KINDS};
-use crate::rust::{RUNTIME, ident, next, runtime_macros, snake};
+use crate::rust::{RUNTIME, ident, next, refusal_choice_name, runtime_macros, snake};
 use crate::{Generated, generate};
 
 /// One file of a scaffold.
@@ -273,11 +273,7 @@ fn interface_methods(
         let error = match input.refuses.as_slice() {
             [] => "Failed<Rejection>".to_string(),
             [one] => format!("Failed<{}>", one.name()),
-            _ => {
-                return Err(CodegenError::SeveralRefusals {
-                    command: input.message.full_name().to_string(),
-                });
-            }
+            _ => format!("Failed<{}>", refusal_choice_name(&input.message)),
         };
         methods.push(Method {
             name: method(ty),
@@ -812,11 +808,20 @@ fn domain_adapter(component: &Component) -> TokenStream {
                 }
             }),
             refusals => {
+                // One type widens by its own `Into`; several, by their
+                // domain-layer choice's `widen`.
+                let widen = match refusals {
+                    [_] => quote!(Failed::widen),
+                    _ => {
+                        let choice = format_ident!("{}", refusal_choice_name(&input.message));
+                        quote!(#choice::widen)
+                    }
+                };
                 let refusals: Vec<syn::Ident> = refusals.iter().map(|r| ident(r.name())).collect();
                 methods.push(quote! {
                     #[handles_cmd(#ty #starts, refuses(#(#refusals),*))]
                     fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Refuses<Self, #ty>>> {
-                        #interface::#m(&self.0, &cmd, ctx).map(#emit).map_err(Failed::widen)
+                        #interface::#m(&self.0, &cmd, ctx).map(#emit).map_err(#widen)
                     }
                 });
             }

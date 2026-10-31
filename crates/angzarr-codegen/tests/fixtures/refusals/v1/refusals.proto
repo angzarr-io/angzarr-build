@@ -1,6 +1,6 @@
 // A command refusing with a typed refusal whose nested enum lists the
-// rejection codes, as table.proto would declare its eighteen if the owner
-// rules for that shape (red/table-generation): the generated diagnostic
+// rejection codes, as table.proto declares its eighteen (decision 14.50,
+// TableRefused): the generated diagnostic
 // carries each field as an arg, an enum as its value's name without the
 // enum's prefix (`ALREADY_BET`, the ErrorInfo.reason on the wire).
 syntax = "proto3";

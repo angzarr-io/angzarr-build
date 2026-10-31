@@ -135,3 +135,39 @@ fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
         .join("\n")
     );
 }
+
+/// `tests/local/kinds-app`: the generated domain layer of a typed refusal
+/// of each field kind and a command refusing several, with its adapter,
+/// built against angzarr-embedded and run: each refusal's code and args.
+#[test]
+#[ignore = "builds angzarr-embedded and its dependencies: slow; run with --ignored"]
+fn test_typed_refusals_carry_their_reason_key_and_their_set_fields() {
+    let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/local/kinds-app");
+    let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/kinds-app");
+    let out = Command::new(env!("CARGO"))
+        .args(["run", "--quiet", "--manifest-path"])
+        .arg(app.join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", target)
+        .output()
+        .expect("cargo runs");
+    assert!(
+        out.status.success(),
+        "the app builds and runs:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        [
+            "kinds-v1-postrefused-over-limit reason=OVER_LIMIT small=-1 big=2 count=3 total=4 \
+             text=t data=ab01 flag=true ratio=0.5 share=1.5 tone=LOUD limit=9",
+            "kinds-v1-postrefused-over-limit",
+            "kinds-v1-unreasoned reason=LOUD",
+            "kinds-v1-listed ",
+            "kinds-v1-elsewhere why=AWAY",
+            "kinds-v1-mislabeled reason=LATE",
+            "registered ledger",
+            "",
+        ]
+        .join("\n")
+    );
+}

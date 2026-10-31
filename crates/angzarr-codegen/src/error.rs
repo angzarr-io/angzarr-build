@@ -64,9 +64,13 @@ pub enum CodegenError {
     /// A translate selection's fact is an input of the policy's source, but
     /// a command, not a fact.
     TranslateNotAFact { policy: String, fact: String },
-    /// A command declaring more than one typed refusal, which the scaffold
-    /// does not emit yet.
-    SeveralRefusals { command: String },
+    /// A domain type taking the name the domain layer gives the choice of a
+    /// command refusing several types (`<Command>Refuses`).
+    RefusalChoiceName {
+        message: String,
+        name: String,
+        command: String,
+    },
     /// The user's file takes an input as a command (`cmd`) where the proto
     /// declares a fact (`fact`), or the reverse. `expected` and `found` are
     /// the parameters' names.
@@ -173,13 +177,17 @@ impl fmt::Display for CodegenError {
                 f,
                 "{message} is named {name}, which the generated domain layer gives the runtime's own {name}; rename it"
             ),
+            CodegenError::RefusalChoiceName {
+                message,
+                name,
+                command,
+            } => write!(
+                f,
+                "{message} is named {name}, which the generated domain layer gives the refusals of {command}; rename it"
+            ),
             CodegenError::TranslateNotAFact { policy, fact } => write!(
                 f,
                 "translate names {fact}, a command of {policy}'s source; it must name a fact"
-            ),
-            CodegenError::SeveralRefusals { command } => write!(
-                f,
-                "{command} declares more than one refusal, which the scaffold does not emit yet"
             ),
             CodegenError::InputMismatch {
                 path,
@@ -240,7 +248,7 @@ impl Diagnostic for CodegenError {
             CodegenError::RefusesOnFact { .. } => "angzarr-codegen-refuses-on-fact",
             CodegenError::ReservedName { .. } => "angzarr-codegen-reserved-name",
             CodegenError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
-            CodegenError::SeveralRefusals { .. } => "angzarr-codegen-several-refusals",
+            CodegenError::RefusalChoiceName { .. } => "angzarr-codegen-refusal-choice-name",
             CodegenError::InputMismatch { .. } => "angzarr-codegen-input-mismatch",
             CodegenError::PythonNoDomain { .. } => "angzarr-codegen-python-no-domain",
             CodegenError::PythonKind { .. } => "angzarr-codegen-python-kind",
@@ -306,7 +314,15 @@ impl Diagnostic for CodegenError {
             CodegenError::TranslateNotAFact { policy, fact } => {
                 vec![("policy", s(policy)), ("fact", s(fact))]
             }
-            CodegenError::SeveralRefusals { command } => vec![("command", s(command))],
+            CodegenError::RefusalChoiceName {
+                message,
+                name,
+                command,
+            } => vec![
+                ("message", s(message)),
+                ("name", s(name)),
+                ("command", s(command)),
+            ],
             CodegenError::InputMismatch {
                 path,
                 message,
@@ -390,7 +406,11 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             policy: s(),
             fact: s(),
         }),
-        Box::new(CodegenError::SeveralRefusals { command: s() }),
+        Box::new(CodegenError::RefusalChoiceName {
+            message: s(),
+            name: s(),
+            command: s(),
+        }),
         Box::new(CodegenError::InputMismatch {
             path: s(),
             message: s(),

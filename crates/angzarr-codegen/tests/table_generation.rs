@@ -3,8 +3,8 @@
 //! does not do yet. The plan is
 //! `rust-table-generation.plan.md` (session inept-sixth-stick). Every
 //! fixture is the spec submodule's protos ([`spec`]) except
-//! `refusals/v1/refusals.proto`, the shape a declared rejection code would
-//! take (an owner decision; the spec does not declare one yet).
+//! `refusals/v1/refusals.proto`, a declared rejection code's shape
+//! (decision 14.50) in small.
 //!
 //! Red today, each for the reason its doc says; the pins marked GREEN hold
 //! what the plan keeps.
@@ -47,11 +47,11 @@ fn impl_text(source: &str, trait_: &str, ty: &str) -> String {
 
 // ------------------------------------------------- external components
 
-/// RED: UnknownComponent{TableCreated, LedgerProjection}. table.proto
-/// alone (protoc with its own imports only) names three consumers it does
-/// not declare (LedgerProjection, TableBuyInPolicy, TableWalletPolicy):
-/// an `(event)` entry naming a component outside the set is a reference to
-/// a consumer generated elsewhere, not a refusal. A `(command)` naming one
+/// table.proto alone (protoc with its own imports only) names three
+/// consumers it does not declare (LedgerProjection, TableBuyInPolicy,
+/// TableWalletPolicy): an `(event)` entry naming a component outside the
+/// set is a reference to a consumer generated elsewhere, not a refusal
+/// (decision 14.50). A `(command)` naming one
 /// stays refused (`bad/v1/unknown_component.proto`): its owner is the
 /// component generated here.
 #[test]
@@ -148,9 +148,8 @@ fn test_register_registers_the_ledger_projector() {
 
 // --------------------------------------------------------- refusal codes
 
-/// RED: the generated diagnostic of a typed refusal has no args today
-/// (`Vec::new()`). SeatNotConfirmable's `reason` field is its arg, as the
-/// hand-written one in examples-rust has it.
+/// A typed refusal's fields are its diagnostic args: SeatNotConfirmable's
+/// `reason`, as the hand-written one in examples-rust has it.
 #[test]
 fn test_a_typed_refusals_fields_are_its_diagnostic_args() {
     let source = one(markup_domain(&descriptors(BLACKJACK), &[TABLE], WIRE).unwrap());
@@ -162,10 +161,10 @@ fn test_a_typed_refusals_fields_are_its_diagnostic_args() {
     assert!(diagnostic.contains("(\"reason\","), "{diagnostic}");
 }
 
-/// RED: no args today. A refusal declaring its codes as a nested enum (an
-/// owner decision for table.proto's eighteen): each value is mapped, and
-/// the diagnostic names the reason by the value's name without its
-/// enum's prefix, the ErrorInfo.reason on the wire.
+/// A refusal declaring its codes as a nested `Reason` enum (decision
+/// 14.50, table.proto's TableRefused): each value is mapped, and the
+/// diagnostic names the reason by the value's name without its enum's
+/// prefix, the ErrorInfo.reason on the wire.
 #[test]
 fn test_a_refusals_reason_enum_is_its_rejection_code() {
     const FILE: &str = "refusals/v1/refusals.proto";

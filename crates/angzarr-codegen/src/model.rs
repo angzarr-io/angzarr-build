@@ -158,7 +158,21 @@ pub(crate) fn build_markup(
                     .iter()
                     .map(|e| (e.full_name(), crate::rust::enum_name(e))),
             );
-        refuse_reserved(names)?;
+        refuse_reserved(names.clone())?;
+        // A command refusing several types refuses with a choice the
+        // domain layer names after it: no domain type may take that name.
+        for component in &package.components {
+            for input in component.inputs.iter().filter(|i| i.refuses.len() > 1) {
+                let choice = crate::rust::refusal_choice_name(&input.message);
+                if let Some((full, _)) = names.clone().find(|(_, local)| *local == choice) {
+                    return Err(CodegenError::RefusalChoiceName {
+                        message: full.to_string(),
+                        name: choice,
+                        command: input.message.full_name().to_string(),
+                    });
+                }
+            }
+        }
     }
     Ok(packages)
 }
@@ -343,8 +357,12 @@ pub(crate) fn components(
                     continue;
                 };
                 let named = string_field(consumer, "component");
-                let component = owner(&mut components, &pool, &component_ext, message, &named)?;
-                let Some(component) = component else {
+                // A consumer outside the set is a reference to a component
+                // generated elsewhere (decision 14.50), skipped.
+                let Some(component) = components
+                    .iter_mut()
+                    .find(|c| c.anchor.full_name() == named)
+                else {
                     continue;
                 };
                 if !component.events.contains(message) {
@@ -416,9 +434,9 @@ pub(crate) fn components(
     Ok(components)
 }
 
-/// The component a `(command)` or `(event)` names: `Some` when it is
-/// generated here, `None` when it is declared but outside `files`, and a
-/// refusal when nothing declares it.
+/// The component a `(command)` names: `Some` when it is generated here,
+/// `None` when it is declared but outside `files`, and a refusal when
+/// nothing declares it.
 fn owner<'a>(
     components: &'a mut [Component],
     pool: &DescriptorPool,

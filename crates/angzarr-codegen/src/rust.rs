@@ -82,6 +82,11 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
     for refusal in refusals {
         items.extend(refusal_diagnostic(refusal));
     }
+    for component in &package.components {
+        for input in component.inputs.iter().filter(|i| i.refuses.len() > 1) {
+            items.extend(refusal_choice(input));
+        }
+    }
     let mut messages: Vec<&MessageDescriptor> = Vec::new();
     for component in &package.components {
         let declared = component
@@ -277,10 +282,44 @@ fn handler_context() -> TokenStream {
     }
 }
 
-/// A typed refusal as a diagnostic, its code the message's full name.
+/// A typed refusal as a diagnostic (decision 14.50): its code
+/// [`refusal_key`] of the message's full name and, when it declares a
+/// nested `Reason` enum as its `reason` field, the reason's wire name; its
+/// args the fields that are set, each by its proto name (see
+/// [`field_arg`]).
 fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
     let name = ident(message.name());
-    let code = message.full_name().replace('.', "-").to_lowercase();
+    let reason = message.fields().find(|f| {
+        f.name() == "reason"
+            && !f.is_list()
+            && matches!(f.kind(), Kind::Enum(e) if e.name() == "Reason"
+                && e.parent_message().as_ref() == Some(message))
+    });
+    let code = match reason.as_ref().map(FieldDescriptor::kind) {
+        Some(Kind::Enum(e)) => {
+            let ty = ident(&enum_name(&e));
+            let arms = e.values().filter(|v| v.number() != 0).map(|v| {
+                let variant = ident(&camel(wire_name(&e, v.name())));
+                let key = refusal_key(message.full_name(), Some(wire_name(&e, v.name())));
+                quote!(#ty::#variant => #key)
+            });
+            quote!(match self.reason { #(#arms),* })
+        }
+        _ => {
+            let key = refusal_key(message.full_name(), None);
+            quote!(#key)
+        }
+    };
+    let args: Vec<TokenStream> = message.fields().filter_map(|f| field_arg(&f)).collect();
+    let args = if args.is_empty() {
+        quote!(Vec::new())
+    } else {
+        quote! {
+            let mut args = Vec::new();
+            #(#args)*
+            args
+        }
+    };
     quote! {
         /// A bug of the handler refusing with this, as it fails:
         /// `Failed::Bug`.
@@ -292,7 +331,7 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
 
         impl ::std::fmt::Display for #name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                f.write_str(#code)
+                f.write_str(::angzarr_embedded_diagnostic::Diagnostic::code(self))
             }
         }
 
@@ -302,10 +341,160 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
             }
 
             fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
-                Vec::new()
+                #args
             }
         }
     }
+}
+
+/// The name of the choice a command refusing several types refuses with
+/// (`<Command>Refuses`), in the domain layer.
+pub(crate) fn refusal_choice_name(command: &MessageDescriptor) -> String {
+    format!("{}Refuses", command.name())
+}
+
+/// What a command naming several `refuses` types refuses with: one of
+/// them, each `From` its type, its diagnostic the chosen one's, and
+/// `widen`, which hands the adapter's markup its own choice.
+fn refusal_choice(input: &crate::model::Input) -> TokenStream {
+    let name = format_ident!("{}", refusal_choice_name(&input.message));
+    let types: Vec<syn::Ident> = input.refuses.iter().map(|r| ident(r.name())).collect();
+    let doc = format!(
+        " What {} refuses with: one of its refuses types.",
+        input.message.name()
+    );
+    quote! {
+        #[doc = #doc]
+        #[derive(Clone, Debug, PartialEq)]
+        pub enum #name { #(#types(#types)),* }
+
+        #(
+            impl From<#types> for #name {
+                fn from(refusal: #types) -> Self {
+                    #name::#types(refusal)
+                }
+            }
+        )*
+
+        impl #name {
+            /// `failed`, its refusal converted by the chosen type's own
+            /// `Into`: what the generated adapter hands the markup.
+            pub fn widen<Y>(failed: Failed<#name>) -> Failed<Y>
+            where
+                #(#types: Into<Y>,)*
+            {
+                match failed {
+                    Failed::Rejected { rejection, status } => Failed::Rejected {
+                        rejection: match rejection {
+                            #(#name::#types(refusal) => refusal.into(),)*
+                        },
+                        status,
+                    },
+                    Failed::Immediate(report) => Failed::Immediate(report),
+                    Failed::Bug(report) => Failed::Bug(report),
+                    Failed::RetryableBug { status, report } => Failed::RetryableBug { status, report },
+                }
+            }
+        }
+
+        /// A bug of the handler refusing with this, as it fails:
+        /// `Failed::Bug`.
+        impl ::core::convert::From<Bug> for Failed<#name> {
+            fn from(bug: Bug) -> Self {
+                Failed::bug(&bug)
+            }
+        }
+
+        impl ::std::fmt::Display for #name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                match self {
+                    #(#name::#types(refusal) => ::std::fmt::Display::fmt(refusal, f),)*
+                }
+            }
+        }
+
+        impl ::angzarr_embedded_diagnostic::Diagnostic for #name {
+            fn code(&self) -> &'static str {
+                match self {
+                    #(#name::#types(refusal) => ::angzarr_embedded_diagnostic::Diagnostic::code(refusal),)*
+                }
+            }
+
+            fn args(&self) -> Vec<(&'static str, ::angzarr_embedded_diagnostic::Arg)> {
+                match self {
+                    #(#name::#types(refusal) => ::angzarr_embedded_diagnostic::Diagnostic::args(refusal),)*
+                }
+            }
+        }
+    }
+}
+
+/// The diagnostic key of a typed refusal (decision 14.50): its message's
+/// full name, then the reason's wire name when it has one (its `Reason`
+/// value's name without the enum's prefix), `.` and `_` as `-`, all
+/// lower-case: `refusals.v1.BetRefused` refusing `REASON_ALREADY_BET` is
+/// `refusals-v1-betrefused-already-bet`. The generated `Diagnostic::code`
+/// is this; a hand-written refusal reproduces it with this function.
+pub fn refusal_key(full_name: &str, reason: Option<&str>) -> String {
+    let key = match reason {
+        Some(reason) => format!("{full_name}-{reason}"),
+        None => full_name.to_string(),
+    };
+    key.replace(['.', '_'], "-").to_lowercase()
+}
+
+/// An enum value's wire name: its name without the enum's prefix
+/// (`REASON_ALREADY_BET` of `Reason` as `ALREADY_BET`), what ErrorInfo
+/// carries and an arg holds.
+fn wire_name<'a>(e: &EnumDescriptor, value: &'a str) -> &'a str {
+    let prefix = format!("{}_", screaming(e.name()));
+    value.strip_prefix(&prefix).unwrap_or(value)
+}
+
+/// The statement pushing `field` onto a refusal's args when it is set:
+/// a proto3 `optional` one when it is `Some`, any other always. An
+/// integer is its number, a string itself, an enum its value's wire
+/// name ([`wire_name`]), bytes their lower-case hex, a bool or a float
+/// its Rust text. A message, list or map field is not an arg (`None`).
+fn field_arg(field: &FieldDescriptor) -> Option<TokenStream> {
+    if field.is_list() || field.is_map() {
+        return None;
+    }
+    let arg = quote!(::angzarr_embedded_diagnostic::Arg);
+    let value = match field.kind() {
+        Kind::Message(_) => return None,
+        Kind::Enum(e) => {
+            let ty = ident(&enum_name(&e));
+            let arms = e.values().filter(|v| v.number() != 0).map(|v| {
+                let variant = ident(&camel(wire_name(&e, v.name())));
+                let wire = wire_name(&e, v.name());
+                quote!(#ty::#variant => #wire)
+            });
+            quote!(#arg::from(match value { #(#arms),* }))
+        }
+        Kind::String => quote!(#arg::from(value.as_str())),
+        Kind::Bytes => quote! {
+            #arg::from(value.iter().map(|b| format!("{b:02x}")).collect::<String>())
+        },
+        Kind::Bool | Kind::Float | Kind::Double => quote!(#arg::from(value.to_string())),
+        _ => quote!(#arg::from(*value)),
+    };
+    let name = ident(field.name());
+    let proto = field.name();
+    Some(
+        if field.containing_oneof().is_some_and(|o| o.is_synthetic()) {
+            quote! {
+                if let Some(value) = &self.#name {
+                    args.push((#proto, #value));
+                }
+            }
+        } else {
+            quote! {
+                let value = &self.#name;
+                args.push((#proto, #value));
+            }
+        },
+    )
 }
 
 /// An enum of `messages`, one variant each, with no wire form.

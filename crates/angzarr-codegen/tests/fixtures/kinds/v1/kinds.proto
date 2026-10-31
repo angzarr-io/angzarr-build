@@ -1,0 +1,97 @@
+// Typed refusals of every field kind, and a command refusing several of
+// them (decision 14.50): each field set is an arg (an integer its number,
+// a string itself, an enum its value's name without the enum's prefix,
+// bytes their hex, a bool or a float its text), a message, list or map
+// field is not, and only a nested Reason enum held as `reason` keys the
+// diagnostic by its value.
+syntax = "proto3";
+package kinds.v1;
+import "io/angzarr/v1/options.proto";
+
+message LedgerState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "ledger"
+  };
+}
+
+message Post {
+  option (io.angzarr.v1.command) = {
+    component: "kinds.v1.LedgerState"
+    emits: "kinds.v1.Posted"
+    refuses: "kinds.v1.PostRefused"
+    refuses: "kinds.v1.Unreasoned"
+    refuses: "kinds.v1.Listed"
+    refuses: "kinds.v1.Elsewhere"
+    refuses: "kinds.v1.Mislabeled"
+  };
+}
+
+message Posted {
+  option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerState"};
+}
+
+enum Tone {
+  TONE_UNSPECIFIED = 0;
+  TONE_LOUD = 1;
+}
+
+message Note {
+  string text = 1;
+}
+
+message PostRefused {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_CLOSED = 1;
+    REASON_OVER_LIMIT = 2;
+  }
+  Reason reason = 1;
+  int32 small = 2;
+  int64 big = 3;
+  uint32 count = 4;
+  uint64 total = 5;
+  string text = 6;
+  bytes data = 7;
+  bool flag = 8;
+  double ratio = 9;
+  float share = 10;
+  Tone tone = 11;
+  optional int64 limit = 12;
+  optional Tone maybe = 13;
+  Note note = 14;
+  repeated int32 list = 15;
+  map<string, int32> table = 16;
+}
+
+// A `reason` of an enum not nested in it: an arg, not the key's.
+message Unreasoned {
+  Tone reason = 1;
+}
+
+// A repeated Reason: neither the key's nor an arg.
+message Listed {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_FULL = 1;
+  }
+  repeated Reason reason = 1;
+}
+
+// A nested Reason held under another name: an arg, not the key's.
+message Elsewhere {
+  enum Reason {
+    REASON_UNSPECIFIED = 0;
+    REASON_AWAY = 1;
+  }
+  Reason why = 1;
+}
+
+// A nested enum of another name held as `reason`: an arg, not the key's.
+message Mislabeled {
+  enum Cause {
+    CAUSE_UNSPECIFIED = 0;
+    CAUSE_LATE = 1;
+  }
+  Cause reason = 1;
+}
