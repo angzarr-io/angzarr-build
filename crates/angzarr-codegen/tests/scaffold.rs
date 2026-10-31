@@ -516,6 +516,23 @@ fn test_adapters_allow_a_domains_large_failure() {
     }
 }
 
+/// A policy a child process serves has no adapter here, named by its name
+/// in the application; the domains it joins keep theirs.
+#[test]
+fn test_adapters_leave_a_child_policy_to_its_process() {
+    let all = adapters(&descriptors(BUYIN), BUYIN, &[], &golden_interface).unwrap();
+    assert!(all.contains("policy-buyin-wallet"), "{all}");
+    let source = adapters(
+        &descriptors(BUYIN),
+        BUYIN,
+        &["policy-buyin-wallet"],
+        &golden_interface,
+    )
+    .unwrap();
+    assert!(!source.contains("policy-buyin-wallet"), "{source}");
+    assert!(source.contains("policy-wallet-buyin"), "{source}");
+}
+
 /// A domain served by a child process is no aggregate here: a policy
 /// names it by its command set (`CommandTarget`, with `Decides` of each
 /// command) and its event set (`EventSource`, with `Ingests` of each

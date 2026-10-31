@@ -18,7 +18,8 @@ mod scaffold;
 
 pub use app::{
     ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate,
-    Exposure, RetrySeed, app, app_lint_samples, in_process_components, lint_app, remote_domains,
+    Exposure, RetrySeed, app, app_lint_samples, child_components, in_process_components, lint_app,
+    remote_domains,
 };
 pub use common::refusal_key;
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};

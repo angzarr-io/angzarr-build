@@ -12,7 +12,7 @@ mod common;
 
 use angzarr_codegen::{
     AppLint, AppSeed, CodegenError, DomainCrate, Exposure, Owner, RetrySeed, ScaffoldFile, app,
-    lint_app, remote_domains,
+    child_components, lint_app, remote_domains,
 };
 use common::*;
 
@@ -31,7 +31,7 @@ fn seed(name: &str) -> AppSeed {
     AppSeed {
         name: name.to_string(),
         includes: vec!["proto".to_string()],
-        python: Vec::new(),
+        languages: Vec::new(),
         expose: Vec::new(),
         retry: RetrySeed::default(),
         in_memory: false,
@@ -45,7 +45,7 @@ fn seed(name: &str) -> AppSeed {
 /// store in memory.
 fn blackjack() -> AppSeed {
     AppSeed {
-        python: vec!["player".to_string()],
+        languages: vec![("player".to_string(), "python".to_string())],
         in_memory: true,
         ..seed("blackjack")
     }
@@ -370,9 +370,9 @@ fn generating_twice_from_the_same_inputs_is_byte_identical() {
 }
 
 #[test]
-fn a_seed_naming_a_python_domain_the_protos_lack_is_refused() {
+fn a_seed_naming_a_component_the_protos_lack_is_refused() {
     let seeded = AppSeed {
-        python: vec!["dealer".to_string()],
+        languages: vec![("dealer".to_string(), "python".to_string())],
         ..blackjack()
     };
     assert_eq!(
@@ -630,6 +630,21 @@ fn remote_domains_are_the_domains_not_in_rust_or_given_a_launch() {
     );
 }
 
+/// What a child process serves besides a domain: every policy, projector
+/// or upcaster not in Rust, or given a `launch`, by name.
+#[test]
+fn child_components_are_the_others_not_in_rust_or_given_a_launch() {
+    let config = "[[component]]\nname = \"player\"\nkind = \"domain\"\nlanguage = \"python\"\n\n\
+                  [[component]]\nname = \"policy-table-player\"\nkind = \"policy\"\nlanguage = \"python\"\n\n\
+                  [[component]]\nname = \"policy-player-table\"\nkind = \"policy\"\nlanguage = \"rust\"\n\n\
+                  [[component]]\nname = \"table-view\"\nkind = \"projector\"\nlanguage = \"rust\"\n\
+                  launch = [\"./view\"]\n";
+    assert_eq!(
+        child_components(config).unwrap(),
+        ["policy-table-player".to_string(), "table-view".to_string()]
+    );
+}
+
 #[test]
 fn a_projector_is_listed_when_its_sources_are_all_the_applications() {
     const WITH_LEDGER: &[&str] = &[
@@ -648,14 +663,14 @@ fn a_projector_is_listed_when_its_sources_are_all_the_applications() {
     assert!(listed(&seed("ledger")));
     // A Python domain that is not one of its sources leaves it listed.
     let player = AppSeed {
-        python: vec!["player".to_string()],
+        languages: vec![("player".to_string(), "python".to_string())],
         ..seed("ledger")
     };
     assert!(listed(&player));
     // The wallet a Python child: the host records its events, so the
     // projector of it runs in process all the same.
     let python = AppSeed {
-        python: vec!["wallet".to_string()],
+        languages: vec![("wallet".to_string(), "python".to_string())],
         ..seed("ledger")
     };
     assert!(listed(&python));
@@ -718,4 +733,111 @@ fn the_manifests_package_is_the_apps_name_as_a_crate_name() {
             "{name}: {manifest}"
         );
     }
+}
+
+fn language(name: &str, language: &str) -> (String, String) {
+    (name.to_string(), language.to_string())
+}
+
+/// `config`'s entry for `name`, from its `[[component]]` to the next.
+fn entry<'a>(config: &'a str, name: &str) -> &'a str {
+    let at = config
+        .find(&format!("name = \"{name}\"\n"))
+        .unwrap_or_else(|| panic!("no {name}:\n{config}"));
+    let rest = &config[at..];
+    &rest[..rest.find("\n\n").unwrap_or(rest.len())]
+}
+
+/// Every kind takes its language from the seed, by its name in the
+/// application: a Python one is a child, its `dir` and entry point the
+/// project `angzarr scaffold python` writes for that name.
+#[test]
+fn a_seed_puts_each_component_it_names_in_its_language() {
+    let seeded = AppSeed {
+        languages: vec![
+            language("player", "python"),
+            language("policy-table-player", "python"),
+        ],
+        ..blackjack()
+    };
+    let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None).unwrap();
+    let config = &file(&files, "angzarr.toml").source;
+    assert_eq!(
+        entry(config, "policy-table-player"),
+        "name = \"policy-table-player\"\nkind = \"policy\"\nlanguage = \"python\"\n\
+         dir = \"policy-table-player\"\nentry = [\"angzarr-policy-table-player\"]"
+    );
+    assert_eq!(
+        entry(config, "policy-player-table"),
+        "name = \"policy-player-table\"\nkind = \"policy\"\nlanguage = \"rust\""
+    );
+    // The Python policy is the child's: no module of it in main.rs.
+    let main = &file(&files, "src/main.rs").source;
+    assert!(!main.contains("pub mod table_player_policy"), "{main}");
+    assert!(main.contains("pub mod player_table_policy;"), "{main}");
+}
+
+#[test]
+fn a_seed_puts_a_projector_in_its_language() {
+    const WITH_LEDGER: &[&str] = &[
+        "io/angzarr/examples/v1/table.proto",
+        "io/angzarr/examples/v1/wallet.proto",
+        "io/angzarr/examples/v1/ledger.proto",
+    ];
+    let seeded = AppSeed {
+        languages: vec![language("projector-wallet-table-ledger", "python")],
+        ..seed("ledger")
+    };
+    let files = app(&descriptors(WITH_LEDGER), WITH_LEDGER, &seeded, None, None).unwrap();
+    assert_eq!(
+        entry(
+            &file(&files, "angzarr.toml").source,
+            "projector-wallet-table-ledger"
+        ),
+        "name = \"projector-wallet-table-ledger\"\nkind = \"projector\"\nlanguage = \"python\"\n\
+         dir = \"projector-wallet-table-ledger\"\nentry = [\"angzarr-projector-wallet-table-ledger\"]"
+    );
+}
+
+/// A domain is named by its name in the application or by its domain; its
+/// Python project is its domain's, as `scaffold python --domain` names it.
+#[test]
+fn a_seed_names_a_domain_by_its_component_name_or_its_domain() {
+    const BUYIN: &[&str] = &[
+        "buyin/v1/wallet.proto",
+        "buyin/v1/buy_in.proto",
+        "buyin/v1/policies.proto",
+    ];
+    for name in ["pmg-buyin", "buyin"] {
+        let seeded = AppSeed {
+            languages: vec![language(name, "python")],
+            ..seed("buyin")
+        };
+        let files = app(&descriptors(BUYIN), BUYIN, &seeded, None, None).unwrap();
+        assert_eq!(
+            entry(&file(&files, "angzarr.toml").source, "pmg-buyin"),
+            "name = \"pmg-buyin\"\nkind = \"domain\"\nlanguage = \"python\"\n\
+             dir = \"buyin\"\nentry = [\"angzarr-buyin\"]",
+            "{name}"
+        );
+    }
+}
+
+/// A language the host has no launch for is written as given, and the
+/// lint refuses it: a `launch` is the user's to add.
+#[test]
+fn a_seed_in_a_language_with_no_launch_is_refused() {
+    let seeded = AppSeed {
+        languages: vec![language("policy-table-player", "go")],
+        ..blackjack()
+    };
+    assert_eq!(
+        app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None),
+        Err(CodegenError::AppRefused {
+            lints: vec![AppLint::UnknownLanguage {
+                name: "policy-table-player".to_string(),
+                language: "go".to_string(),
+            }]
+        })
+    );
 }

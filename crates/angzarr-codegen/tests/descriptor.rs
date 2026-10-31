@@ -221,6 +221,19 @@ fn the_rust_build_layer_leaves_a_remote_domain_to_its_process() {
     );
 }
 
+/// A policy or a projector a child process serves is left to it by its
+/// name, as a remote domain is by its domain.
+#[test]
+fn the_rust_build_layer_leaves_a_child_policy_or_projector_to_its_process() {
+    let remote = ["policy-order-inventory", "projector-audit-trail-view"];
+    let source = descriptors_rs(&descriptors_set(), FILES, &remote, VERSION).unwrap();
+    let names: Vec<String> = rust_entries(&source).into_iter().map(|e| e.0).collect();
+    assert_eq!(
+        names,
+        ["order", "projector-order-summary-view", "pmg-fulfillment"]
+    );
+}
+
 fn order_app() -> PythonApp {
     PythonApp {
         domain: "order".to_string(),

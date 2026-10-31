@@ -77,10 +77,13 @@ pub struct AppSeed {
     pub name: String,
     /// The protos' include directories, as the build script names them.
     pub includes: Vec<String>,
-    /// The domains served by a Python child process (`dir` and the
-    /// `angzarr-<domain>` entry point of `angzarr scaffold python`'s
-    /// project); every other domain is Rust, in process.
-    pub python: Vec<String>,
+    /// The language of each component not in Rust, by its name in the
+    /// application (`component_name`, else its kind's default), a domain's
+    /// also by its domain: a Python one is served by a child process, the
+    /// project of `angzarr scaffold python` (`dir` and its
+    /// `angzarr-<project>` entry point). Every other component is Rust, in
+    /// process.
+    pub languages: Vec<(String, String)>,
     /// The components exposed through the host's listener, by name, and
     /// how far.
     pub expose: Vec<(String, Exposure)>,
@@ -229,6 +232,14 @@ pub fn remote_domains(config: &str) -> Result<Vec<String>, CodegenError> {
         .filter(|c| c.kind == Kind::Domain && !c.in_process())
         .map(|c| c.name.clone())
         .collect())
+}
+
+/// What a host config serves from a child process besides its domains:
+/// every policy, projector or upcaster not in Rust, or given a `launch`, by
+/// name.
+pub fn child_components(config: &str) -> Result<Vec<String>, CodegenError> {
+    let _ = read(config)?;
+    Ok(Vec::new())
 }
 
 /// The components a host config runs in process, by name: every one in
@@ -661,7 +672,10 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
         })
         .collect();
     for domain in &domains {
-        let python = seed.python.contains(&domain.domain);
+        let python = seed
+            .languages
+            .iter()
+            .any(|(name, language)| name == &domain.domain && language == "python");
         entries.push(Entry {
             name: domain.component_name.clone(),
             kind: "domain",
@@ -670,7 +684,7 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
         });
     }
     // A Python domain the protos lack: listed, for the lint to name.
-    for python in &seed.python {
+    for (python, _) in &seed.languages {
         if !domains.iter().any(|d| &d.domain == python) {
             entries.push(Entry {
                 name: python.clone(),

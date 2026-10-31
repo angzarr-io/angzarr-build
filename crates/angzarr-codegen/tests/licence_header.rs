@@ -59,7 +59,7 @@ fn every_app_file_is_headed() {
     let seed = AppSeed {
         name: "shop".to_string(),
         includes: vec!["proto".to_string()],
-        python: Vec::new(),
+        languages: Vec::new(),
         expose: Vec::new(),
         retry: RetrySeed::default(),
         in_memory: false,
@@ -75,7 +75,7 @@ fn a_users_existing_file_is_headed_once() {
     let seed = AppSeed {
         name: "shop".to_string(),
         includes: vec!["proto".to_string()],
-        python: Vec::new(),
+        languages: Vec::new(),
         expose: Vec::new(),
         retry: RetrySeed::default(),
         in_memory: false,

@@ -49,7 +49,7 @@ fn seed() -> AppSeed {
     AppSeed {
         name: "buyin".to_string(),
         includes: vec!["proto".to_string()],
-        python: Vec::new(),
+        languages: Vec::new(),
         expose: Vec::new(),
         retry: RetrySeed::default(),
         in_memory: true,
@@ -180,7 +180,7 @@ fn an_edit_to_the_config_is_followed_by_the_next_main() {
 fn a_config_with_lints_is_refused_and_nothing_is_written() {
     let root = empty_dir();
     let dealer = AppSeed {
-        python: vec!["dealer".to_string()],
+        languages: vec![("dealer".to_string(), "python".to_string())],
         ..seed()
     };
     let refused = app_scaffold_into(&root, BUYIN, &[&fixtures()], &dealer);
