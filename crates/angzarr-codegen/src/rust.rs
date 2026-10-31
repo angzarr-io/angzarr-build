@@ -104,6 +104,7 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
             }
         }
     }
+    items.extend(wire_settings(&package.messages, wire));
     let next = next();
     for message in messages {
         let name = ident(message.name());
@@ -123,6 +124,87 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
     }
     let file: syn::File = syn::parse2(items).expect("the emitter writes valid Rust");
     prettyplease::unparse(&file)
+}
+
+/// The prost settings the domain layer is generated for, checked where the
+/// wire types are compiled: a `bytes` field is a `Vec<u8>` (prost's
+/// default) and a map a `BTreeMap` (`btree_map(["."])`), as
+/// `angzarr_build::wire` builds them. A prost crate built otherwise fails
+/// to compile with the named error, `angzarr-codegen-wire-bytes` or
+/// `angzarr-codegen-wire-map`, at the field, instead of a type mismatch
+/// deep in a conversion. Nothing is emitted for messages holding neither.
+fn wire_settings(messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStream {
+    let (mut bytes, mut maps) = (false, false);
+    let mut checks = Vec::new();
+    for message in messages {
+        let name = ident(message.name());
+        let mut fields = Vec::new();
+        for field in message.fields() {
+            let f = ident(field.name());
+            if field.is_map() {
+                maps = true;
+                fields.push(quote!(wire_settings::map(&wire.#f);));
+            } else if field.kind() == Kind::Bytes {
+                bytes = true;
+                // A list's or an `optional`'s each value.
+                let several =
+                    field.is_list() || field.containing_oneof().is_some_and(|o| o.is_synthetic());
+                fields.push(if several {
+                    quote!(wire.#f.iter().for_each(wire_settings::bytes);)
+                } else {
+                    quote!(wire_settings::bytes(&wire.#f);)
+                });
+            }
+        }
+        if !fields.is_empty() {
+            checks.push(quote! {
+                const _: fn(&#wire::#name) = |wire| {
+                    #(#fields)*
+                };
+            });
+        }
+    }
+    if checks.is_empty() {
+        return TokenStream::new();
+    }
+    let bytes = bytes.then(|| {
+        quote! {
+            #[diagnostic::on_unimplemented(
+                message = "angzarr-codegen-wire-bytes: a bytes field of the prost types is `{Self}`; the domain layer is generated for `Vec<u8>`",
+                label = "not `Vec<u8>`",
+                note = "build the prost types with angzarr_build::wire, or prost-build with its default bytes"
+            )]
+            pub trait Bytes {}
+
+            impl Bytes for Vec<u8> {}
+
+            pub fn bytes<T: Bytes>(_: &T) {}
+        }
+    });
+    let maps = maps.then(|| {
+        quote! {
+            #[diagnostic::on_unimplemented(
+                message = "angzarr-codegen-wire-map: a map field of the prost types is `{Self}`; the domain layer is generated for `BTreeMap`",
+                label = "not a `BTreeMap`",
+                note = "build the prost types with angzarr_build::wire, or prost-build with btree_map([\".\"])"
+            )]
+            pub trait Map {}
+
+            impl<K, V> Map for ::std::collections::BTreeMap<K, V> {}
+
+            pub fn map<T: Map>(_: &T) {}
+        }
+    });
+    quote! {
+        /// The prost settings this layer is generated for, checked against
+        /// the wire types: bytes as `Vec<u8>`, maps as `BTreeMap`.
+        mod wire_settings {
+            #bytes
+            #maps
+        }
+
+        #(#checks)*
+    }
 }
 
 /// An enum's domain name: its name, after its enclosing messages' names

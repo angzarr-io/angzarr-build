@@ -1242,6 +1242,15 @@ pub fn register(
 /// The domain layer for marked-up components: the domain types, their wire
 /// conversions and each one's `DomainMessage` impl, and nothing the markup
 /// generates itself (no payload enums, no `State` impl).
+///
+/// The wire types at each package's `wire` path are prost's, built with
+/// angzarr's settings (`angzarr_build::wire`): a `bytes` field as
+/// `Vec<u8>` (prost's default), a map as a `BTreeMap`
+/// (`btree_map(["."])`), an enum field as its `i32`, a message field as an
+/// `Option`, `prost::Name` on every message, and angzarr's own types
+/// angzarr-proto's. The layer checks the first two where it is compiled: a
+/// prost crate built otherwise fails with `angzarr-codegen-wire-bytes` or
+/// `angzarr-codegen-wire-map` at the field.
 pub fn markup_domain(
     descriptor_set: &[u8],
     files: &[&str],

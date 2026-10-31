@@ -1035,6 +1035,30 @@ impl ::angzarr_embedded_diagnostic::Diagnostic for PostRefuses {
         }
     }
 }
+/// The prost settings this layer is generated for, checked against
+/// the wire types: bytes as `Vec<u8>`, maps as `BTreeMap`.
+mod wire_settings {
+    #[diagnostic::on_unimplemented(
+        message = "angzarr-codegen-wire-bytes: a bytes field of the prost types is `{Self}`; the domain layer is generated for `Vec<u8>`",
+        label = "not `Vec<u8>`",
+        note = "build the prost types with angzarr_build::wire, or prost-build with its default bytes"
+    )]
+    pub trait Bytes {}
+    impl Bytes for Vec<u8> {}
+    pub fn bytes<T: Bytes>(_: &T) {}
+    #[diagnostic::on_unimplemented(
+        message = "angzarr-codegen-wire-map: a map field of the prost types is `{Self}`; the domain layer is generated for `BTreeMap`",
+        label = "not a `BTreeMap`",
+        note = "build the prost types with angzarr_build::wire, or prost-build with btree_map([\".\"])"
+    )]
+    pub trait Map {}
+    impl<K, V> Map for ::std::collections::BTreeMap<K, V> {}
+    pub fn map<T: Map>(_: &T) {}
+}
+const _: fn(&crate::wire::PostRefused) = |wire| {
+    wire_settings::bytes(&wire.data);
+    wire_settings::map(&wire.table);
+};
 impl ::angzarr_embedded::next::markup::DomainMessage for Post {
     type Wire = crate::wire::Post;
     fn to_wire(&self) -> crate::wire::Post {
