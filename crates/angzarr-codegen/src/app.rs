@@ -2,8 +2,8 @@
 //! and its host config (`angzarr scaffold app`):
 //!
 //! - the user's, written once and never rewritten: `angzarr.toml`, the
-//!   host config, seeded from the [`AppSeed`] (which domain runs in which
-//!   language, what is exposed, the retry and store settings) and the
+//!   host config, seeded from the [`AppSeed`] (which component runs in
+//!   which language, what is exposed, the retry and store settings) and the
 //!   user's to edit from then on; `Cargo.toml`, the crate's manifest, with
 //!   angzarr-embedded pinned at [`ANGZARR_EMBEDDED_REV`]; and
 //!   `src/driver.rs`, what the application does once it is up;
@@ -238,8 +238,12 @@ pub fn remote_domains(config: &str) -> Result<Vec<String>, CodegenError> {
 /// every policy, projector or upcaster not in Rust, or given a `launch`, by
 /// name.
 pub fn child_components(config: &str) -> Result<Vec<String>, CodegenError> {
-    let _ = read(config)?;
-    Ok(Vec::new())
+    Ok(read(config)?
+        .components
+        .iter()
+        .filter(|c| c.kind != Kind::Domain && !c.in_process())
+        .map(|c| c.name.clone())
+        .collect())
 }
 
 /// The components a host config runs in process, by name: every one in
@@ -658,9 +662,34 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
     struct Entry {
         name: String,
         kind: &'static str,
-        language: &'static str,
-        python_domain: Option<String>,
+        language: String,
+        /// A Python child's project: `dir` and `angzarr-<project>`.
+        project: Option<String>,
     }
+    // A component's entry in its seeded language: by its name, a domain's
+    // also by its domain; its Python project its domain's, else its name
+    // (as `scaffold python --domain` names it).
+    let entry = |component: &Component, kind: &'static str| {
+        let named = |name: &String| {
+            *name == component.component_name || (kind == "domain" && *name == component.domain)
+        };
+        let language = seed
+            .languages
+            .iter()
+            .find(|(name, _)| named(name))
+            .map_or("rust", |(_, language)| language.as_str());
+        let project = if kind == "domain" {
+            &component.domain
+        } else {
+            &component.component_name
+        };
+        Entry {
+            name: component.component_name.clone(),
+            kind,
+            language: language.to_string(),
+            project: (language == "python").then(|| project.clone()),
+        }
+    };
     let mut entries: Vec<Entry> = Vec::new();
     let domains: Vec<&Component> = components
         .iter()
@@ -672,27 +701,7 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
         })
         .collect();
     for domain in &domains {
-        let python = seed
-            .languages
-            .iter()
-            .any(|(name, language)| name == &domain.domain && language == "python");
-        entries.push(Entry {
-            name: domain.component_name.clone(),
-            kind: "domain",
-            language: if python { "python" } else { "rust" },
-            python_domain: python.then(|| domain.domain.clone()),
-        });
-    }
-    // A Python domain the protos lack: listed, for the lint to name.
-    for (python, _) in &seed.languages {
-        if !domains.iter().any(|d| &d.domain == python) {
-            entries.push(Entry {
-                name: python.clone(),
-                kind: "domain",
-                language: "python",
-                python_domain: Some(python.clone()),
-            });
-        }
+        entries.push(entry(domain, "domain"));
     }
     let has = |domain: &str| domains.iter().any(|d| d.domain == domain);
     for policy in components
@@ -700,12 +709,7 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
         .filter(|c| c.kind == ComponentKind::Policy)
     {
         if has(&policy.input_domain) && has(&policy.output_domain) {
-            entries.push(Entry {
-                name: policy.component_name.clone(),
-                kind: "policy",
-                language: "rust",
-                python_domain: None,
-            });
+            entries.push(entry(policy, "policy"));
         }
     }
     for projector in components
@@ -715,11 +719,20 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
         // A Python child's events are recorded by the host, so a projector
         // of them runs in process as one of a Rust domain's does.
         if !projector.sources.is_empty() && projector.sources.iter().all(|s| has(s)) {
+            entries.push(entry(projector, "projector"));
+        }
+    }
+    // A component the seed names that the protos lack: listed, for the
+    // lint to name.
+    for (name, language) in &seed.languages {
+        let known =
+            entries.iter().any(|e| &e.name == name) || domains.iter().any(|d| &d.domain == name);
+        if !known {
             entries.push(Entry {
-                name: projector.component_name.clone(),
-                kind: "projector",
-                language: "rust",
-                python_domain: None,
+                name: name.clone(),
+                kind: "domain",
+                language: language.clone(),
+                project: (language == "python").then(|| name.clone()),
             });
         }
     }
@@ -729,8 +742,8 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
             entries.push(Entry {
                 name: name.clone(),
                 kind: "domain",
-                language: "rust",
-                python_domain: None,
+                language: "rust".to_string(),
+                project: None,
             });
         }
     }
@@ -748,9 +761,9 @@ fn seeded_config(components: &[Component], seed: &AppSeed) -> String {
             "\n[[component]]\nname = \"{}\"\nkind = \"{}\"\nlanguage = \"{}\"\n",
             entry.name, entry.kind, entry.language
         ));
-        if let Some(domain) = &entry.python_domain {
+        if let Some(project) = &entry.project {
             out.push_str(&format!(
-                "dir = \"{domain}\"\nentry = [\"angzarr-{domain}\"]\n"
+                "dir = \"{project}\"\nentry = [\"angzarr-{project}\"]\n"
             ));
         }
         if let Some((_, exposure)) = seed.expose.iter().find(|(n, _)| *n == entry.name) {

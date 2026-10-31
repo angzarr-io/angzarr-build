@@ -287,8 +287,9 @@ fn app_layer_into(
     let bytes = build_descriptors(out, protos, includes)?;
     let names = angzarr_codegen::component_names(&bytes, protos).map_err(BuildError::Codegen)?;
     // The config names components; a remote domain's command and event
-    // sets are by its stream domain.
-    let remote: Vec<String> = angzarr_codegen::remote_domains(&text)
+    // sets are by its stream domain, and a policy or projector a child
+    // serves is left to it by its name.
+    let mut remote: Vec<String> = angzarr_codegen::remote_domains(&text)
         .map_err(BuildError::Codegen)?
         .into_iter()
         .map(|name| {
@@ -298,6 +299,7 @@ fn app_layer_into(
                 .map_or(name, |c| c.domain.clone())
         })
         .collect();
+    remote.extend(angzarr_codegen::child_components(&text).map_err(BuildError::Codegen)?);
     let remote: Vec<&str> = remote.iter().map(String::as_str).collect();
     let listed = angzarr_codegen::in_process_components(&text).map_err(BuildError::Codegen)?;
     let listed: Vec<&str> = listed.iter().map(String::as_str).collect();

@@ -681,10 +681,12 @@ fn application(components: &[Component]) -> Vec<&Component> {
 /// aggregate's, process manager's, policy's and projector's
 /// angzarr-embedded markup, every handler delegating to the component's
 /// interface on its implementation
-/// (`crate::<component>_impl::<Component>Impl`). A `remote` domain (served
-/// by a child process) has no markup here: it is its command set
-/// (`CommandTarget`) and its event set (`EventSource`), so a policy can
-/// name it as its source or target; it is never registered.
+/// (`crate::<component>_impl::<Component>Impl`). What a child process
+/// serves is in `remote`, a domain by its stream domain, a policy or a
+/// projector by its name in the application. A remote domain has no markup
+/// here: it is its command set (`CommandTarget`) and its event set
+/// (`EventSource`), so a policy can name it as its source or target; it is
+/// never registered. A remote policy or projector has nothing here.
 ///
 /// `interface` reads the user's interface of a policy (its path relative to
 /// `src`, `buy_in_wallet.rs`): each `<command>_refused` method there is the
@@ -703,6 +705,12 @@ pub fn adapters(
     let mut macros = vec![];
     let mut has_policy = false;
     for component in application(&components) {
+        if component.kind != ComponentKind::Aggregate
+            && component.kind != ComponentKind::ProcessManager
+            && remote.contains(&component.component_name.as_str())
+        {
+            continue;
+        }
         let is_remote = remote.contains(&component.domain.as_str());
         let tokens = match component.kind {
             ComponentKind::Projector => {

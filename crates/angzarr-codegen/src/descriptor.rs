@@ -175,8 +175,9 @@ fn set(message: &mut DynamicMessage, field: &str, value: Value) -> Result<(), Co
 }
 
 /// The Rust build layer's descriptors (`angzarr-descriptors.rs`): every
-/// component's in `files` but those of the `remote` domains, whose
-/// business process (a child) has its own.
+/// component's in `files` but those a child process serves, which has its
+/// own: `remote` names a domain by its stream domain, a policy or a
+/// projector by its name in the application.
 pub fn descriptors_rs(
     descriptor_set: &[u8],
     files: &[&str],
@@ -185,7 +186,9 @@ pub fn descriptors_rs(
 ) -> Result<String, CodegenError> {
     let entries = build(descriptor_set, files, rules_version)?
         .into_iter()
-        .filter(|(c, _)| !remote.contains(&c.domain.as_str()))
+        .filter(|(c, _)| {
+            !remote.contains(&c.domain.as_str()) && !remote.contains(&c.component_name.as_str())
+        })
         .map(|(_, d)| {
             let name = d.name;
             let bytes = proc_macro2::Literal::byte_string(&d.encoded);
