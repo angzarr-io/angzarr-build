@@ -747,11 +747,7 @@ pub fn adapters(
             _ => {
                 macros.extend(["applies", "handles_cmd", "handles_fact"]);
                 markup.extend(["Record", "Refuses"]);
-                macros.push(if component.kind == ComponentKind::ProcessManager {
-                    "process_manager"
-                } else {
-                    "aggregate"
-                });
+                macros.push(domain_markup(component.kind));
                 domain_adapter(component)
             }
         };
@@ -801,16 +797,48 @@ pub fn adapters(
     ))
 }
 
-/// The paths of a component's interface trait and implementation type.
-fn user_paths(component: &Component) -> (TokenStream, TokenStream) {
-    let stem = format_ident!("{}", snake(&component.name));
-    let stem_impl = format_ident!("{}_impl", snake(&component.name));
-    let name = ident(&component.name);
-    let name_impl = format_ident!("{}Impl", component.name);
-    (
-        quote!(crate::#stem::#name),
-        quote!(crate::#stem_impl::#name_impl),
-    )
+/// A component's adapter: its type, wrapping the user's implementation,
+/// and the user's interface each of its handlers delegates to.
+struct Adapter {
+    name: syn::Ident,
+    /// The user's trait, `crate::<stem>::<Component>`.
+    interface: TokenStream,
+    /// The user's type it wraps, `crate::<stem>_impl::<Component>Impl`.
+    implementation: TokenStream,
+}
+
+impl Adapter {
+    fn of(component: &Component) -> Adapter {
+        let stem = format_ident!("{}", snake(&component.name));
+        let stem_impl = format_ident!("{}_impl", snake(&component.name));
+        let name = ident(&component.name);
+        let name_impl = format_ident!("{}Impl", component.name);
+        Adapter {
+            interface: quote!(crate::#stem::#name),
+            implementation: quote!(crate::#stem_impl::#name_impl),
+            name,
+        }
+    }
+
+    /// The adapter's type, documented as `component`'s, delegating to the
+    /// interface.
+    fn declaration(&self, component: &Component) -> TokenStream {
+        let Adapter {
+            name,
+            interface,
+            implementation,
+        } = self;
+        let doc = format!(
+            " `{}`, delegating to `{}`.",
+            component.anchor.full_name(),
+            interface.to_string().replace(' ', "")
+        );
+        quote! {
+            #[doc = #doc]
+            #[derive(Clone, Debug, Default)]
+            pub struct #name(pub #implementation);
+        }
+    }
 }
 
 /// What a decision's `Ok` becomes for the markup, `Emit` for a command and
@@ -873,46 +901,42 @@ fn emitted(component: &Component, input: &Input, failed: &TokenStream) -> TokenS
     }
 }
 
-fn domain_adapter(component: &Component) -> TokenStream {
-    let name = ident(&component.name);
-    let (interface, implementation) = user_paths(component);
-    let doc = format!(
-        " `{}`, delegating to `{}`.",
-        component.anchor.full_name(),
-        interface.to_string().replace(' ', "")
-    );
-    let markup = if component.kind == ComponentKind::ProcessManager {
-        format_ident!("process_manager")
+/// The markup macro of a domain of `kind`: `process_manager` or
+/// `aggregate`.
+fn domain_markup(kind: ComponentKind) -> &'static str {
+    if kind == ComponentKind::ProcessManager {
+        "process_manager"
     } else {
-        format_ident!("aggregate")
-    };
-    let domain = &component.domain;
-    let mut methods: Vec<TokenStream> = component
-        .inputs
-        .iter()
-        .map(|input| {
-            if input.fact {
-                fact_method(component, input, &interface)
-            } else {
-                command_method(component, input, &interface)
-            }
-        })
-        .collect();
-    for event in &component.events {
-        let ty = ident(event.name());
-        let m = format_ident!("{}", method(event.name()));
-        let apply = format_ident!("apply_{}", snake(event.name()));
-        methods.push(quote! {
-            #[applies(#ty)]
-            fn #m(&mut self, event: #ty) {
-                #interface::#apply(&mut self.0, &event);
-            }
-        });
+        "aggregate"
     }
+}
+
+/// A domain's adapter: its handler per input and fold per event, each
+/// delegating to the user's interface.
+fn domain_adapter(component: &Component) -> TokenStream {
+    let adapter = Adapter::of(component);
+    let declaration = adapter.declaration(component);
+    let Adapter {
+        name,
+        interface,
+        implementation,
+    } = &adapter;
+    let markup = format_ident!("{}", domain_markup(component.kind));
+    let domain = &component.domain;
+    let handlers = component.inputs.iter().map(|input| {
+        if input.fact {
+            fact_method(component, input, interface)
+        } else {
+            command_method(component, input, interface)
+        }
+    });
+    let folds = component
+        .events
+        .iter()
+        .map(|event| fold_method(event, interface));
+    let methods: Vec<TokenStream> = handlers.chain(folds).collect();
     quote! {
-        #[doc = #doc]
-        #[derive(Clone, Debug, Default)]
-        pub struct #name(pub #implementation);
+        #declaration
 
         impl std::ops::Deref for #name {
             type Target = #implementation;
@@ -926,6 +950,19 @@ fn domain_adapter(component: &Component) -> TokenStream {
         #[allow(clippy::result_large_err)]
         impl #name {
             #(#methods)*
+        }
+    }
+}
+
+/// A domain adapter's fold of `event`, delegating to `interface`.
+fn fold_method(event: &MessageDescriptor, interface: &TokenStream) -> TokenStream {
+    let ty = ident(event.name());
+    let m = format_ident!("{}", method(event.name()));
+    let apply = format_ident!("apply_{}", snake(event.name()));
+    quote! {
+        #[applies(#ty)]
+        fn #m(&mut self, event: #ty) {
+            #interface::#apply(&mut self.0, &event);
         }
     }
 }
@@ -1173,13 +1210,11 @@ fn policy_adapter(
     components: &[Component],
     refused: &[Refused],
 ) -> TokenStream {
-    let name = ident(&component.name);
-    let (interface, implementation) = user_paths(component);
-    let doc = format!(
-        " `{}`, delegating to `{}`.",
-        component.anchor.full_name(),
-        interface.to_string().replace(' ', "")
-    );
+    let adapter = Adapter::of(component);
+    let declaration = adapter.declaration(component);
+    let Adapter {
+        name, interface, ..
+    } = &adapter;
     let (Some(source), Some(target)) = (
         owner(components, &component.input_domain),
         owner(components, &component.output_domain),
@@ -1262,9 +1297,7 @@ fn policy_adapter(
         }
     });
     quote! {
-        #[doc = #doc]
-        #[derive(Clone, Debug, Default)]
-        pub struct #name(pub #implementation);
+        #declaration
 
         #[policy(name = #policy_name, source = #source_ty, target = #target_ty)]
         impl #name {
@@ -1275,13 +1308,11 @@ fn policy_adapter(
 }
 
 fn projector_adapter(component: &Component) -> TokenStream {
-    let name = ident(&component.name);
-    let (interface, implementation) = user_paths(component);
-    let doc = format!(
-        " `{}`, delegating to `{}`.",
-        component.anchor.full_name(),
-        interface.to_string().replace(' ', "")
-    );
+    let adapter = Adapter::of(component);
+    let declaration = adapter.declaration(component);
+    let Adapter {
+        name, interface, ..
+    } = &adapter;
     let projector_name = &component.component_name;
     let sources = &component.sources;
     let methods = component.events.iter().map(|event| {
@@ -1297,9 +1328,7 @@ fn projector_adapter(component: &Component) -> TokenStream {
         }
     });
     quote! {
-        #[doc = #doc]
-        #[derive(Clone, Debug, Default)]
-        pub struct #name(pub #implementation);
+        #declaration
 
         #[projector(name = #projector_name, sources = [#(#sources),*])]
         impl #name {
