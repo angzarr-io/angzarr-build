@@ -1,7 +1,7 @@
-//! `angzarr_build::app`, as the build script `angzarr scaffold app` writes
-//! calls it: the config relative to the crate (`CARGO_MANIFEST_DIR`), the
-//! output Cargo's (`OUT_DIR`). Alone in its binary, as it sets both for
-//! the process.
+//! `angzarr_build::app` and `app_without_domain`, as the build script
+//! `angzarr scaffold app` writes calls them: the config relative to the
+//! crate (`CARGO_MANIFEST_DIR`), the output Cargo's (`OUT_DIR`). Alone in
+//! its binary, as it sets both for the process.
 
 use std::path::Path;
 
@@ -27,5 +27,15 @@ fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
     angzarr_build::app("angzarr.toml", &["shop/v1/shop.proto"], &[&fixtures]).unwrap();
     let register = std::fs::read_to_string(out.join("angzarr-register.rs")).unwrap();
     assert!(register.contains("adapters::Cart"), "{register}");
+    // Over a domain crate: the same layer, but no wire types or domain
+    // layer of its own.
+    let over = root.join("over");
+    std::fs::create_dir_all(&over).unwrap();
+    // SAFETY: as above.
+    unsafe { std::env::set_var("OUT_DIR", &over) };
+    angzarr_build::app_without_domain("angzarr.toml", &["shop/v1/shop.proto"], &[&fixtures])
+        .unwrap();
+    assert!(over.join("angzarr-register.rs").exists());
+    assert!(!over.join("shop.v1.domain.rs").exists());
     std::fs::remove_dir_all(&root).unwrap();
 }

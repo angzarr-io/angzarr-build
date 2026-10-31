@@ -1152,13 +1152,13 @@ fn policy_adapter(
         let m = format_ident!("{}", r.name);
         let command = ident(&r.command);
         let fact = ident(&r.fact);
-        // A command refusing several types: the choice, each type tried in
-        // turn.
+        // A command refusing several types: their choice, each type tried
+        // in turn.
         let several = target
             .inputs
             .iter()
-            .find(|i| !i.fact && i.message.name() == r.command && i.refuses.len() > 1)
-            .filter(|i| r.refusal.as_deref() == Some(&refusal_choice_name(&i.message)));
+            .find(|i| i.message.name() == r.command)
+            .filter(|i| i.refuses.len() > 1);
         let args = match (&r.refusal, several) {
             (Some(_), Some(input)) => {
                 let choice = format_ident!("{}", refusal_choice_name(&input.message));

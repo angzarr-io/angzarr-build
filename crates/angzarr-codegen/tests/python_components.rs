@@ -198,6 +198,24 @@ fn test_a_command_with_no_emits_returns_a_list_of_any_of_its_domains_events() {
     );
 }
 
+/// A domain with no events at all: a command with no emits returns
+/// nothing, or its refusal.
+#[test]
+fn test_a_command_with_no_emits_of_a_domain_with_no_events_returns_none() {
+    let files = scaffold_python(
+        &descriptors(&["lone/v1/lone.proto"]),
+        &["lone/v1/lone.proto"],
+        &app("slots"),
+    )
+    .unwrap();
+    assert_has(
+        source(&files, "/logic.py"),
+        &[
+            "def book(self, cmd: Book, state: SlotState, ctx: CommandContext) -> None | BookRefuses: ...",
+        ],
+    );
+}
+
 // --------------------------------------------------------------- policy
 
 /// table -> player: each TurnStarted becomes the player's commands, each

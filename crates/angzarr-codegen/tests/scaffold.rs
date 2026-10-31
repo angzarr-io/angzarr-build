@@ -348,6 +348,24 @@ fn test_adapters_wire_the_refusal_callback_the_interface_declares() {
     );
 }
 
+/// A command refusing nothing has no typed refusal to hand over: its
+/// `<command>_refused` method takes the command and the context alone.
+#[test]
+fn test_a_refused_method_of_a_command_refusing_nothing_takes_no_refusal() {
+    let deposit = Translate {
+        command: "buyin.v1.Deposit".to_string(),
+        ..translate_hold()
+    };
+    let files = buyin(&[deposit]);
+    let source = &file_at(&files, "buy_in_wallet.rs").source;
+    assert!(
+        source.contains(
+            "    fn deposit_refused(&self, command: &Deposit, ctx: &CommandContext) -> Result<HoldLost, Bug>;"
+        ),
+        "{source}"
+    );
+}
+
 /// The kinds fixture's policy translating Audit, which refuses two types,
 /// into the ledger's Arrived.
 fn translate_audit() -> Translate {
