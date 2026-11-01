@@ -77,6 +77,40 @@ fn test_every_error_has_a_catalog_message_with_its_args() {
     assert_eq!(codes, messages);
 }
 
+/// A build script's `main` returning the error prints its `Debug`: that is
+/// where a person reads it, so it is the English, the generator's refusal
+/// as its own.
+#[test]
+fn test_a_failing_build_script_prints_the_errors_english() {
+    let s = || "x y".to_string();
+    let cases = [
+        (
+            BuildError::NoOutDir,
+            "OUT_DIR is unset: run this from a build script",
+        ),
+        (
+            BuildError::Io {
+                path: "a/b".to_string(),
+                detail: s(),
+            },
+            "a/b: x y",
+        ),
+        (BuildError::Protoc { detail: s() }, "protoc failed: x y"),
+        (BuildError::Prost { detail: s() }, "prost-build failed: x y"),
+        (BuildError::Buf { detail: s() }, "buf generate failed: x y"),
+        (BuildError::Uv { detail: s() }, "uv failed: x y"),
+        (
+            BuildError::Codegen(angzarr_codegen::CodegenError::NoWirePath {
+                package: "shop.v1".to_string(),
+            }),
+            "no Rust path is given for the prost types of package shop.v1",
+        ),
+    ];
+    for (error, english) in cases {
+        assert_eq!(format!("{error:?}"), english);
+    }
+}
+
 #[test]
 fn test_a_warnings_english_names_the_missing_interface() {
     let warning = angzarr_build::BuildWarning::InterfaceMissing {
