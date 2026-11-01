@@ -114,13 +114,57 @@ fn test_markup_domain_implements_domain_message_for_every_input_event_and_refusa
 }
 
 #[test]
-fn test_markup_domain_leaves_state_and_payloads_to_the_markup() {
+fn test_markup_domain_leaves_the_state_to_the_markup() {
     let impls = impls(&buyin());
     let left: Vec<&(String, String)> = impls
         .iter()
-        .filter(|(t, _)| t == "::angzarr_embedded::State" || t == "::angzarr_embedded::Payload")
+        .filter(|(t, _)| t == "::angzarr_embedded::State")
         .collect();
     assert_eq!(left, Vec::<&(String, String)>::new());
+}
+
+/// Every command and event enum the layer names carries its `Payload`:
+/// the one nameable payload of its domain, which the markup takes
+/// (`command = ..`, `event = ..`) instead of writing its own.
+#[test]
+fn test_markup_domain_implements_payload_for_every_command_and_event_enum() {
+    let file = buyin();
+    let enums: Vec<String> = file
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            syn::Item::Enum(e) => Some(e.ident.to_string()),
+            _ => None,
+        })
+        .filter(|name| name.ends_with("Command") || name.ends_with("Event"))
+        .collect();
+    let mut payloads: Vec<String> = impls(&file)
+        .into_iter()
+        .filter(|(t, _)| t == "::angzarr_embedded::Payload")
+        .map(|(_, ty)| ty)
+        .collect();
+    payloads.sort();
+    let mut expected = enums.clone();
+    expected.sort();
+    assert!(!expected.is_empty(), "the buy-in names its enums");
+    assert_eq!(payloads, expected);
+}
+
+/// An enum's payload packs each variant as its message, reads each of its
+/// types back by type URL, refuses any other, and lists its types: the
+/// markup's own functions, so the hand-written path is the same code.
+#[test]
+fn test_markup_domain_payload_is_written_on_markups_functions() {
+    let generated = markup_domain(&descriptors(BUYIN), BUYIN, BUYIN_WIRE).unwrap();
+    let source = &generated[0].source;
+    for call in [
+        "::angzarr_embedded::markup::pack_message(value)",
+        "::angzarr_embedded::markup::decode_message::<Hold>(any)?",
+        "::angzarr_embedded::markup::type_url_of::<Hold>()",
+        "::angzarr_embedded::PayloadError::UnknownType",
+    ] {
+        assert!(source.contains(call), "no `{call}` in:\n{source}");
+    }
 }
 
 #[test]
