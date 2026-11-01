@@ -492,7 +492,7 @@ mod tests {
 
     use angzarr_diagnostic::{Arg, Diagnostic, Report};
 
-    use super::{english, filled};
+    use super::{diagnostic_samples, english, filled};
 
     /// A report shown through [`english`].
     #[derive(Debug)]
@@ -542,6 +542,21 @@ mod tests {
         assert_eq!(filled(CATALOG, &a("t-absent")), None);
         assert_eq!(filled(CATALOG, &a("t-open")), None);
         assert_eq!(filled(CATALOG, &a("t-other")).as_deref(), Some("other"));
+    }
+
+    /// Each text arg of a sample is its own name, so a message showing one
+    /// arg in another's place reads wrong in the catalog test.
+    #[test]
+    fn every_samples_text_args_are_their_own_names() {
+        for sample in diagnostic_samples() {
+            for (name, arg) in sample.args() {
+                if let Arg::Str(value) = arg
+                    && name != "cardinality"
+                {
+                    assert_eq!(value, name, "{}", sample.code());
+                }
+            }
+        }
     }
 
     #[test]
