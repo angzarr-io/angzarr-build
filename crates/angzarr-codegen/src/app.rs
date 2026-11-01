@@ -44,7 +44,7 @@ use crate::scaffold::{Owner, ScaffoldFile};
 /// The angzarr-embedded commit a generated application's `Cargo.toml` pins
 /// (its kernel, which re-exports the diagnostics, its markup and its host): the one this generator's output is
 /// written against.
-pub const ANGZARR_EMBEDDED_REV: &str = "e8975d240249bbf2a402f42e409a7adfe4375b76";
+pub const ANGZARR_EMBEDDED_REV: &str = "cbe108b56aba6b1096dadfa4c0887e56a1934b7d";
 /// Where [`ANGZARR_EMBEDDED_REV`] is fetched from.
 pub const ANGZARR_EMBEDDED_GIT: &str = "https://github.com/angzarr-io/angzarr-embedded";
 /// Where angzarr-build is fetched from when a seed names no other source.
