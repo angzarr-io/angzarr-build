@@ -5,8 +5,8 @@
 //! both, the hand-written one the ledger's.
 
 use angzarr_embedded::markup::DomainMessage;
-use angzarr_embedded::v1::{Command, CommandBook, CommandPage, Cover, Uuid, command_page};
-use angzarr_embedded::{Sampled, Timestamp, pack};
+use angzarr_embedded::v1::{CommandBook, Cover, Uuid};
+use angzarr_embedded::{CommandBookExt, Sampled, Timestamp, pack};
 use angzarr_embedded::angzarr_diagnostic::{Arg, Diagnostic};
 use angzarr_embedded_host::App;
 use kinds_app::domain::*;
@@ -35,21 +35,13 @@ async fn handle<C: DomainMessage>(
     domain: &str,
     command: C,
 ) -> Result<(), angzarr_embedded::Failure<angzarr_embedded::Rejected>> {
-    let book = CommandBook {
-        cover: Some(Cover {
-            domain: domain.to_string(),
-            root: Some(Uuid::from_bytes([n; 16])),
-            edition: None,
-        }),
-        page: Some(CommandPage {
-            body: Some(command_page::Body::Command(Command {
-                payload: Some(pack(&command.to_wire())),
-            })),
-            command_id: Some(Uuid::from_bytes([0xc0 | n; 16])),
-            ..CommandPage::default()
-        }),
-        handling: None,
+    let cover = Cover {
+        domain: domain.to_string(),
+        root: Some(Uuid::from_bytes([n; 16])),
+        edition: None,
     };
+    let book = CommandBook::command(cover, pack(&command.to_wire()))
+        .with_id(Uuid::from_bytes([0xc0 | n; 16]));
     let sampled = Sampled {
         now: Timestamp {
             seconds: i64::from(n),

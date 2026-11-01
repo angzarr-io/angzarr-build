@@ -17,9 +17,9 @@ publish = false
 # it names, so the app has one router and one angzarr-proto (angzarr core's,
 # at the rev angzarr-embedded and angzarr-cli both pin).
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5ab4aed03128478dbd0f4e3409a776d1f0b53004" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5ab4aed03128478dbd0f4e3409a776d1f0b53004" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "5ab4aed03128478dbd0f4e3409a776d1f0b53004" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "c1177bbd36454652356e60e032c35ecd02211fea" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "c1177bbd36454652356e60e032c35ecd02211fea" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "c1177bbd36454652356e60e032c35ecd02211fea" }
 angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "08f886b0fece2f2cf5e94a20fef0595ac5f789f8" }
 prost = "0.14"
 # The App is async, on the caller's runtime, which is tokio's

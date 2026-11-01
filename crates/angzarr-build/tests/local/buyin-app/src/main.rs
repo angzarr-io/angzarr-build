@@ -5,8 +5,8 @@
 //! per fact the test checks. The App is async, on the caller's tokio runtime.
 
 use angzarr_embedded::markup::DomainMessage;
-use angzarr_embedded::v1::{Command, CommandBook, CommandPage, Cover, Uuid, command_page};
-use angzarr_embedded::{Domain, Payload, Sampled, Timestamp, pack};
+use angzarr_embedded::v1::{CommandBook, Cover, Uuid};
+use angzarr_embedded::{CommandBookExt, Domain, Payload, Sampled, Timestamp, pack};
 use angzarr_embedded_host::App;
 use buyin_app::domain::{Deposit, StartBuyIn};
 use buyin_app::{adapters, register};
@@ -28,17 +28,8 @@ fn cover<D: Domain>(root: Uuid) -> Cover {
 /// `command` to the `D` stream at `root`, the `n`th command of the run;
 /// panics if the command, or a policy step it sets off, fails.
 async fn send<D: Domain, C: DomainMessage>(app: &App, n: u8, root: Uuid, command: C) {
-    let book = CommandBook {
-        cover: Some(cover::<D>(root)),
-        page: Some(CommandPage {
-            body: Some(command_page::Body::Command(Command {
-                payload: Some(pack(&command.to_wire())),
-            })),
-            command_id: Some(Uuid::from_bytes([0xc0 | n; 16])),
-            ..CommandPage::default()
-        }),
-        handling: None,
-    };
+    let book = CommandBook::command(cover::<D>(root), pack(&command.to_wire()))
+        .with_id(Uuid::from_bytes([0xc0 | n; 16]));
     let sampled = Sampled {
         now: Timestamp {
             seconds: i64::from(n),
