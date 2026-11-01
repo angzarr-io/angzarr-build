@@ -404,7 +404,7 @@ fn policy_dispatch(unit: &Unit, new: &str) -> String {
              return _commands(logic.{method}(event, source, ctx))\n\n",
             pb2_class(event),
         ));
-        out.push_str(&register("dispatch.on_event_with_context", event, &method));
+        out.push_str(&register("dispatch.on_event", event, &method));
     }
     for refusable in &unit.refusable {
         let method = format!("{}_refused", snake(refusable.command.name()));
@@ -456,7 +456,7 @@ fn projector_dispatch(unit: &Unit, new: &str) -> String {
         out.push_str(&format!(
             "        projection.CopyFrom({projection_from}(projected))\n\n"
         ));
-        out.push_str(&register("dispatch.on_event_with_context", event, &method));
+        out.push_str(&register("dispatch.on_event", event, &method));
     }
     out
 }

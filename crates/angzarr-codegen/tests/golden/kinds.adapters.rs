@@ -27,7 +27,7 @@ impl std::ops::Deref for LedgerState {
         &self.0
     }
 }
-#[aggregate(domain = "ledger")]
+#[aggregate(domain = "ledger", command = LedgerStateCommand, event = LedgerStateEvent)]
 #[allow(clippy::result_large_err)]
 impl LedgerState {
     #[handles_cmd(Post, refuses(PostRefused, Unreasoned, Listed, Elsewhere, Mislabeled))]
@@ -204,7 +204,7 @@ impl std::ops::Deref for AuditState {
         &self.0
     }
 }
-#[aggregate(domain = "audit")]
+#[aggregate(domain = "audit", command = AuditStateCommand, event = AuditStateEvent)]
 #[allow(clippy::result_large_err)]
 impl AuditState {
     #[handles_cmd(Audit, refuses(PostRefused, Unreasoned))]

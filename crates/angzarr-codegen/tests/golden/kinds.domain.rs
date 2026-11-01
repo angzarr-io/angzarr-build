@@ -666,6 +666,75 @@ impl From<Raw> for LedgerStateCommand {
         LedgerStateCommand::Raw(value)
     }
 }
+impl ::angzarr_embedded::Payload for LedgerStateCommand {
+    fn to_any(&self) -> ::angzarr_embedded::Any {
+        match self {
+            LedgerStateCommand::Post(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateCommand::Open(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateCommand::Four(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateCommand::Maybe(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateCommand::MaybeBoth(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateCommand::Batch(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateCommand::Raw(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+        }
+    }
+    fn from_any(
+        any: &::angzarr_embedded::Any,
+    ) -> Result<Self, ::angzarr_embedded::PayloadError> {
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Post>(any)? {
+            return Ok(LedgerStateCommand::Post(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Open>(any)? {
+            return Ok(LedgerStateCommand::Open(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Four>(any)? {
+            return Ok(LedgerStateCommand::Four(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Maybe>(any)? {
+            return Ok(LedgerStateCommand::Maybe(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            MaybeBoth,
+        >(any)? {
+            return Ok(LedgerStateCommand::MaybeBoth(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Batch>(any)? {
+            return Ok(LedgerStateCommand::Batch(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Raw>(any)? {
+            return Ok(LedgerStateCommand::Raw(value));
+        }
+        Err(::angzarr_embedded::PayloadError::UnknownType {
+            type_url: any.type_url.clone(),
+        })
+    }
+    fn type_urls() -> Vec<String> {
+        [
+            ::angzarr_embedded::markup::type_url_of::<Post>(),
+            ::angzarr_embedded::markup::type_url_of::<Open>(),
+            ::angzarr_embedded::markup::type_url_of::<Four>(),
+            ::angzarr_embedded::markup::type_url_of::<Maybe>(),
+            ::angzarr_embedded::markup::type_url_of::<MaybeBoth>(),
+            ::angzarr_embedded::markup::type_url_of::<Batch>(),
+            ::angzarr_embedded::markup::type_url_of::<Raw>(),
+        ]
+            .to_vec()
+    }
+}
 /// An event of LedgerState, for a decision recording any number of them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedgerStateEvent {
@@ -694,6 +763,54 @@ impl From<Closed> for LedgerStateEvent {
         LedgerStateEvent::Closed(value)
     }
 }
+impl ::angzarr_embedded::Payload for LedgerStateEvent {
+    fn to_any(&self) -> ::angzarr_embedded::Any {
+        match self {
+            LedgerStateEvent::Posted(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateEvent::Noted(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateEvent::Cleared(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateEvent::Closed(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+        }
+    }
+    fn from_any(
+        any: &::angzarr_embedded::Any,
+    ) -> Result<Self, ::angzarr_embedded::PayloadError> {
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Posted>(any)? {
+            return Ok(LedgerStateEvent::Posted(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Noted>(any)? {
+            return Ok(LedgerStateEvent::Noted(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            Cleared,
+        >(any)? {
+            return Ok(LedgerStateEvent::Cleared(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Closed>(any)? {
+            return Ok(LedgerStateEvent::Closed(value));
+        }
+        Err(::angzarr_embedded::PayloadError::UnknownType {
+            type_url: any.type_url.clone(),
+        })
+    }
+    fn type_urls() -> Vec<String> {
+        [
+            ::angzarr_embedded::markup::type_url_of::<Posted>(),
+            ::angzarr_embedded::markup::type_url_of::<Noted>(),
+            ::angzarr_embedded::markup::type_url_of::<Cleared>(),
+            ::angzarr_embedded::markup::type_url_of::<Closed>(),
+        ]
+            .to_vec()
+    }
+}
 /// A command of AuditState, as a policy sends it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuditStateCommand {
@@ -704,6 +821,28 @@ impl From<Audit> for AuditStateCommand {
         AuditStateCommand::Audit(value)
     }
 }
+impl ::angzarr_embedded::Payload for AuditStateCommand {
+    fn to_any(&self) -> ::angzarr_embedded::Any {
+        match self {
+            AuditStateCommand::Audit(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+        }
+    }
+    fn from_any(
+        any: &::angzarr_embedded::Any,
+    ) -> Result<Self, ::angzarr_embedded::PayloadError> {
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Audit>(any)? {
+            return Ok(AuditStateCommand::Audit(value));
+        }
+        Err(::angzarr_embedded::PayloadError::UnknownType {
+            type_url: any.type_url.clone(),
+        })
+    }
+    fn type_urls() -> Vec<String> {
+        [::angzarr_embedded::markup::type_url_of::<Audit>()].to_vec()
+    }
+}
 /// An event of AuditState, for a decision recording any number of them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuditStateEvent {
@@ -712,6 +851,30 @@ pub enum AuditStateEvent {
 impl From<Audited> for AuditStateEvent {
     fn from(value: Audited) -> Self {
         AuditStateEvent::Audited(value)
+    }
+}
+impl ::angzarr_embedded::Payload for AuditStateEvent {
+    fn to_any(&self) -> ::angzarr_embedded::Any {
+        match self {
+            AuditStateEvent::Audited(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+        }
+    }
+    fn from_any(
+        any: &::angzarr_embedded::Any,
+    ) -> Result<Self, ::angzarr_embedded::PayloadError> {
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            Audited,
+        >(any)? {
+            return Ok(AuditStateEvent::Audited(value));
+        }
+        Err(::angzarr_embedded::PayloadError::UnknownType {
+            type_url: any.type_url.clone(),
+        })
+    }
+    fn type_urls() -> Vec<String> {
+        [::angzarr_embedded::markup::type_url_of::<Audited>()].to_vec()
     }
 }
 impl PostRefused {

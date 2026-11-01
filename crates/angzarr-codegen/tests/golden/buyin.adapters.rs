@@ -27,7 +27,7 @@ impl std::ops::Deref for Wallet {
         &self.0
     }
 }
-#[aggregate(domain = "wallet")]
+#[aggregate(domain = "wallet", command = WalletCommand, event = WalletEvent)]
 #[allow(clippy::result_large_err)]
 impl Wallet {
     #[handles_cmd(Deposit)]
@@ -66,7 +66,7 @@ impl std::ops::Deref for BuyIn {
         &self.0
     }
 }
-#[process_manager(domain = "buyin")]
+#[process_manager(domain = "buyin", command = BuyInCommand, event = BuyInEvent)]
 #[allow(clippy::result_large_err)]
 impl BuyIn {
     #[handles_cmd(StartBuyIn, starts)]

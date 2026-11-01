@@ -42,9 +42,9 @@ pub(crate) fn root() -> TokenStream {
 }
 
 /// The markup domain layer for one package: its domain types with their
-/// wire conversions, and a `DomainMessage` impl for every input, event and
-/// refusal of its components. No payload enums and no `State` impl: the
-/// markup generates those.
+/// wire conversions, a `DomainMessage` impl for every input, event and
+/// refusal of its components, and each component's command and event enums
+/// with their `Payload` impls. No `State` impl: the markup generates it.
 pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
     let mut items = TokenStream::new();
     for e in &package.enums {
@@ -625,7 +625,11 @@ fn field_arg(field: &FieldDescriptor) -> Option<TokenStream> {
     )
 }
 
-/// An enum of `messages`, one variant each, with no wire form.
+/// An enum of `messages`, one variant each, named as its type, with a
+/// `From` of each type and its `Payload`: the domain's one nameable payload
+/// set, which the markup takes (`command = ..`, `event = ..`) instead of
+/// writing its own. Its `Payload` stands on markup's public functions, so
+/// writing the enum by hand is writing the same code.
 fn plain_enum(name: &syn::Ident, messages: &[MessageDescriptor], doc: &str) -> TokenStream {
     let variants: Vec<syn::Ident> = messages.iter().map(|m| ident(m.name())).collect();
     let froms = variants.iter().map(|v| {
@@ -637,12 +641,50 @@ fn plain_enum(name: &syn::Ident, messages: &[MessageDescriptor], doc: &str) -> T
             }
         }
     });
+    let payload = payload(name, &variants);
     quote! {
         #[doc = #doc]
         #[derive(Clone, Debug, PartialEq)]
         pub enum #name { #(#variants(#variants)),* }
 
         #(#froms)*
+
+        #payload
+    }
+}
+
+/// The `Payload` of the enum `name` of `variants`: each variant packed as
+/// its message, each type read back by its type URL, any other refused as
+/// the kernel's unknown type, and the types listed.
+fn payload(name: &syn::Ident, variants: &[syn::Ident]) -> TokenStream {
+    let root = root();
+    let m = quote!(#root::markup);
+    let packing = if variants.is_empty() {
+        quote!(match *self {})
+    } else {
+        quote!(match self { #(#name::#variants(value) => #m::pack_message(value),)* })
+    };
+    quote! {
+        impl #root::Payload for #name {
+            fn to_any(&self) -> #root::Any {
+                #packing
+            }
+
+            fn from_any(any: &#root::Any) -> Result<Self, #root::PayloadError> {
+                #(
+                    if let Some(value) = #m::decode_message::<#variants>(any)? {
+                        return Ok(#name::#variants(value));
+                    }
+                )*
+                Err(#root::PayloadError::UnknownType {
+                    type_url: any.type_url.clone(),
+                })
+            }
+
+            fn type_urls() -> Vec<String> {
+                [#(#m::type_url_of::<#variants>()),*].to_vec()
+            }
+        }
     }
 }
 

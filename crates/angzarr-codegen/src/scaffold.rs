@@ -923,6 +923,10 @@ fn domain_adapter(component: &Component) -> TokenStream {
     } = &adapter;
     let markup = format_ident!("{}", domain_markup(component.kind));
     let domain = &component.domain;
+    // The domain layer's named enums, which carry their Payload: the
+    // domain's payloads, so the markup writes none of its own.
+    let commands = format_ident!("{}Command", component.name);
+    let events = format_ident!("{}Event", component.name);
     let handlers = component.inputs.iter().map(|input| {
         if input.fact {
             fact_method(component, input, interface)
@@ -946,7 +950,7 @@ fn domain_adapter(component: &Component) -> TokenStream {
             }
         }
 
-        #[#markup(domain = #domain)]
+        #[#markup(domain = #domain, command = #commands, event = #events)]
         #[allow(clippy::result_large_err)]
         impl #name {
             #(#methods)*
@@ -1410,8 +1414,10 @@ fn registration(
 }
 
 /// The domain layer for marked-up components: the domain types, their wire
-/// conversions and each one's `DomainMessage` impl, and nothing the markup
-/// generates itself (no payload enums, no `State` impl).
+/// conversions and each one's `DomainMessage` impl, and each component's
+/// `<Component>Command` and `<Component>Event` enums with their `Payload`
+/// impls, the domain's payloads (the adapters name them to the markup);
+/// nothing the markup generates itself (no `State` impl).
 ///
 /// The wire types at each package's `wire` path are prost's, built with
 /// angzarr's settings (`angzarr_build::wire`): a `bytes` field as

@@ -160,7 +160,7 @@ fn test_markup_domain_payload_is_written_on_markups_functions() {
     for call in [
         "::angzarr_embedded::markup::pack_message(value)",
         "::angzarr_embedded::markup::decode_message::<Hold>(any)?",
-        "::angzarr_embedded::markup::type_url_of::<Hold>()",
+        "markup::type_url_of::<Hold>()",
         "::angzarr_embedded::PayloadError::UnknownType",
     ] {
         assert!(source.contains(call), "no `{call}` in:\n{source}");

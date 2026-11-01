@@ -17,6 +17,10 @@ use proc_macro2::{TokenStream, TokenTree};
 /// in angzarr-embedded (its root, `markup`), its macros and its
 /// diagnostics.
 const ALLOWED: &[&str] = &[
+    "angzarr_embedded::Any",
+    "angzarr_embedded::Payload",
+    "angzarr_embedded::PayloadError",
+    "angzarr_embedded::PayloadError::UnknownType",
     "angzarr_embedded::Registry",
     "angzarr_embedded::Timestamp",
     "angzarr_embedded::WireError",
@@ -28,12 +32,14 @@ const ALLOWED: &[&str] = &[
     "angzarr_embedded::markup::CommandTarget",
     "angzarr_embedded::markup::Commands",
     "angzarr_embedded::markup::Context",
+    "angzarr_embedded::markup::decode_message",
     "angzarr_embedded::markup::Decides",
     "angzarr_embedded::markup::DomainMessage",
     "angzarr_embedded::markup::Emit",
     "angzarr_embedded::markup::EventSource",
     "angzarr_embedded::markup::Failed",
     "angzarr_embedded::markup::Ingests",
+    "angzarr_embedded::markup::pack_message",
     "angzarr_embedded::markup::PolicyContext",
     "angzarr_embedded::markup::ProjectionContext",
     "angzarr_embedded::markup::Record",
@@ -41,6 +47,7 @@ const ALLOWED: &[&str] = &[
     "angzarr_embedded::markup::Refuses",
     "angzarr_embedded::markup::Report",
     "angzarr_embedded::markup::RetryableStatus",
+    "angzarr_embedded::markup::type_url_of",
     "angzarr_embedded::angzarr_diagnostic::Arg",
     "angzarr_embedded::angzarr_diagnostic::Arg::from",
     "angzarr_embedded::angzarr_diagnostic::Diagnostic",

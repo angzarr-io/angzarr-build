@@ -38,7 +38,8 @@ pub fn wire(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
 
 /// The domain layer for marked-up components (angzarr-embedded-macros), by package
 /// (`<package>.domain.rs` in `OUT_DIR`): the domain types, their wire
-/// conversions and `DomainMessage` impls (see
+/// conversions and `DomainMessage` impls, and each component's command and
+/// event enums with their `Payload` impls (see
 /// `angzarr_codegen::markup_domain`). `wire` names each package's prost
 /// types, which must be built with [`wire`]'s settings (bytes as
 /// `Vec<u8>`, maps as `BTreeMap`): the layer refuses others where it is

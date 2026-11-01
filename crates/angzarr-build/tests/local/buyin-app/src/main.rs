@@ -45,14 +45,16 @@ async fn send<D: Domain, C: DomainMessage>(app: &App, n: u8, root: Uuid, command
 /// The state of the `D` stream at `root`: its events, folded.
 async fn state<D: Domain<State = D> + Default>(app: &App, root: Uuid) -> D {
     let mut state = D::default();
-    for page in app
-        .events(&cover::<D>(root))
-        .await
-        .expect("the stream reads")
-    {
-        let any = page.payload.expect("an event page carries its event");
+    let stream = cover::<D>(root);
+    for page in app.events(&stream).await.expect("the stream reads") {
+        let any = page.payload.clone().expect("an event page carries its event");
         let event = D::Event::from_any(&any).expect("the event decodes");
-        D::apply(&mut state, &event);
+        let at = angzarr_embedded::PageContext {
+            cover: Some(&stream),
+            sequence: page.sequence,
+            meta: page.meta.as_ref(),
+        };
+        D::apply(&mut state, &event, &at);
     }
     state
 }

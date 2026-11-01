@@ -140,8 +140,8 @@ fn test_a_projectors_dispatch_folds_both_sources_through_its_coroutines() {
             "dispatch.for_domains(\"table\", \"wallet\")",
             "projected = _run(logic.project_round_settled(_to_ledger_projection(projection), event, ctx))",
             "projection.CopyFrom(_from_ledger_projection(projected))",
-            "dispatch.on_event_with_context(\"io.angzarr.examples.v1.RoundSettled\", _project_round_settled)",
-            "dispatch.on_event_with_context(\"io.angzarr.examples.v1.FundsHeld\", _project_funds_held)",
+            "dispatch.on_event(\"io.angzarr.examples.v1.RoundSettled\", _project_round_settled)",
+            "dispatch.on_event(\"io.angzarr.examples.v1.FundsHeld\", _project_funds_held)",
             "return asyncio.run_coroutine_threadsafe(coroutine, _LOOP).result()",
         ],
     );
@@ -298,7 +298,7 @@ fn test_a_policys_dispatch_addresses_each_command_to_its_target() {
             "book = _t.CommandBook(cover=_t.Cover(domain=\"player\"))",
             "book.cover.root.value = root",
             "return _commands(logic.turn_started(event, source, ctx))",
-            "dispatch.on_event_with_context(\"io.angzarr.examples.v1.TurnStarted\", _turn_started)",
+            "dispatch.on_event(\"io.angzarr.examples.v1.TurnStarted\", _turn_started)",
         ],
     );
     let main = source(&files, "/main.py");
