@@ -14,9 +14,9 @@ crate = "examples_proto"
 wire = "examples_proto::v1"
 
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "a9374883218474da2cdeaa4c05a07a4ff70a91f3" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "a9374883218474da2cdeaa4c05a07a4ff70a91f3" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "a9374883218474da2cdeaa4c05a07a4ff70a91f3" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e8975d240249bbf2a402f42e409a7adfe4375b76" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e8975d240249bbf2a402f42e409a7adfe4375b76" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e8975d240249bbf2a402f42e409a7adfe4375b76" }
 prost = "0.14"
 # The App is async, on the caller's runtime: tokio's.
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
