@@ -1,7 +1,8 @@
 //! Why generation refused a descriptor set. Every refusal names the proto
 //! element to change. Each error is a code and its args
-//! ([`Diagnostic`]); its English `Display` is its en-US catalog message
-//! filled with them ([`english`]), so the English is written once.
+//! ([`Diagnostic`]), and `Display`s as them (decision 14.37): its English
+//! is its en-US catalog message ([`crate::EN_US`]), rendered where it is
+//! shown, never here.
 
 use std::fmt;
 
@@ -139,7 +140,7 @@ pub enum CodegenError {
 
 impl fmt::Display for CodegenError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        english(self, f)
+        angzarr_diagnostic::display(self, f)
     }
 }
 
@@ -449,103 +450,14 @@ fn use_samples() -> Vec<CodegenError> {
     ]
 }
 
-/// `d` in English, its `Display`: its en-US message ([`crate::EN_US`]) with
-/// each `{ $arg }` its arg's value, a nested cause's its own `Display`. The
-/// English is written once, in the catalog; a code with no message there,
-/// or one naming an arg `d` lacks, is shown as its code and args.
-pub(crate) fn english(d: &dyn Diagnostic, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match filled(crate::EN_US, d) {
-        Some(text) => f.write_str(&text),
-        None => angzarr_diagnostic::display(d, f),
-    }
-}
-
-/// `d`'s message in `catalog`, one `id = text` a line, filled with its args;
-/// `None` when the catalog has no message of its code, or the message names
-/// an arg it lacks or leaves a `{` unclosed.
-fn filled(catalog: &str, d: &dyn Diagnostic) -> Option<String> {
-    let code = d.code();
-    let mut rest = catalog
-        .lines()
-        .find_map(|line| line.strip_prefix(code)?.strip_prefix(" = "))?;
-    let args = d.args();
-    let mut out = String::new();
-    while let Some((before, after)) = rest.split_once("{ $") {
-        let (name, after) = after.split_once(" }")?;
-        let (_, arg) = args.iter().find(|(n, _)| *n == name)?;
-        out.push_str(before);
-        match arg {
-            Arg::Int(n) => out.push_str(&n.to_string()),
-            Arg::Uint(n) => out.push_str(&n.to_string()),
-            Arg::Str(s) => out.push_str(s),
-            Arg::Nested(cause) => out.push_str(&cause.to_string()),
-        }
-        rest = after;
-    }
-    out.push_str(rest);
-    Some(out)
-}
-
 #[cfg(test)]
 mod tests {
-    use std::fmt;
+    use angzarr_diagnostic::Arg;
 
-    use angzarr_diagnostic::{Arg, Diagnostic, Report};
-
-    use super::{diagnostic_samples, english, filled};
-
-    /// A report shown through [`english`].
-    #[derive(Debug)]
-    struct Shown(Report);
-
-    impl fmt::Display for Shown {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            english(self, f)
-        }
-    }
-
-    impl Diagnostic for Shown {
-        fn code(&self) -> &str {
-            self.0.code()
-        }
-
-        fn args(&self) -> Vec<(&str, Arg)> {
-            self.0.args()
-        }
-    }
-
-    const CATALOG: &str = "t-other = other\n\
-                           t-shown-more = not this one\n\
-                           t-shown = { $b } before { $a }: { $n }, { $u } and { $cause }.\n\
-                           t-absent = { $missing }\n\
-                           t-open = { $a\n";
-
-    #[test]
-    fn a_message_is_filled_by_arg_name_each_kind_of_arg_its_own_way() {
-        let cause = Report::new("t-cause").arg("k", "v w");
-        let shown = Report::new("t-shown")
-            .arg("a", "first")
-            .arg("b", "second")
-            .arg("n", -3i64)
-            .arg("u", 7u64)
-            .arg("cause", Arg::Nested(Box::new(cause)));
-        assert_eq!(
-            filled(CATALOG, &shown).as_deref(),
-            Some("second before first: -3, 7 and t-cause k=\"v w\".")
-        );
-    }
-
-    #[test]
-    fn no_message_of_the_code_an_absent_arg_or_an_open_place_fills_nothing() {
-        let a = |code: &'static str| Report::new(code).arg("a", "x");
-        assert_eq!(filled(CATALOG, &a("t-none")), None);
-        assert_eq!(filled(CATALOG, &a("t-absent")), None);
-        assert_eq!(filled(CATALOG, &a("t-open")), None);
-        assert_eq!(filled(CATALOG, &a("t-other")).as_deref(), Some("other"));
-    }
+    use super::diagnostic_samples;
 
     /// Each text arg of a sample is its own name, so a message showing one
-    /// arg in another's place reads wrong in the catalog test.
+    /// arg in another's place reads wrong where it is rendered.
     #[test]
     fn every_samples_text_args_are_their_own_names() {
         for sample in diagnostic_samples() {
@@ -557,13 +469,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn english_with_no_message_is_the_code_and_args() {
-        let shown = Shown(Report::new("angzarr-codegen-none").arg("a", "x y"));
-        assert_eq!(shown.to_string(), "angzarr-codegen-none a=\"x y\"");
-        let known = Shown(Report::new("angzarr-codegen-file-not-in-set").arg("file", "a.proto"));
-        assert_eq!(known.to_string(), "a.proto is not in the descriptor set");
     }
 }

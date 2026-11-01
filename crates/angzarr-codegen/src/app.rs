@@ -37,7 +37,7 @@ use angzarr_embedded_host_config::{
 use serde::Deserialize;
 
 use crate::common::snake;
-use crate::error::{CodegenError, english, text, texts};
+use crate::error::{CodegenError, text, texts};
 use crate::model::{self, Component, ComponentKind};
 use crate::scaffold::{Owner, ScaffoldFile};
 
@@ -291,9 +291,10 @@ pub enum AppLint {
     EmptyLaunch { name: String },
 }
 
+/// Its code and args (decision 14.37), like every error here.
 impl fmt::Display for AppLint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        english(self, f)
+        angzarr_diagnostic::display(self, f)
     }
 }
 

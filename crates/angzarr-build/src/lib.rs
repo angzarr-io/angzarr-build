@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use angzarr_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic, catalog};
 
 pub use angzarr_codegen::{
     ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Exposure, ProtoInput,
@@ -122,7 +122,7 @@ pub fn adapters_into(
         .unwrap_or_default()
         .join("src");
     for warning in adapters_from(out, &src, protos, includes, remote)? {
-        println!("cargo:warning={}: {warning}", warning.code());
+        println!("{}", cargo_warning(&warning));
     }
     Ok(())
 }
@@ -167,14 +167,31 @@ pub enum BuildWarning {
     InterfaceMissing { path: String },
 }
 
+/// Its code and args (decision 14.37); a build script shows it in English
+/// ([`cargo_warning`]).
 impl fmt::Display for BuildWarning {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BuildWarning::InterfaceMissing { path } => write!(
-                f,
-                "{path}, a policy's interface, is not there: its adapter translates no refusal; scaffold it, or move it back"
-            ),
-        }
+        angzarr_diagnostic::display(self, f)
+    }
+}
+
+/// `warning` as a build script reports it: a `cargo:warning` line, its code
+/// and its English.
+fn cargo_warning(warning: &BuildWarning) -> String {
+    format!(
+        "cargo:warning={}: {}",
+        warning.code(),
+        English(EN_US, warning)
+    )
+}
+
+/// A diagnostic in English where a build script shows it: its message in
+/// the catalog `.0`, filled with its args ([`catalog::render`]).
+struct English<'a>(&'static str, &'a dyn Diagnostic);
+
+impl fmt::Display for English<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        catalog::render(self.0, self.1, f)
     }
 }
 
@@ -335,7 +352,7 @@ fn app_layer_into(
     }
     let src = config.parent().unwrap_or(Path::new("")).join("src");
     for warning in adapters_from(out, &src, protos, includes, &remote)? {
-        println!("cargo:warning={}: {warning}", warning.code());
+        println!("{}", cargo_warning(&warning));
     }
     descriptors_into(out, protos, includes, &remote, &rules_version())?;
     let source =
@@ -729,7 +746,7 @@ fn io(path: &Path, error: &std::io::Error) -> BuildError {
 }
 
 /// Why generation failed. A build script that returns it fails the build
-/// with its English text.
+/// with its English text (its `Debug`).
 #[derive(Clone, PartialEq, Eq)]
 pub enum BuildError {
     /// Not run by Cargo: `OUT_DIR` is unset.
@@ -748,25 +765,26 @@ pub enum BuildError {
     Codegen(angzarr_codegen::CodegenError),
 }
 
+/// Its code and args (decision 14.37); a build script shows it in English
+/// (its `Debug`).
 impl fmt::Display for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BuildError::NoOutDir => f.write_str("OUT_DIR is unset: run this from a build script"),
-            BuildError::Io { path, detail } => write!(f, "{path}: {detail}"),
-            BuildError::Protoc { detail } => write!(f, "protoc failed: {detail}"),
-            BuildError::Prost { detail } => write!(f, "prost-build failed: {detail}"),
-            BuildError::Buf { detail } => write!(f, "buf generate failed: {detail}"),
-            BuildError::Uv { detail } => write!(f, "uv failed: {detail}"),
-            BuildError::Codegen(error) => error.fmt(f),
-        }
+        angzarr_diagnostic::display(self, f)
     }
 }
 
 /// A build script's `main` returning `Result<(), BuildError>` prints the
-/// error with `Debug`: the English text, not the variant.
+/// error with `Debug`, where a person reads it: its English, its message in
+/// this crate's catalog ([`EN_US`]), the generator's refusal its own message
+/// in the generator's ([`angzarr_codegen::EN_US`]).
 impl fmt::Debug for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(self, f)
+        match self {
+            BuildError::Codegen(error) => {
+                fmt::Display::fmt(&English(angzarr_codegen::EN_US, error), f)
+            }
+            _ => fmt::Display::fmt(&English(EN_US, self), f),
+        }
     }
 }
 
@@ -806,19 +824,105 @@ impl Diagnostic for BuildError {
 /// One value of every error this crate defines, for the catalog test.
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     let s = || "x".to_string();
+    let mut samples: Vec<Box<dyn Diagnostic>> = error_samples()
+        .into_iter()
+        .map(|e| Box::new(e) as Box<dyn Diagnostic>)
+        .collect();
+    samples.push(Box::new(BuildWarning::InterfaceMissing { path: s() }));
+    samples
+}
+
+/// One of every [`BuildError`].
+fn error_samples() -> Vec<BuildError> {
+    let s = || "x".to_string();
     vec![
-        Box::new(BuildError::NoOutDir),
-        Box::new(BuildError::Io {
+        BuildError::NoOutDir,
+        BuildError::Io {
             path: s(),
             detail: s(),
-        }),
-        Box::new(BuildError::Protoc { detail: s() }),
-        Box::new(BuildError::Prost { detail: s() }),
-        Box::new(BuildError::Buf { detail: s() }),
-        Box::new(BuildError::Uv { detail: s() }),
-        Box::new(BuildError::Codegen(
-            angzarr_codegen::CodegenError::NoWirePath { package: s() },
-        )),
-        Box::new(BuildWarning::InterfaceMissing { path: s() }),
+        },
+        BuildError::Protoc { detail: s() },
+        BuildError::Prost { detail: s() },
+        BuildError::Buf { detail: s() },
+        BuildError::Uv { detail: s() },
+        BuildError::Codegen(angzarr_codegen::CodegenError::NoWirePath { package: s() }),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use angzarr_diagnostic::Diagnostic;
+
+    use super::{BuildError, BuildWarning, EN_US, English, cargo_warning, error_samples};
+
+    /// Every crate's catalog a build script shows, in Fluent.
+    fn fluent() -> angzarr_fmt::Catalog {
+        let mut catalog = angzarr_fmt::Catalog::en_us();
+        catalog.add(angzarr_codegen::EN_US).unwrap();
+        catalog.add(EN_US).unwrap();
+        catalog
+    }
+
+    /// `d` as Fluent renders it, without its isolation marks.
+    fn rendered(catalog: &angzarr_fmt::Catalog, d: &dyn Diagnostic) -> String {
+        catalog
+            .render(d)
+            .chars()
+            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
+            .collect()
+    }
+
+    /// A build script's English is Fluent's rendering of the catalogs, for
+    /// every error it can show: its own, the generator's refusals (nested in
+    /// [`BuildError::Codegen`]), and its warnings.
+    #[test]
+    fn a_build_scripts_english_is_the_catalogs_for_every_error() {
+        let catalog = fluent();
+        for error in error_samples() {
+            assert_eq!(
+                format!("{error:?}"),
+                rendered(&catalog, &error),
+                "{}",
+                error.code()
+            );
+        }
+        for refusal in angzarr_codegen::diagnostic_samples() {
+            let shown = English(angzarr_codegen::EN_US, &*refusal).to_string();
+            assert_eq!(shown, rendered(&catalog, &*refusal), "{}", refusal.code());
+        }
+        let warning = BuildWarning::InterfaceMissing {
+            path: "x".to_string(),
+        };
+        assert_eq!(
+            cargo_warning(&warning),
+            format!(
+                "cargo:warning=angzarr-build-interface-missing: {}",
+                rendered(&catalog, &warning)
+            )
+        );
+    }
+
+    #[test]
+    fn a_warning_is_a_cargo_warning_naming_the_missing_interface() {
+        let warning = BuildWarning::InterfaceMissing {
+            path: "src/buy_in_wallet.rs".to_string(),
+        };
+        assert_eq!(
+            cargo_warning(&warning),
+            "cargo:warning=angzarr-build-interface-missing: src/buy_in_wallet.rs, a policy's \
+             interface, is not there: its adapter translates no refusal; scaffold it, or move \
+             it back"
+        );
+    }
+
+    #[test]
+    fn an_error_displays_as_its_code_and_args() {
+        let error = BuildError::Codegen(angzarr_codegen::CodegenError::NoWirePath {
+            package: "shop.v1".to_string(),
+        });
+        assert_eq!(
+            error.to_string(),
+            "angzarr-build-codegen error=angzarr-codegen-no-wire-path error.package=shop.v1"
+        );
+    }
 }

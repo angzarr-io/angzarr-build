@@ -111,16 +111,16 @@ fn test_a_failing_build_script_prints_the_errors_english() {
     }
 }
 
+/// Every error displays as its code and args, never English (decision
+/// 14.37), and core's catalog check agrees with the catalog.
 #[test]
-fn test_a_warnings_english_names_the_missing_interface() {
-    let warning = angzarr_build::BuildWarning::InterfaceMissing {
-        path: "src/buy_in_wallet.rs".to_string(),
-    };
-    assert_eq!(
-        warning.to_string(),
-        "src/buy_in_wallet.rs, a policy's interface, is not there: its adapter translates no \
-         refusal; scaffold it, or move it back"
+fn test_every_error_displays_as_its_code_and_args() {
+    let problems = angzarr_diagnostic::catalog::check(
+        "angzarr-build",
+        angzarr_build::EN_US,
+        &angzarr_build::diagnostic_samples(),
     );
+    assert_eq!(problems, Vec::new());
 }
 
 #[test]

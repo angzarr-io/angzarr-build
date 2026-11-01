@@ -581,16 +581,15 @@ fn test_every_catalog_message_is_the_code_of_a_sample() {
     assert_eq!(codes, messages);
 }
 
+/// Every error displays as its code and args, never English (decision
+/// 14.37), and core's catalog check agrees with the catalog: the English is
+/// rendered where it is shown (angzarr-build's build script, the CLI).
 #[test]
-fn test_every_errors_english_is_its_catalog_message() {
-    let mut catalog = angzarr_fmt::Catalog::en_us();
-    catalog.add(angzarr_codegen::EN_US).unwrap();
-    for sample in angzarr_codegen::diagnostic_samples() {
-        let rendered: String = catalog
-            .render(&*sample)
-            .chars()
-            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
-            .collect();
-        assert_eq!(sample.to_string(), rendered, "{}", sample.code());
-    }
+fn test_every_error_displays_as_its_code_and_args() {
+    let problems = angzarr_diagnostic::catalog::check(
+        "angzarr-codegen",
+        angzarr_codegen::EN_US,
+        &angzarr_codegen::diagnostic_samples(),
+    );
+    assert_eq!(problems, Vec::new());
 }
