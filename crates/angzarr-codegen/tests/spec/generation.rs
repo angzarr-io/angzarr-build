@@ -36,11 +36,56 @@ fn names(error: &CodegenError, name: &str) -> bool {
         .any(|a| names_in(a, &full) || names_in(a, name))
 }
 
+#[when("the protos are linted")]
+fn linted(w: &mut Generator) {
+    w.lint_protos();
+}
+
 #[when(
-    regex = r"^(?:the protos are linted|the component's descriptor is generated|the handler interfaces are generated|angzarr-cli scaffolds the component)$"
+    regex = r"^(?:the component's descriptor is generated|the handler interfaces are generated|angzarr-cli scaffolds the component)$"
 )]
 fn generate(w: &mut Generator) {
     w.lint();
+}
+
+#[then("lint exits with status 0")]
+fn zero(w: &mut Generator) {
+    let _ = w.generated();
+}
+
+/// Whether `warning` names `name` (a full name, or its last part).
+fn warns_of(warning: &angzarr_codegen::Warning, name: &str) -> bool {
+    let full = full(name);
+    warning
+        .args()
+        .iter()
+        .map(|(_, arg)| format!("{arg:?}"))
+        .any(|a| names_in(&a, &full) || names_in(&a, name))
+}
+
+/// The cli's code for the condition the tier labels `label` (`ANZ100`):
+/// every code is the crate's (decision 14.37's code rule).
+fn coded(label: &str) -> &'static str {
+    match label {
+        "ANZ100" => "angzarr-codegen-unapplied-emit",
+        "ANZ101" => "angzarr-codegen-unowned-target",
+        "ANZ102" => "angzarr-codegen-unproduced-source",
+        "ANZ103" => "angzarr-codegen-idle-component",
+        other => panic!("no cli code for the tier's {other}"),
+    }
+}
+
+#[then(
+    regex = r#"^lint reports (?:warning (ANZ\d+)|a warning) naming (?:command )?"([^"]+)"(.*)$"#
+)]
+fn warning_naming(w: &mut Generator, label: String, name: String, _rest: String) {
+    let named = w.named(&name);
+    let code = (!label.is_empty()).then(|| coded(&label));
+    let found = w.warnings.iter().any(|warning| {
+        code.is_none_or(|code| warning.code() == code)
+            && (warns_of(warning, &named) || warns_of(warning, &name))
+    });
+    assert!(found, "no warning {label} naming {name}: {:?}", w.warnings);
 }
 
 #[then("lint exits with a non-zero status")]

@@ -3,7 +3,8 @@
 //! layer, the scaffold) or generated from, and what came of it.
 
 use angzarr_codegen::{
-    CodegenError, Descriptor, Translate, adapters, descriptors, markup_domain, scaffold,
+    CodegenError, Descriptor, Translate, Warning, adapters, descriptors, markup_domain, scaffold,
+    warnings,
 };
 use angzarr_proto::v1::ComponentDescriptor;
 use prost::Message as _;
@@ -28,6 +29,8 @@ pub struct Generator {
     pub last_component: Option<String>,
     /// The input declared last, by its full name.
     pub last_input: Option<String>,
+    /// What linting the protos warned of.
+    pub warnings: Vec<Warning>,
 }
 
 /// What generation made.
@@ -98,6 +101,24 @@ impl Generator {
             Ok(Generated {
                 descriptors,
                 adapters,
+            })
+        });
+        self.outcome = Some(outcome);
+    }
+
+    /// The protos compiled and linted as `angzarr lint app` lints them: the
+    /// declarations' rules, an error refusing them, and their warnings.
+    pub fn lint_protos(&mut self) {
+        let files = self.protos.files();
+        let set = compile(&files);
+        let names: Vec<&str> = files.keys().map(String::as_str).collect();
+        let version = self.version.clone().unwrap_or_else(|| VERSION.to_string());
+        let outcome = warnings(&set, &names).and_then(|found| {
+            self.warnings = found;
+            let descriptors = descriptors(&set, &names, &version)?;
+            Ok(Generated {
+                descriptors,
+                adapters: String::new(),
             })
         });
         self.outcome = Some(outcome);

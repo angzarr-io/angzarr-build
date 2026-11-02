@@ -15,6 +15,7 @@ mod names;
 mod python;
 mod rust;
 mod scaffold;
+mod warnings;
 
 pub use app::{
     ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate,
@@ -25,6 +26,7 @@ pub use common::refusal_key;
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
 pub use error::{AppError, CodegenError, MarkupError, ProtoError, UseError, diagnostic_samples};
 pub use names::{ComponentName, NameKind, NameOf, component_name, component_names, kebab};
+pub use warnings::{Warning, warnings};
 
 /// The one comment line every file the generator writes opens with, in
 /// the file's own comment syntax: angzarr-cli's LICENSE-EXCEPTION (owner

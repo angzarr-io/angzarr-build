@@ -119,6 +119,11 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     errors
         .map(|e| Box::new(e) as Box<dyn Diagnostic>)
         .chain(crate::app::app_lint_samples())
+        .chain(
+            crate::warnings::samples()
+                .into_iter()
+                .map(|w| Box::new(w) as Box<dyn Diagnostic>),
+        )
         .collect()
 }
 

@@ -179,3 +179,31 @@ fn component_of_kind(w: &mut Generator, kind: String, name: String) {
         _ => component.domain = Some(domain),
     }
 }
+
+#[given(regex = r#"^no \(event\) entry for "([^"]+)" names "(\w+)"$"#)]
+fn no_event_entry(w: &mut Generator, event: String, component: String) {
+    let component = w.named(&component);
+    let message = w.protos.message(&full(&event));
+    message.events.retain(|(named, _)| *named != component);
+}
+
+#[given(regex = r#"^no \(command\) entry naming "(\w+)" sets starts$"#)]
+fn none_starts(w: &mut Generator, component: String) {
+    let component = w.named(&component);
+    for message in w.protos.messages.values_mut() {
+        if let Some(input) = message.input.as_mut().filter(|i| i.component == component) {
+            input.starts = false;
+        }
+    }
+}
+
+#[given(
+    regex = r#"^a (AGGREGATE|PROCESS_MANAGER|POLICY|PROJECTOR) component "(\w+)" that no \(command\) or \(event\) entry names$"#
+)]
+fn idle(w: &mut Generator, kind: String, name: String) {
+    match kind.as_str() {
+        // A policy declares both its domains (C-0582).
+        "POLICY" => policy(w, name, "order".to_string(), "inventory".to_string()),
+        _ => component_of_kind(w, kind, name),
+    }
+}

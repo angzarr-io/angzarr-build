@@ -22,21 +22,6 @@ pub struct Tag {
     pub why: &'static str,
 }
 
-/// angzarr-cli has no lint of the protos that reports warnings: a
-/// declaration the generator accepts passes in silence (`angzarr lint` is
-/// the host config's alone, `lint app`).
-const NO_WARNINGS: Tag = Tag {
-    name: "unsupported_lint_warnings",
-    why: "the generator reports no warnings: what it accepts passes in silence",
-};
-
-/// A rule of the declarations the generator does not check: it
-/// generates from them as they are.
-const NO_DECLARATION_CHECK: Tag = Tag {
-    name: "unsupported_declaration_check",
-    why: "the generator does not check this rule of the declarations: it generates from them",
-};
-
 /// What a scenario's business binary does at run time, built from what
 /// is generated: no binding builds and runs one.
 const UNBOUND_BUILT: Tag = Tag {
@@ -54,20 +39,10 @@ const UNBOUND_GENERATED: Tag = Tag {
 /// Every tagged scenario, by ID or outline row, in the tier's file order.
 const TAGGED: &[(&str, Tag)] = &[
     // component_options.feature
-    ("C-0514", NO_WARNINGS),
-    ("C-0515", NO_WARNINGS),
-    ("C-0516", NO_WARNINGS),
-    ("C-0604", NO_DECLARATION_CHECK),
-    ("C-0517", NO_WARNINGS),
-    ("C-0605", NO_DECLARATION_CHECK),
-    ("C-0582", NO_DECLARATION_CHECK),
-    ("C-0606", NO_DECLARATION_CHECK),
-    ("C-0611", NO_WARNINGS),
     ("C-0612", UNBOUND_GENERATED),
     ("C-0623", UNBOUND_GENERATED),
     ("C-0625", UNBOUND_GENERATED),
     ("C-0745", UNBOUND_BUILT),
-    ("C-0626", NO_DECLARATION_CHECK),
     ("C-0650", UNBOUND_GENERATED),
     // descriptor.feature
     ("C-0565", UNBOUND_BUILT),
