@@ -103,6 +103,22 @@ fn command_listing(
     }
 }
 
+#[given(regex = r#"^"([^"]+)" (?:refuses with "([^"]+)"|declares no refuses)$"#)]
+fn refuses_or_not(w: &mut Generator, command: String, refusal: String) {
+    if refusal.is_empty() {
+        return;
+    }
+    let name = full(&command);
+    let input = w
+        .protos
+        .message(&name)
+        .input
+        .as_mut()
+        .unwrap_or_else(|| panic!("{name} is no input"));
+    input.refuses.push(full(&refusal));
+    w.protos.message(&full(&refusal));
+}
+
 #[given(regex = r#"^a \(command\) entry for "([^"]+)" naming "(\w+)" that sets starts$"#)]
 fn starting_entry(w: &mut Generator, command: String, component: String) {
     w.input(&command, &component).starts = true;

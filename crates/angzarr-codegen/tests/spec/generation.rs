@@ -192,3 +192,139 @@ fn may_refuse(w: &mut Generator, may: String) {
     let handler = handler(w, &input);
     assert_eq!(handler.contains("->Result<"), may == "may", "{handler}");
 }
+
+/// `text` with its whitespace removed: generated code read as one line.
+fn squeezed(text: &str) -> String {
+    text.split_whitespace().collect()
+}
+
+/// The text of the Python file of `files` whose path ends with `suffix`.
+fn python_file<'a>(files: &'a [(String, String)], suffix: &str) -> &'a str {
+    files
+        .iter()
+        .find(|(path, _)| path.ends_with(suffix))
+        .map(|(_, text)| text.as_str())
+        .unwrap_or_else(|| panic!("no {suffix} in {:?}", files.iter().map(|f| &f.0)))
+}
+
+/// The entries of the Python table `name` (`_COMMANDS = { .. }`), squeezed.
+fn python_table(text: &str, name: &str) -> String {
+    let text = squeezed(text);
+    let open = format!("{name}={{");
+    let at = text
+        .find(&open)
+        .unwrap_or_else(|| panic!("no table {name} in {text}"));
+    let rest = &text[at + open.len()..];
+    rest[..rest.find('}').unwrap_or(rest.len())].to_string()
+}
+
+#[then(regex = r#"^the reaction of "(\w+)" to "([^"]+)" may return "([^"]+)"$"#)]
+fn reaction_returns(w: &mut Generator, policy: String, event: String, output: String) {
+    let bare = full(&output)
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    // Rust: the adapter's reaction takes it from what the interface returns.
+    let adapters = squeezed(&w.generated().adapters);
+    assert!(
+        adapters.contains(&format!("Output::{bare}(output)=>")),
+        "the Rust reaction takes no {bare}: {adapters}"
+    );
+    // Python: the logic's reaction is typed to return it.
+    let files = w.python(&policy);
+    let logic = squeezed(python_file(&files, "/logic.py"));
+    let event = full(&event)
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let reaction = format!("def{}(", snake(&event));
+    let at = logic
+        .find(&reaction)
+        .unwrap_or_else(|| panic!("no reaction {reaction} in {logic}"));
+    // The interface's method, through its ` ...` body.
+    let rest = &logic[at..];
+    let method = &rest[..rest.find("...").unwrap_or(rest.len())];
+    let returns = &method[method.find("->").unwrap_or(method.len())..];
+    assert!(
+        returns.contains(&bare),
+        "the Python reaction returns no {bare}: {method}"
+    );
+}
+
+#[then(regex = r#"^the generated code of "(\w+)" sends "([^"]+)" as a (Command|Fact)$"#)]
+fn sends_as(w: &mut Generator, policy: String, output: String, arm: String) {
+    let bare = full(&output)
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    // Rust: the arm the adapter's reaction builds it in.
+    let adapters = squeezed(&w.generated().adapters);
+    let call = if arm == "Fact" { "fact" } else { "to" };
+    assert!(
+        adapters.contains(&format!(
+            "Output::{bare}(output)=>commands.{call}(root,output)"
+        )),
+        "the Rust reaction does not send {bare} as a {arm}: {adapters}"
+    );
+    // Python: the table the dispatch sends it from.
+    let files = w.python(&policy);
+    let dispatch = python_file(&files, &format!("{}_angzarr.py", snake(&policy)));
+    let entry = format!("_d.{bare}:");
+    let (from, other) = if arm == "Fact" {
+        ("_SENT_FACTS", "_COMMANDS")
+    } else {
+        ("_COMMANDS", "_SENT_FACTS")
+    };
+    assert!(
+        python_table(dispatch, from).contains(&entry),
+        "the Python dispatch does not send {bare} as a {arm}: {dispatch}"
+    );
+    assert!(
+        !python_table(dispatch, other).contains(&entry),
+        "the Python dispatch sends {bare} in both arms: {dispatch}"
+    );
+}
+
+#[then(regex = r#"^"(\w+)" (is given|is not given) a handler of the refusal of "([^"]+)"$"#)]
+fn refusal_handler(w: &mut Generator, domain: String, given: String, command: String) {
+    // The Python scaffold's: its logic's on_refused_<command>, and the
+    // dispatch's registration of it. Rust's generated domain layer gives no
+    // domain a refusal handler.
+    let name = full(&command);
+    let bare = name.rsplit('.').next().unwrap_or_default().to_string();
+    let files = w.python(&domain);
+    let logic = python_file(&files, "/logic.py");
+    let method = format!("def on_refused_{}(", snake(&bare));
+    let dispatch = python_file(&files, &format!("{}_angzarr.py", snake(&domain)));
+    let registered = squeezed(dispatch).contains(&format!("dispatch.on_refused(\"{name}\""));
+    let expected = given == "is given";
+    assert_eq!(logic.contains(&method), expected, "{method} in {logic}");
+    assert_eq!(
+        registered, expected,
+        "the refusal of {name} registered in {dispatch}"
+    );
+}
+
+/// `BuyInWallet` as `buy_in_wallet`, as the generator names a method or a
+/// module.
+fn snake(camel: &str) -> String {
+    let mut out = String::new();
+    let chars: Vec<char> = camel.chars().collect();
+    for (i, c) in chars.iter().enumerate() {
+        if c.is_ascii_uppercase() && i > 0 {
+            let before = chars[i - 1];
+            let after = chars.get(i + 1);
+            if before.is_ascii_lowercase()
+                || before.is_ascii_digit()
+                || (before.is_ascii_uppercase() && after.is_some_and(char::is_ascii_lowercase))
+            {
+                out.push('_');
+            }
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
+}

@@ -3,8 +3,8 @@
 //! layer, the scaffold) or generated from, and what came of it.
 
 use angzarr_codegen::{
-    CodegenError, Descriptor, Translate, Warning, adapters, descriptors, markup_domain, scaffold,
-    warnings,
+    CodegenError, Descriptor, ProtoInput, PythonApp, Translate, Warning, adapters, component_names,
+    descriptors, markup_domain, scaffold, scaffold_python, warnings,
 };
 use angzarr_proto::v1::ComponentDescriptor;
 use prost::Message as _;
@@ -31,6 +31,9 @@ pub struct Generator {
     pub last_input: Option<String>,
     /// What linting the protos warned of.
     pub warnings: Vec<Warning>,
+    /// The protos as [`Generator::lint`] compiled them: the descriptor set
+    /// and its files, for a scenario reading the Python scaffold too.
+    pub compiled: Option<(Vec<u8>, Vec<String>)>,
 }
 
 /// What generation made.
@@ -93,6 +96,7 @@ impl Generator {
             .collect();
         let wire: Vec<(&str, &str)> = wire.iter().map(|(p, w)| (p.as_str(), w.as_str())).collect();
         let version = self.version.clone().unwrap_or_else(|| VERSION.to_string());
+        self.compiled = Some((set.clone(), files.keys().cloned().collect()));
         let outcome = descriptors(&set, &names, &version).and_then(|descriptors| {
             markup_domain(&set, &names, &wire)?;
             // The user's files `angzarr scaffold rust` writes: their checks.
@@ -124,6 +128,37 @@ impl Generator {
             }
         });
         self.outcome = Some(outcome);
+    }
+
+    /// The Python scaffold of the component named `name` (the scenario's
+    /// name for it), from the protos [`Generator::lint`] compiled: each
+    /// file's path and text.
+    pub fn python(&self, name: &str) -> Vec<(String, String)> {
+        let (set, files) = self.compiled.as_ref().expect("the protos compiled");
+        let files: Vec<&str> = files.iter().map(String::as_str).collect();
+        let full = self.named(name);
+        let served = component_names(set, &files)
+            .expect("the components' names")
+            .into_iter()
+            .find(|c| c.component == full)
+            .map(|c| {
+                if c.domain.is_empty() {
+                    c.name
+                } else {
+                    c.domain
+                }
+            })
+            .unwrap_or_else(|| panic!("no component {full}"));
+        let app = PythonApp {
+            domain: served,
+            protos: ProtoInput::Directory("protos".to_string()),
+            rules_version: VERSION.to_string(),
+        };
+        scaffold_python(set, &files, &app, &self.translate)
+            .expect("the Python scaffold")
+            .into_iter()
+            .map(|f| (f.path, f.source))
+            .collect()
     }
 
     /// What generation made; panics if it refused.
