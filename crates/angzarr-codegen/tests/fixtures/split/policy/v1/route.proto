@@ -1,0 +1,13 @@
+syntax = "proto3";
+package split.policy.v1;
+import "io/angzarr/v1/options.proto";
+
+// A policy in a package of its own, which declares no domain type: its
+// interface is its target's layer's.
+message RoutePolicy {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_POLICY
+    input_domain: "depot"
+    output_domain: "depot"
+  };
+}

@@ -1,0 +1,24 @@
+syntax = "proto3";
+package split.v1;
+import "io/angzarr/v1/options.proto";
+
+// A depot, whose policy (split/policy/v1) is declared in another package.
+message DepotState {
+  option (io.angzarr.v1.component) = {
+    kind: COMPONENT_KIND_AGGREGATE
+    domain: "depot"
+    name: "Depot"
+  };
+}
+
+message Ship {
+  option (io.angzarr.v1.command) = {
+    component: "split.v1.DepotState"
+    emits: "split.v1.Shipped"
+  };
+}
+
+message Shipped {
+  option (io.angzarr.v1.event) = {component: "split.v1.DepotState"};
+  option (io.angzarr.v1.event) = {component: "split.policy.v1.RoutePolicy"};
+}

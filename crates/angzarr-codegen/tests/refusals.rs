@@ -195,3 +195,43 @@ fn test_a_refusal_status_anywhere_but_a_refusals_code_is_refused() {
         );
     }
 }
+
+/// A domain type taking the name the domain layer gives a component's
+/// interface (its trait), or its facts' choice, is refused, naming it; a
+/// domain taking no fact has no choice, and leaves the name free (item S).
+#[test]
+fn test_markup_domain_refuses_a_type_named_as_an_interface_or_a_fact_choice() {
+    for (file, message, name, component) in [
+        (
+            "bad/v1/interface_name.proto",
+            "bad.v1.Shelf",
+            "Shelf",
+            "bad.v1.ShelfState",
+        ),
+        (
+            "bad/v1/fact_choice_name.proto",
+            "bad.v1.BinFact",
+            "BinFact",
+            "bad.v1.BinState",
+        ),
+    ] {
+        assert_eq!(
+            markup_domain(&descriptors(&[file]), &[file], &[("bad.v1", "crate::wire")])
+                .expect_err("refused"),
+            CodegenError::Proto(ProtoError::InterfaceName {
+                message: message.to_string(),
+                name: name.to_string(),
+                component: component.to_string(),
+            }),
+            "{file}"
+        );
+    }
+    const FREE: &str = "bad/v1/no_fact_choice.proto";
+    let layer = markup_domain(&descriptors(&[FREE]), &[FREE], &[("bad.v1", "crate::wire")])
+        .expect("no choice of facts, no clash");
+    assert!(
+        !layer[0].source.contains("enum CrateFact"),
+        "{}",
+        layer[0].source
+    );
+}

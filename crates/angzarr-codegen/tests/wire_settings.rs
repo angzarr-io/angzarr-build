@@ -112,3 +112,25 @@ fn test_a_layer_without_bytes_or_maps_checks_nothing() {
 }
 
 const REFUSALS: &str = "refusals/v1/refusals.proto";
+
+/// `angzarr-wire.rs`: each package's prost types in modules nested as the
+/// package is, the package's own module carrying the allowance prost's
+/// output needs (item S), angzarr's own and google's left to angzarr-proto
+/// and prost.
+#[test]
+fn test_wire_modules_nest_each_package_with_its_allowance() {
+    let mut files = BLACKJACK.to_vec();
+    files.extend(["io/angzarr/v1/options.proto", "google/protobuf/any.proto"]);
+    let source = angzarr_codegen::wire_modules(&common::descriptors(BLACKJACK), &files).unwrap();
+    let flat = source.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(
+            "pub mod io { pub mod angzarr { pub mod examples { #[allow(clippy::excessive_nesting)] \
+             pub mod v1 { include!(concat!(env!(\"OUT_DIR\"), \"/io.angzarr.examples.v1.rs\")); } } } }"
+        ),
+        "{source}"
+    );
+    assert!(!source.contains("/io.angzarr.v1.rs"), "{source}");
+    assert!(!source.contains("google"), "{source}");
+    assert!(angzarr_codegen::is_generated(&source), "{source}");
+}

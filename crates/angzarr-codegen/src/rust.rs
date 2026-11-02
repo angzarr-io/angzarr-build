@@ -712,16 +712,16 @@ fn output_enum(component: &crate::model::Component) -> TokenStream {
 /// `markup::Translation` for any source ingesting each of its facts, so the
 /// markup packs whichever it holds.
 fn fact_enum(component: &crate::model::Component) -> TokenStream {
+    let Some(name) = crate::scaffold::fact_choice(component) else {
+        return quote!();
+    };
+    let name = format_ident!("{name}");
     let facts: Vec<syn::Ident> = component
         .inputs
         .iter()
         .filter(|i| i.fact)
         .map(|i| ident(i.message.name()))
         .collect();
-    if facts.is_empty() || !component.kind.is_domain() {
-        return quote!();
-    }
-    let name = format_ident!("{}", crate::scaffold::fact_name(component));
     let root = root();
     let m = quote!(#root::markup);
     let doc = format!(

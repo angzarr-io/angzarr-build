@@ -1107,3 +1107,41 @@ fn a_process_manager_with_a_starting_input_is_not_warned_of() {
         linted.warnings
     );
 }
+
+/// The generated layer `src/main.rs` includes: the application's own wire
+/// types and domain layer, the domain crate's named in their place, or,
+/// with neither, the adapters and `register()` alone (item S Q7).
+#[test]
+fn the_app_layer_holds_the_generated_modules_the_app_has() {
+    let own = app_layer(&["shop.v1".to_string()], None);
+    for expected in [
+        "pub mod wire {\n    include!(concat!(env!(\"OUT_DIR\"), \"/shop.v1.rs\"));\n}",
+        "pub mod domain {\n    include!(concat!(env!(\"OUT_DIR\"), \"/shop.v1.domain.rs\"));\n}",
+        "include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-adapters.rs\"));",
+        "include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-register.rs\"));",
+    ] {
+        assert!(own.contains(expected), "{expected}:\n{own}");
+    }
+    let bare = app_layer(&[], None);
+    assert!(!bare.contains("pub mod"), "{bare}");
+    assert!(bare.contains("/angzarr-register.rs"), "{bare}");
+}
+
+/// A manifest names its domain crate in `[package.metadata.angzarr.domain]`,
+/// what `app_without_domain` reads; one naming none has none.
+#[test]
+fn a_manifests_domain_crate_is_read_from_its_metadata() {
+    let manifest = "[package]\nname = \"x\"\n\n[package.metadata.angzarr.domain]\n\
+                    crate = \"shop_proto\"\nwire = \"shop_proto::v1\"\n";
+    assert_eq!(
+        angzarr_codegen::manifest_domain_crate(manifest).unwrap(),
+        Some(DomainCrate {
+            path: "shop_proto".to_string(),
+            wire: Some("shop_proto::v1".to_string()),
+        })
+    );
+    assert_eq!(
+        angzarr_codegen::manifest_domain_crate("[package]\nname = \"x\"\n").unwrap(),
+        None
+    );
+}

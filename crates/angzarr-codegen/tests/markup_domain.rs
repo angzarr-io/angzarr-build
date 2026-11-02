@@ -636,3 +636,19 @@ fn test_every_error_displays_as_its_code_and_args() {
         angzarr_diagnostic::catalog::check(krate, ftl, &angzarr_codegen::diagnostic_samples());
     assert_eq!(problems, Vec::new());
 }
+
+/// A policy's interface is in its target's layer, beside the outputs it
+/// names, even when the policy is declared in a package with no domain
+/// types of its own (item S).
+#[test]
+fn test_a_policys_interface_is_its_targets_layers() {
+    const FILES: &[&str] = &["split/v1/depot.proto", "split/policy/v1/route.proto"];
+    let layers = markup_domain(&descriptors(FILES), FILES, &[("split.v1", "crate::wire")])
+        .expect("one layer, the depot's");
+    assert_eq!(layers.len(), 1);
+    assert!(
+        layers[0].source.contains("pub trait RoutePolicy {"),
+        "{}",
+        layers[0].source
+    );
+}

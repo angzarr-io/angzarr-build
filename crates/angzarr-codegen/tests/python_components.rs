@@ -1039,3 +1039,95 @@ fn test_a_policy_whose_source_takes_no_facts_has_no_refusal_plumbing() {
     let dispatch = source(&files, "player_table_policy_angzarr.py");
     assert!(!dispatch.contains("on_refused"), "{dispatch}");
 }
+
+/// The implementation's file, by suffix.
+fn implementation(files: &[ScaffoldFile]) -> &ScaffoldFile {
+    files
+        .iter()
+        .find(|f| f.path.ends_with("/logic_impl.py"))
+        .expect("logic_impl.py")
+}
+
+/// A translating callback the switch selects returns the fact it selects;
+/// the reference protocol's, any fact of the source (the kinds ledger takes
+/// two).
+#[test]
+fn test_a_selected_translation_returns_the_fact_it_selects() {
+    let selection = Translate {
+        policy: "kinds.v1.LedgerAuditPolicy".to_string(),
+        command: "kinds.v1.Audit".to_string(),
+        fact: "kinds.v1.Arrived".to_string(),
+    };
+    const KINDS: &[&str] = &["kinds/v1/kinds.proto"];
+    let files = scaffold_python(
+        &descriptors(KINDS),
+        KINDS,
+        &app("policy-ledger-audit"),
+        &[selection],
+        &[],
+    )
+    .unwrap();
+    let implementation = implementation(&files);
+    assert_has(
+        &implementation.source,
+        &["ctx: CommandContext) -> Arrived:"],
+    );
+    assert_eq!(implementation.selected, ["audit_refused"]);
+    assert_has(source(&files, "/logic.py"), &["-> Arrived | Swept: ..."]);
+}
+
+/// `--on-refused` writes the callback it names alone into a policy's
+/// implementation, and selects it; the switch selects the one it translates
+/// alone.
+#[test]
+fn test_on_refused_and_translate_select_their_own_callbacks_alone() {
+    let named = scaffold_python(
+        &descriptors(BUYIN),
+        BUYIN,
+        &app("policy-buyin-wallet"),
+        &[],
+        &["buyin.v1.Deposit".to_string()],
+    )
+    .unwrap();
+    let named = implementation(&named);
+    assert!(
+        named.source.contains("def deposit_refused("),
+        "{}",
+        named.source
+    );
+    assert!(
+        !named.source.contains("def hold_refused("),
+        "{}",
+        named.source
+    );
+    assert_eq!(named.selected, ["deposit_refused"]);
+    let translated = buyin_python("policy-buyin-wallet", &[translate_hold()]);
+    assert_eq!(implementation(&translated).selected, ["hold_refused"]);
+}
+
+/// A domain's refusal handlers are never the switch's to select: a
+/// translation leaves none selected; `--on-refused` selects the handler it
+/// names, which records events as every handler does, whatever the switch
+/// translates.
+#[test]
+fn test_a_domains_handler_is_selected_by_on_refused_alone() {
+    let translated = buyin_python("buyin", &[translate_hold()]);
+    assert!(implementation(&translated).selected.is_empty());
+    let named = scaffold_python(
+        &descriptors(BUYIN),
+        BUYIN,
+        &app("buyin"),
+        &[translate_hold()],
+        &["buyin.v1.Hold".to_string()],
+    )
+    .unwrap();
+    let named = implementation(&named);
+    assert_eq!(named.selected, ["on_refused_hold"]);
+    assert_has(
+        &named.source,
+        &[
+            "ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: \
+           raise NotImplementedError # TODO: record the refusal of Hold",
+        ],
+    );
+}

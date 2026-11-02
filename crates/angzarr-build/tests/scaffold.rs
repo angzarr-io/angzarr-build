@@ -346,7 +346,11 @@ fn test_an_orphaned_generated_file_under_gen_is_deleted() {
     std::fs::write(&pb2, &marked).unwrap();
     let notes = v1.join("NOTES.txt");
     std::fs::write(&notes, "mine\n").unwrap();
+    // Outside `_gen`, a marked file is never swept.
+    let stray = root.join("src/angzarr_player/stray.py");
+    std::fs::write(&stray, &marked).unwrap();
     let done = player(&root).unwrap();
+    assert!(stray.exists(), "only a _gen is swept");
     assert!(
         done.contains(&Scaffolded::Deleted(orphan.clone())),
         "{done:?}"

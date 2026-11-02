@@ -382,7 +382,7 @@ fn projector_methods(component: &Component) -> Vec<Method> {
 /// facts, an optional translating callback per command it sends
 /// (`<command>_refused`: the command, its typed refusal if it declares one
 /// and the refused command's context, returning one of the source's facts,
-/// [`fact_name`], or `None`, the refusal passed through: the interface's
+/// [`fact_choice`], or `None`, the refusal passed through: the interface's
 /// default).
 fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Method>, CodegenError> {
     let target = component.target(pool)?;
@@ -401,8 +401,8 @@ fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Metho
         asynchronous: false,
         refused: None,
     });
-    let source = owner(pool, &component.input_domain).filter(|s| s.inputs.iter().any(|i| i.fact));
-    let callbacks = source.into_iter().flat_map(|source| {
+    let choice = owner(pool, &component.input_domain).and_then(fact_choice);
+    let callbacks = choice.into_iter().flat_map(|choice| {
         target.inputs.iter().filter(|i| !i.fact).map(move |input| {
             let command = input.message.name();
             let mut params = vec![param("command", format!("&{command}"))];
@@ -412,7 +412,7 @@ fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Metho
                 name: format!("{}_refused", snake(command)),
                 receiver: "&self",
                 params,
-                returns: Some(format!("Result<Option<{}>, Bug>", fact_name(source))),
+                returns: Some(format!("Result<Option<{choice}>, Bug>")),
                 asynchronous: false,
                 refused: Some(input.message.full_name().to_string()),
             }
@@ -421,10 +421,11 @@ fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Metho
     Ok(reactions.chain(callbacks).collect())
 }
 
-/// The domain layer's choice of a domain's facts (`<Domain>Fact`): what a
-/// translating callback answers its source with.
-pub(crate) fn fact_name(domain: &Component) -> String {
-    format!("{}Fact", domain.name)
+/// The domain layer's choice of a domain's facts (`<Domain>Fact`), when it
+/// takes any: what a translating callback answers its source with.
+pub(crate) fn fact_choice(domain: &Component) -> Option<String> {
+    (domain.kind.is_domain() && domain.inputs.iter().any(|i| i.fact))
+        .then(|| format!("{}Fact", domain.name))
 }
 
 /// An aggregate's or a process manager's interface: a decision per command,
@@ -1443,8 +1444,9 @@ fn policy_adapter(
             }
         }
     });
-    let fact = format_ident!("{}", fact_name(source));
+    let fact = fact_choice(source).map(|f| format_ident!("{f}"));
     let callbacks = refused.iter().filter_map(|r| {
+        let fact = fact.as_ref()?;
         let m = format_ident!("{}", r.name);
         let input = target
             .inputs
@@ -1612,9 +1614,11 @@ fn registration(
 /// `angzarr-codegen-wire-map` at the field.
 ///
 /// Each component's interface ([`interface_source`]) is in its package's
-/// layer, a policy's in its own package's when that package has a layer,
-/// else in its target's: the trait its adapter delegates to and the user
-/// implements, so an implementation in another crate implements it.
+/// layer, a policy's in its target's, beside the outputs it names: the
+/// trait its adapter delegates to and the user implements, so an
+/// implementation in another crate implements it. A domain type taking an
+/// interface's name, or its facts' choice's, is refused
+/// ([`ProtoError::InterfaceName`](crate::ProtoError::InterfaceName)).
 pub fn markup_domain(
     descriptor_set: &[u8],
     files: &[&str],
@@ -1624,21 +1628,15 @@ pub fn markup_domain(
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
     for component in application(&components) {
         let methods = interface_methods(component, &components)?;
-        let own = component.anchor.package_name();
-        let package = if packages.contains_key(own) || component.kind != ComponentKind::Policy {
-            own.to_string()
-        } else {
-            component
-                .target(&components)?
-                .anchor
-                .package_name()
-                .to_string()
+        let home = match component.kind {
+            ComponentKind::Policy => component.target(&components)?,
+            _ => component,
         };
-        let layer = packages.entry(package).or_default();
+        let layer = packages
+            .entry(home.anchor.package_name().to_string())
+            .or_default();
         let mut names = vec![component.name.clone()];
-        if component.kind.is_domain() && component.inputs.iter().any(|i| i.fact) {
-            names.push(fact_name(component));
-        }
+        names.extend(fact_choice(component));
         let taken = layer
             .messages
             .iter()
