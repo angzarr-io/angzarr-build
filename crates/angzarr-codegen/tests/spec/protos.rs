@@ -5,9 +5,10 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::test_dir::TestDir;
 
 /// A component's `ComponentOptions`.
 #[derive(Clone, Debug, Default)]
@@ -182,34 +183,20 @@ impl Protos {
     }
 }
 
-/// A directory of its own under cargo's tmpdir for tests, removed when
-/// dropped, whatever the test came to.
-struct Scratch(PathBuf);
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 /// protoc's descriptor set for `files` (path, text), with angzarr's options
-/// importable: the spec's own protos first, then angzarr-proto's.
+/// importable: the spec's own protos first, then angzarr-proto's. They are
+/// written to a [`TestDir`] of their own, removed when compiled.
 pub fn compile(files: &BTreeMap<String, String>) -> Vec<u8> {
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = Scratch(Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-        "codegen-spec-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    )));
-    let protos = dir.0.join("protos");
+    let dir = TestDir::new("angzarr-codegen-spec");
+    let protos = dir.join("protos");
     std::fs::create_dir_all(&protos).expect("a scratch directory");
     for (path, text) in files {
         std::fs::write(protos.join(path), text).expect("a proto written");
     }
     let angzarr =
-        angzarr_proto::protos::write_include_dir(&dir.0.join("angzarr")).expect("angzarr's protos");
+        angzarr_proto::protos::write_include_dir(&dir.join("angzarr")).expect("angzarr's protos");
     let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../angzarr-project/proto");
-    let out = dir.0.join("set.bin");
+    let out = dir.join("set.bin");
     let protoc = std::env::var("PROTOC").unwrap_or_else(|_| "protoc".to_string());
     let status = Command::new(protoc)
         .arg("--include_imports")

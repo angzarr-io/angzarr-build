@@ -22,6 +22,8 @@ mod generation;
 mod protos;
 #[path = "spec/tags.rs"]
 mod tags;
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
 #[path = "spec/world.rs"]
 mod world;
 
