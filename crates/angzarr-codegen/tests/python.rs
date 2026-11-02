@@ -6,8 +6,8 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, Owner, ProtoError, ProtoInput, PythonApp, ScaffoldFile, UseError, complete,
-    python_reroots, reroot_python, scaffold_python,
+    CodegenError, Existing, Notes, Owner, ProtoError, ProtoInput, PythonApp, ScaffoldFile,
+    UseError, complete, python_reroots, reroot_python, scaffold_python,
 };
 use common::*;
 
@@ -30,7 +30,7 @@ fn player_app() -> PythonApp {
 /// blackjack protos are in the descriptor set (a policy and a projector
 /// name the player's events), not scaffolded.
 fn player() -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &player_app(), &[]).unwrap()
+    scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &player_app(), &[], &[]).unwrap()
 }
 
 fn file<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
@@ -41,49 +41,51 @@ fn file<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
 }
 
 const IMPL: &str = "src/angzarr_player/logic_impl.py";
-const INTERFACE: &str = "src/angzarr_player/logic.py";
+const INTERFACE: &str = "src/angzarr_player/_gen/logic.py";
 
+/// The package's root holds the user's files alone, written once; every
+/// generated module is under `_gen` (the one path a gate excludes), and
+/// buf's message types beside them are its own; the modules an earlier
+/// scaffold generated beside the user's are reported, never written
+/// (item S).
 #[test]
 fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
     let mut placed: Vec<(String, Owner)> =
         player().into_iter().map(|f| (f.path, f.owner)).collect();
     placed.sort_by(|a, b| a.0.cmp(&b.0));
     let gen_dir = "src/angzarr_player/_gen";
-    let expected: Vec<(String, Owner)> = [
-        ("buf.gen.yaml", Owner::Generated),
-        ("pyproject.toml", Owner::User),
-        ("src/angzarr_player/__init__.py", Owner::User),
-        ("src/angzarr_player/__main__.py", Owner::Generated),
-        ("src/angzarr_player/domain.py", Owner::Generated),
-        (&format!("{gen_dir}/__init__.py"), Owner::Generated),
-        (&format!("{gen_dir}/io/__init__.py"), Owner::Generated),
-        (
-            &format!("{gen_dir}/io/angzarr/__init__.py"),
-            Owner::Generated,
-        ),
-        (
-            &format!("{gen_dir}/io/angzarr/examples/__init__.py"),
-            Owner::Generated,
-        ),
-        (
-            &format!("{gen_dir}/io/angzarr/examples/v1/__init__.py"),
-            Owner::Generated,
-        ),
-        (
-            &format!("{gen_dir}/io/angzarr/examples/v1/player_aggregate_angzarr.py"),
-            Owner::Generated,
-        ),
-        ("src/angzarr_player/_descriptor.py", Owner::Generated),
-        ("src/angzarr_player/_version.py", Owner::Generated),
-        ("src/angzarr_player/main.py", Owner::Generated),
-        (INTERFACE, Owner::User),
-        (IMPL, Owner::User),
-        ("tests/__init__.py", Owner::User),
-    ]
-    .iter()
-    .map(|(p, o)| (p.to_string(), *o))
-    .collect();
-    let mut expected = expected;
+    let v1 = format!("{gen_dir}/io/angzarr/examples/v1");
+    let mut expected: Vec<(String, Owner)> = vec![
+        ("buf.gen.yaml".to_string(), Owner::Generated),
+        ("pyproject.toml".to_string(), Owner::User),
+        ("src/angzarr_player/__init__.py".to_string(), Owner::User),
+        ("src/angzarr_player/__main__.py".to_string(), Owner::User),
+        (IMPL.to_string(), Owner::User),
+        ("tests/__init__.py".to_string(), Owner::User),
+    ];
+    for generated in [
+        "__init__.py",
+        "io/__init__.py",
+        "io/angzarr/__init__.py",
+        "io/angzarr/examples/__init__.py",
+        "io/angzarr/examples/v1/__init__.py",
+        "io/angzarr/examples/v1/player_aggregate_angzarr.py",
+        "_descriptor.py",
+        "_version.py",
+        "domain.py",
+        "logic.py",
+        "main.py",
+    ] {
+        expected.push((format!("{gen_dir}/{generated}"), Owner::Generated));
+    }
+    for proto in ["cards", "player", "table"] {
+        for ext in ["py", "pyi"] {
+            expected.push((format!("{v1}/{proto}_pb2.{ext}"), Owner::External));
+        }
+    }
+    for moved in ["domain", "logic", "main", "_version", "_descriptor"] {
+        expected.push((format!("src/angzarr_player/{moved}.py"), Owner::Obsolete));
+    }
     expected.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(placed, expected);
 }
@@ -93,9 +95,15 @@ fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
 /// scaffold's.
 #[test]
 fn test_scaffold_python_matches_the_golden_project() {
-    for f in player() {
+    for f in player()
+        .iter()
+        .filter(|f| matches!(f.owner, Owner::User | Owner::Generated))
+    {
         let path = format!("{GOLDEN}/{}", f.path);
         if std::env::var_os("ANGZARR_BLESS").is_some() {
+            if let Some(dir) = std::path::Path::new(&path).parent() {
+                std::fs::create_dir_all(dir).unwrap();
+            }
             std::fs::write(&path, &f.source).unwrap();
             continue;
         }
@@ -105,22 +113,89 @@ fn test_scaffold_python_matches_the_golden_project() {
     }
 }
 
-/// The child's host answers `Describe` with the generated descriptor,
-/// unchanged (decision 14.42): `main.py` registers the domain with
-/// `_descriptor.DESCRIPTOR`.
+/// Every generated file opens with the generated marker (after the licence
+/// line), and imports nothing of the user's: inside `_gen` every import of
+/// the project's own is relative, and the logic is handed in (item S Q1).
 #[test]
-fn test_main_py_registers_the_domain_with_its_generated_descriptor() {
+fn test_generated_files_carry_the_marker_and_import_no_user_module() {
+    for f in player().iter().filter(|f| f.owner == Owner::Generated) {
+        assert!(angzarr_codegen::is_generated(&f.source), "{}", f.path);
+        if !f.path.ends_with(".py") {
+            continue;
+        }
+        for import in f
+            .source
+            .lines()
+            .filter(|l| l.starts_with("from ") || l.starts_with("import "))
+        {
+            assert!(!import.contains("angzarr_player"), "{}: {import}", f.path);
+            assert!(!import.contains("logic_impl"), "{}: {import}", f.path);
+        }
+    }
+}
+
+/// The child's host answers `Describe` with the generated descriptor,
+/// unchanged (decision 14.42): `_gen/main.py` registers the domain with
+/// `_descriptor.DESCRIPTOR`, over the logic the user's `__main__.py` builds
+/// and hands it.
+#[test]
+fn test_main_py_registers_the_logic_it_is_handed_with_its_generated_descriptor() {
     let files = player();
-    let main = &file(&files, "src/angzarr_player/main.py").source;
+    let main = &file(&files, "src/angzarr_player/_gen/main.py").source;
+    for expected in [
+        "from ._descriptor import DESCRIPTOR\n",
+        "from .logic import PlayerLogic\n",
+        "new_player_aggregate_dispatch(player_logic), DESCRIPTOR",
+        "def run(player_logic: PlayerLogic) -> None:",
+    ] {
+        assert!(main.contains(expected), "{expected}:\n{main}");
+    }
+    let dunder = &file(&files, "src/angzarr_player/__main__.py").source;
+    for expected in [
+        "from ._gen.main import run\n",
+        "from .logic_impl import PlayerLogicImpl\n",
+        "    run(PlayerLogicImpl())\n",
+    ] {
+        assert!(dunder.contains(expected), "{expected}:\n{dunder}");
+    }
+    let pyproject = &file(&files, "pyproject.toml").source;
     assert!(
-        main.contains("from angzarr_player._descriptor import DESCRIPTOR\n"),
-        "{main}"
+        pyproject.contains("angzarr-player = \"angzarr_player.__main__:main\""),
+        "{pyproject}"
+    );
+}
+
+/// The interface is an ABC of the required methods, so an implementation
+/// lacking one fails to instantiate; the refusal callbacks are optional,
+/// declared in a reference protocol the implementation never subclasses,
+/// so `hasattr` says whether it has one (item S Q2).
+#[test]
+fn test_the_interface_is_an_abc_of_the_required_methods_alone() {
+    let files = player();
+    let logic = &file(&files, INTERFACE).source;
+    let abc = &logic[logic.find("class PlayerLogic(ABC):").expect("the ABC")..];
+    let (abc, refusals) = abc
+        .split_once("class PlayerRefusals(Protocol):")
+        .expect("the protocol");
+    assert!(
+        abc.contains("    @abstractmethod\n    def decide_move("),
+        "{abc}"
     );
     assert!(
-        main.contains(
-            "host.add_aggregate(new_player_aggregate_dispatch(PlayerLogicImpl()), DESCRIPTOR)"
-        ),
-        "{main}"
+        abc.contains("    @abstractmethod\n    def apply_move_decided("),
+        "{abc}"
+    );
+    assert!(!abc.contains("on_refused_"), "{abc}");
+    assert!(refusals.contains("    def on_refused_hit("), "{refusals}");
+    assert!(!refusals.contains("@abstractmethod"), "{refusals}");
+    let implementation = &file(&files, IMPL).source;
+    assert!(
+        implementation.contains("class PlayerLogicImpl(PlayerLogic):"),
+        "{implementation}"
+    );
+    assert!(
+        !implementation.contains("PlayerRefusals)"),
+        "{implementation}"
     );
 }
 
@@ -161,14 +236,18 @@ fn test_the_users_files_name_nothing_of_the_harness() {
                 f.source
             );
         }
-        // It imports the plain types and its own interface, nothing generated
-        // from protobuf.
+        // It imports the plain types and its interface from the generated
+        // package, relative, and nothing generated from protobuf.
         for import in f
             .source
             .lines()
             .filter(|l| l.starts_with("from ") || l.starts_with("import "))
         {
-            assert!(!import.contains("_gen"), "{}: {import}", f.path);
+            assert!(
+                import.starts_with("from __future__") || import.starts_with("from ."),
+                "{}: {import}",
+                f.path
+            );
         }
     }
 }
@@ -181,7 +260,7 @@ fn test_the_users_files_name_nothing_of_the_harness() {
 #[test]
 fn test_domain_py_gives_the_logic_its_rejection_and_its_bug() {
     let files = player();
-    let domain = &file(&files, "src/angzarr_player/domain.py").source;
+    let domain = &file(&files, "src/angzarr_player/_gen/domain.py").source;
     assert!(
         !domain.contains("(FAILED_PRECONDITION);"),
         "a rejection is not FAILED_PRECONDITION alone:\n{domain}"
@@ -210,7 +289,7 @@ fn test_scaffold_python_refuses_a_message_named_as_a_reserved_name() {
         domain: "things".to_string(),
         ..player_app()
     };
-    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[]);
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[], &[]);
     assert!(
         matches!(&refused, Err(CodegenError::Proto(ProtoError::ReservedName { message, name }))
             if message == "bad.v1.Context" && name == "Context"),
@@ -226,7 +305,7 @@ fn test_scaffold_python_refuses_a_message_named_bug() {
         domain: "things".to_string(),
         ..player_app()
     };
-    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[]);
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[], &[]);
     assert!(
         matches!(&refused, Err(CodegenError::Proto(ProtoError::ReservedName { message, name }))
             if message == "bad.v1.Bug" && name == "Bug"),
@@ -258,7 +337,7 @@ fn test_scaffold_python_refuses_a_domain_the_protos_do_not_declare() {
         ..player_app()
     };
     assert_eq!(
-        scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[]),
+        scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[], &[]),
         Err(CodegenError::Use(UseError::PythonNoDomain {
             domain: "nowhere".to_string()
         }))
@@ -268,18 +347,19 @@ fn test_scaffold_python_refuses_a_domain_the_protos_do_not_declare() {
 // ------------------------------------------------------------- --missing
 
 /// The implementation as a user has it: the decision written, the fold not
-/// there yet.
+/// there yet, a handler of a message the protos no longer declare, and a
+/// helper of its own.
 const USER_IMPL: &str = r#""""The player bot."""
 
 from __future__ import annotations
 
-from angzarr_player.domain import (
+from ._gen.domain import (
     DecideMove,
     MoveAction,
     MoveDecided,
     PlayerState,
 )
-from angzarr_player.logic import PlayerLogic
+from ._gen.logic import PlayerLogic
 
 
 class PlayerLogicImpl(PlayerLogic):
@@ -287,54 +367,94 @@ class PlayerLogicImpl(PlayerLogic):
         action = MoveAction.HIT if cmd.total < 17 else MoveAction.STAND
         return MoveDecided(table_root=cmd.table_root, round=cmd.round, seat=cmd.seat, action=action)  # USER-WRITTEN
 
+    def apply_move_undone(self, state: PlayerState, event: MoveUndone) -> PlayerState:
+        return state
+
+    def score(self, hand: Hand) -> int:
+        return 0
+
 
 def helper() -> int:
     return 1
 "#;
 
+/// `--missing` adds the required methods the class lacks at its end, in
+/// the scaffold's order, and nothing of the user's text changes; never an
+/// optional refusal callback, which a user deletes to pass that refusal
+/// through (item S Q5).
 #[test]
-fn test_complete_adds_only_the_absent_methods_to_the_class() {
+fn test_complete_adds_only_the_absent_required_methods_to_the_class() {
     let fresh = file(&player(), IMPL).clone();
-    let completed = complete(&fresh, USER_IMPL)
-        .unwrap()
-        .expect("apply_move_decided is absent");
-    // The methods go in at the end of the class body, in the scaffold's
-    // order (the pass-through refusal handlers, then the fold), and nothing
-    // of the user's text changes.
-    let absent = &fresh.source[fresh.source.find("    def on_refused_").unwrap()..];
+    let completion = complete(&fresh, USER_IMPL, Existing::Complete).unwrap();
+    let fold = "\n    def apply_move_decided(self, state: PlayerState, event: MoveDecided) \
+                -> PlayerState:\n        raise NotImplementedError  # TODO: fold MoveDecided into the state\n";
+    assert!(fresh.source.contains(fold), "{}", fresh.source);
+    let expected = USER_IMPL.replace("        return 0\n", &format!("        return 0\n{fold}"));
+    assert_eq!(completion.completed, Some(expected));
+    assert_eq!(completion.notes.lacks, Vec::<String>::new());
+    // The user's helper is not the scaffold's; a fold of a message the
+    // protos no longer declare is.
+    assert_eq!(completion.notes.obsolete, ["apply_move_undone"]);
     assert!(
-        absent.ends_with(
-            "\n    def apply_move_decided(self, state: PlayerState, event: MoveDecided) \
-             -> PlayerState:\n        raise NotImplementedError  # TODO: fold MoveDecided into the state\n"
-        ),
-        "{absent}"
+        completion
+            .notes
+            .optional
+            .contains(&"on_refused_hit".to_string()),
+        "{:?}",
+        completion.notes.optional
     );
-    let expected = USER_IMPL.replace(
-        "  # USER-WRITTEN\n",
-        &format!("  # USER-WRITTEN\n\n{absent}"),
+}
+
+/// Kept, the file is never written: what it lacks is reported.
+#[test]
+fn test_complete_of_a_kept_class_reports_what_it_lacks() {
+    let fresh = file(&player(), IMPL).clone();
+    let completion = complete(&fresh, USER_IMPL, Existing::Keep).unwrap();
+    assert_eq!(completion.completed, None);
+    assert_eq!(completion.notes.lacks, ["apply_move_decided"]);
+}
+
+/// `--on-refused` writes the refusal callback it names into an existing
+/// implementation that lacks it.
+#[test]
+fn test_complete_adds_a_selected_refusal_callback() {
+    let selected = scaffold_python(
+        &descriptors(BLACKJACK),
+        &[PLAYER],
+        &player_app(),
+        &[],
+        &["io.angzarr.examples.v1.Hit".to_string()],
+    )
+    .unwrap();
+    let fresh = file(&selected, IMPL).clone();
+    assert_eq!(fresh.selected, ["on_refused_hit"]);
+    let completion = complete(&fresh, USER_IMPL, Existing::Keep).unwrap();
+    let completed = completion.completed.expect("on_refused_hit is added");
+    assert!(
+        completed.contains("    def on_refused_hit(\n"),
+        "{completed}"
     );
-    assert_eq!(completed, expected);
-    let helper = completed.find("def helper").unwrap();
-    assert!(completed.find("def apply_move_decided").unwrap() < helper);
+    assert!(!completed.contains("def on_refused_stand"), "{completed}");
+    assert_eq!(completion.notes.lacks, ["apply_move_decided"]);
 }
 
 #[test]
 fn test_complete_of_a_complete_python_file_changes_nothing() {
-    for path in [IMPL, INTERFACE] {
-        let fresh = file(&player(), path).clone();
-        assert_eq!(complete(&fresh, &fresh.source), Ok(None), "{path}");
-    }
+    let fresh = file(&player(), IMPL).clone();
+    let completion = complete(&fresh, &fresh.source, Existing::Complete).unwrap();
+    assert_eq!(completion.completed, None);
+    assert_eq!(completion.notes, Notes::default());
 }
 
 #[test]
 fn test_complete_refuses_a_command_taken_as_a_fact() {
-    let fresh = file(&player(), INTERFACE).clone();
+    let fresh = file(&player(), IMPL).clone();
     let as_fact = fresh.source.replace("cmd: DecideMove", "fact: DecideMove");
     assert_ne!(as_fact, fresh.source);
     assert_eq!(
-        complete(&fresh, &as_fact),
+        complete(&fresh, &as_fact, Existing::Keep),
         Err(CodegenError::Use(UseError::InputMismatch {
-            path: INTERFACE.to_string(),
+            path: IMPL.to_string(),
             message: "io.angzarr.examples.v1.DecideMove".to_string(),
             expected: "cmd".to_string(),
             found: "fact".to_string(),
@@ -346,7 +466,11 @@ fn test_complete_refuses_a_command_taken_as_a_fact() {
 fn test_complete_refuses_a_python_file_without_the_class() {
     let fresh = file(&player(), IMPL).clone();
     assert_eq!(
-        complete(&fresh, "\"\"\"Not the player any more.\"\"\"\n"),
+        complete(
+            &fresh,
+            "\"\"\"Not the player any more.\"\"\"\n",
+            Existing::Keep
+        ),
         Err(CodegenError::Use(UseError::ScaffoldImplNotFound {
             path: IMPL.to_string(),
             component: "io.angzarr.examples.v1.PlayerState".to_string(),
@@ -356,21 +480,36 @@ fn test_complete_refuses_a_python_file_without_the_class() {
 
 // --------------------------------------------------------------- reroot
 
+/// buf's message types are headed with the generated marker, angzarr's own
+/// imports taken from `angzarr_client.proto`, and the project's made
+/// relative within `_gen`: from the importing module's own package.
 #[test]
-fn test_reroot_python_moves_framework_and_domain_imports_under_their_packages() {
-    let rules = python_reroots(&player_app(), &["io.angzarr.examples.v1"]);
+fn test_reroot_python_moves_framework_imports_and_makes_the_projects_relative() {
+    let rules = python_reroots(&["io.angzarr.examples.v1", "io.angzarr.examples.v2"]);
     let pb2 = "from google.protobuf import descriptor as _descriptor\n\
                from io.angzarr.examples.v1 import cards_pb2 as io_dot_angzarr_dot_examples_dot_v1_dot_cards__pb2\n\
+               from io.angzarr.examples.v2 import deck_pb2 as _deck\n\
                from io.angzarr.v1 import options_pb2 as io_dot_angzarr_dot_v1_dot_options__pb2\n\
                import io.angzarr.v1.types_pb2\n\
+               import io.angzarr.examples.v1.table_pb2\n\
                x = 'from io.angzarr.v1 import y'\n";
+    let rerooted = reroot_python(pb2, &rules, "io.angzarr.examples.v1");
+    let (header, rest) = rerooted.split_once('\n').unwrap();
+    assert!(angzarr_codegen::is_generated(header), "{header}");
     assert_eq!(
-        reroot_python(pb2, &rules),
+        rest,
         "from google.protobuf import descriptor as _descriptor\n\
-         from angzarr_player._gen.io.angzarr.examples.v1 import cards_pb2 as io_dot_angzarr_dot_examples_dot_v1_dot_cards__pb2\n\
+         from . import cards_pb2 as io_dot_angzarr_dot_examples_dot_v1_dot_cards__pb2\n\
+         from ..v2 import deck_pb2 as _deck\n\
          from angzarr_client.proto.io.angzarr.v1 import options_pb2 as io_dot_angzarr_dot_v1_dot_options__pb2\n\
          import angzarr_client.proto.io.angzarr.v1.types_pb2\n\
+         from . import table_pb2\n\
          x = 'from io.angzarr.v1 import y'\n"
+    );
+    // Headed once: a module rerooted again keeps its one header.
+    assert_eq!(
+        reroot_python(&rerooted, &rules, "io.angzarr.examples.v1"),
+        rerooted
     );
 }
 
@@ -378,7 +517,7 @@ fn test_reroot_python_moves_framework_and_domain_imports_under_their_packages() 
 fn test_the_logic_takes_and_returns_the_domains_plain_types() {
     let files = player();
     let logic = &file(&files, INTERFACE).source;
-    assert!(logic.contains("class PlayerLogic(Protocol):"), "{logic}");
+    assert!(logic.contains("class PlayerLogic(ABC):"), "{logic}");
     assert!(
         logic.contains(
             "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) -> MoveDecided: ..."
@@ -386,14 +525,14 @@ fn test_the_logic_takes_and_returns_the_domains_plain_types() {
         "a decision: the command, the state and its context in, the event out:\n{logic}"
     );
     assert!(
-        logic.contains("from angzarr_player.domain import (\n    CommandContext,\n"),
+        logic.contains("from .domain import (\n    CommandContext,\n"),
         "the context comes through the generated domain module:\n{logic}"
     );
     assert!(
         logic.contains("self, state: PlayerState, event: MoveDecided\n    ) -> PlayerState: ..."),
         "a fold: the state and the event in, the next state out:\n{logic}"
     );
-    let domain = &file(&files, "src/angzarr_player/domain.py").source;
+    let domain = &file(&files, "src/angzarr_player/_gen/domain.py").source;
     assert!(
         domain.contains("from angzarr_client.router import CommandContext as CommandContext\n"),
         "domain.py re-exports the harness's context:\n{domain}"
@@ -419,9 +558,10 @@ fn test_reroot_python_takes_the_longest_package_a_line_names() {
             "angzarr_client.proto.io.angzarr.v1".to_string(),
         ),
     ];
-    assert_eq!(
-        reroot_python("from io.angzarr.v1 import options_pb2\n", &rules),
-        "from angzarr_client.proto.io.angzarr.v1 import options_pb2\n"
+    let rerooted = reroot_python("from io.angzarr.v1 import options_pb2\n", &rules, "");
+    assert!(
+        rerooted.ends_with("\nfrom angzarr_client.proto.io.angzarr.v1 import options_pb2\n"),
+        "{rerooted}"
     );
 }
 
@@ -432,20 +572,26 @@ fn test_complete_adds_an_absent_method_that_is_not_the_classes_last() {
                   -> MoveDecided:\n        raise NotImplementedError  # TODO: decide DecideMove\n";
     let user = fresh.source.replace(&format!("{decide}\n"), "");
     assert_ne!(user, fresh.source);
-    let completed = complete(&fresh, &user)
+    let completed = complete(&fresh, &user, Existing::Complete)
         .unwrap()
+        .completed
         .expect("decide_move is absent");
     assert_eq!(completed, format!("{user}\n{decide}"));
 }
 
 #[test]
 fn test_complete_takes_a_method_naming_its_event_otherwise_as_present() {
-    let fresh = file(&player(), INTERFACE).clone();
+    let fresh = file(&player(), IMPL).clone();
     let renamed = fresh
         .source
         .replace("event: MoveDecided", "decided: MoveDecided");
     assert_ne!(renamed, fresh.source);
-    assert_eq!(complete(&fresh, &renamed), Ok(None));
+    assert_eq!(
+        complete(&fresh, &renamed, Existing::Complete)
+            .unwrap()
+            .completed,
+        None
+    );
 }
 
 /// A method the user has, its signature written otherwise than the
@@ -455,7 +601,7 @@ fn test_complete_takes_a_method_naming_its_event_otherwise_as_present() {
 /// subscript's comma) moves it.
 #[test]
 fn test_complete_reads_a_signature_written_otherwise_as_present() {
-    let fresh = file(&player(), INTERFACE).clone();
+    let fresh = file(&player(), IMPL).clone();
     let header = "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    )";
     assert!(fresh.source.contains(header));
     for written in [
@@ -470,7 +616,13 @@ fn test_complete_reads_a_signature_written_otherwise_as_present() {
     ] {
         let user = fresh.source.replace(header, written);
         assert_ne!(user, fresh.source);
-        assert_eq!(complete(&fresh, &user), Ok(None), "{written}");
+        assert_eq!(
+            complete(&fresh, &user, Existing::Complete)
+                .unwrap()
+                .completed,
+            None,
+            "{written}"
+        );
     }
 }
 
@@ -478,16 +630,16 @@ fn test_complete_reads_a_signature_written_otherwise_as_present() {
 /// command is refused however its signature is written.
 #[test]
 fn test_complete_refuses_a_command_taken_as_a_fact_behind_a_default() {
-    let fresh = file(&player(), INTERFACE).clone();
+    let fresh = file(&player(), IMPL).clone();
     let user = fresh.source.replace(
         "cmd: DecideMove, state: PlayerState, ctx: CommandContext",
         "fact: DecideMove = DecideMove(), state: PlayerState = None, ctx: CommandContext = None",
     );
     assert_ne!(user, fresh.source);
     assert_eq!(
-        complete(&fresh, &user),
+        complete(&fresh, &user, Existing::Keep),
         Err(CodegenError::Use(UseError::InputMismatch {
-            path: INTERFACE.to_string(),
+            path: IMPL.to_string(),
             message: "io.angzarr.examples.v1.DecideMove".to_string(),
             expected: "cmd".to_string(),
             found: "fact".to_string(),
@@ -515,6 +667,7 @@ fn basket() -> Vec<ScaffoldFile> {
         &["pyshop/v1/basket.proto"],
         &basket_app(),
         &[],
+        &[],
     )
     .unwrap()
 }
@@ -527,7 +680,7 @@ const DISPATCH: &str = "src/angzarr_store/_gen/pyshop/v1/basket_angzarr.py";
 
 #[test]
 fn test_scaffold_python_types_each_field_shape_with_its_default() {
-    let domain = basket_file("src/angzarr_store/domain.py");
+    let domain = basket_file("src/angzarr_store/_gen/domain.py");
     for expected in [
         "    owner: str = \"\"\n",
         "    weight: float = 0.0\n",
@@ -545,7 +698,7 @@ fn test_scaffold_python_types_each_field_shape_with_its_default() {
 
 #[test]
 fn test_scaffold_python_declares_an_enum_two_messages_use_once() {
-    let domain = basket_file("src/angzarr_store/domain.py");
+    let domain = basket_file("src/angzarr_store/_gen/domain.py");
     assert_eq!(
         domain.matches("class Mood(enum.IntEnum):").count(),
         1,
@@ -614,14 +767,37 @@ fn test_scaffold_python_keeps_a_call_of_88_columns_on_one_line() {
 
 #[test]
 fn test_scaffold_python_wraps_the_interfaces_doc_at_79_columns() {
-    let logic = basket_file("src/angzarr_store/logic.py");
-    let first =
-        "\"\"\"StoreLogic: the store domain's logic, for ``pyshop.v1.BasketState``. Written\n";
-    assert_eq!(first.len(), 80);
-    // After the licence header's line (owner ruling 2026-10-31).
-    let (header, rest) = logic.split_once('\n').unwrap();
-    assert!(header.starts_with("# Generated by angzarr-cli"), "{logic}");
-    assert!(rest.starts_with(first), "{logic}");
+    let logic = basket_file("src/angzarr_store/_gen/logic.py");
+    // After the licence header's line (owner ruling 2026-10-31) and the
+    // generated marker's.
+    let mut lines = logic.lines();
+    assert!(
+        lines
+            .next()
+            .unwrap()
+            .starts_with("# Generated by angzarr-cli"),
+        "{logic}"
+    );
+    assert!(
+        angzarr_codegen::is_generated(lines.next().unwrap()),
+        "{logic}"
+    );
+    let first = lines.next().unwrap();
+    assert!(
+        first.starts_with("\"\"\"StoreLogic: the store domain's logic"),
+        "{logic}"
+    );
+    let doc: Vec<&str> = std::iter::once(first)
+        .chain(lines.take_while(|l| *l != "\"\"\""))
+        .collect();
+    assert!(doc.len() > 2, "{logic}");
+    for line in &doc {
+        assert!(line.len() <= 79, "{line}");
+    }
+    assert!(
+        doc[..doc.len() - 1].iter().all(|l| l.len() > 60),
+        "{doc:#?}"
+    );
 }
 
 /// A command declaring a typed refusal is scaffolded: its decision returns
@@ -632,9 +808,15 @@ fn test_scaffold_python_scaffolds_a_command_with_a_typed_refusal() {
         domain: "wallet".to_string(),
         ..basket_app()
     };
-    let files =
-        scaffold_python(&descriptors(BUYIN), &["buyin/v1/wallet.proto"], &app, &[]).unwrap();
-    let logic = &file(&files, "src/angzarr_wallet/logic.py").source;
+    let files = scaffold_python(
+        &descriptors(BUYIN),
+        &["buyin/v1/wallet.proto"],
+        &app,
+        &[],
+        &[],
+    )
+    .unwrap();
+    let logic = &file(&files, "src/angzarr_wallet/_gen/logic.py").source;
     assert!(
         logic.contains(") -> Held | InsufficientFunds: ..."),
         "{logic}"
@@ -643,7 +825,7 @@ fn test_scaffold_python_scaffolds_a_command_with_a_typed_refusal() {
 
 // ------------------------------------------------------- event helpers
 
-const PLAYER_DOMAIN: &str = "src/angzarr_player/domain.py";
+const PLAYER_DOMAIN: &str = "src/angzarr_player/_gen/domain.py";
 const MOVE_DECIDED_FROM_COMMAND: &str = r#"    @classmethod
     def from_command(
         cls,
@@ -691,7 +873,7 @@ fn test_domain_py_gives_an_event_its_commands_from_command() {
 
 #[test]
 fn test_an_event_several_commands_emit_gets_a_helper_named_for_each() {
-    let domain = basket_file("src/angzarr_store/domain.py");
+    let domain = basket_file("src/angzarr_store/_gen/domain.py");
     assert!(
         domain.contains(
             "    @classmethod\n    def from_add_item(\n        cls,\n        cmd: AddItem,\n        /,\n    ) -> ItemAdded:\n"

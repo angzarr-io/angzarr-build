@@ -10,7 +10,7 @@ use angzarr_embedded::{CommandBookExt, Sampled, Timestamp, pack};
 use angzarr_embedded::angzarr_diagnostic::{Arg, Diagnostic};
 use angzarr_embedded_host::App;
 use kinds_app::domain::*;
-use kinds_app::ledger_state::LedgerState;
+use kinds_app::domain::LedgerState;
 use kinds_app::ledger_state_impl::LedgerStateImpl;
 
 fn line(diagnostic: &dyn Diagnostic) -> String {

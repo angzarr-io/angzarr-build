@@ -50,10 +50,28 @@ fn field_type(field: &prost_reflect::FieldDescriptor) -> (String, String) {
     }
 }
 
+/// A process manager's re-export of the harness's compensation tooling
+/// (decision 14.74), with what it is for.
+const COMPENSATION: &str = "# What a process manager rolls back with: each step it completes paired,\n\
+    # in code, with the undo that reverses it, the rollback built from them\n\
+    # (angzarr decision 14.74).\n\
+    from angzarr_client import Compensation as Compensation\n";
+
 /// `domain.py`'s re-exports of the harness, with the comment saying what
 /// each is for: a domain's context and the two classes a decision fails
-/// with, or a reaction's or a projection's context and its `Bug`.
-fn reexports(unit: &Unit) -> &'static str {
+/// with (a process manager's compensation tooling too), or a reaction's or
+/// a projection's context and its `Bug`.
+fn reexports(unit: &Unit) -> String {
+    let base = base_reexports(unit);
+    if unit.kind() == ComponentKind::ProcessManager {
+        format!("{COMPENSATION}{base}")
+    } else {
+        base.to_string()
+    }
+}
+
+/// [`reexports`] but for a process manager's compensation tooling.
+fn base_reexports(unit: &Unit) -> &'static str {
     if unit.is_domain() {
         "# What a decision reads besides its command and state, and the two\n\
          # classes it fails with, raised, each a diagnostic key and its args, never\n\

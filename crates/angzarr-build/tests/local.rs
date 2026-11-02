@@ -1,7 +1,7 @@
 //! End to end on angzarr-embedded: `tests/local/buyin-app`, an application
 //! whose domain layer, adapters and `register()` are generated from the
-//! buy-in fixture protos and whose components are the scaffold's interfaces
-//! and implementations with their bodies written, is type-checked against
+//! buy-in fixture protos (its components' interfaces among them) and whose
+//! components are the scaffold's implementations with their bodies written, is type-checked against
 //! angzarr-embedded, and run: one command, a policy step each way, and a
 //! refusal translated by a policy.
 
@@ -20,12 +20,8 @@ const BUYIN: &[&str] = &[
     "buyin/v1/policies.proto",
 ];
 const COMPONENTS: &[&str] = &[
-    "buy_in.rs",
     "buy_in_impl.rs",
-    "buy_in_wallet.rs",
     "buy_in_wallet_impl.rs",
-    "wallet.rs",
-    "wallet_buy_in.rs",
     "wallet_buy_in_impl.rs",
     "wallet_impl.rs",
 ];
@@ -64,15 +60,31 @@ fn test_the_apps_components_are_the_complete_scaffold() {
         BUYIN,
         &[&fixtures()],
         &translate(),
+        &[],
         Existing::Complete,
     )
     .unwrap();
     done.sort_by_key(|d| format!("{d:?}"));
-    let kept: Vec<Scaffolded> = COMPONENTS
-        .iter()
-        .map(|file| Scaffolded::Kept(src.join(file)))
+    // Each is kept as it is, lacking nothing; the policy's other refusal
+    // callback, optional, is reported.
+    let kept: Vec<(PathBuf, Vec<String>, Vec<String>)> = done
+        .into_iter()
+        .filter_map(|d| match d {
+            Scaffolded::Kept { path, notes } => Some((path, notes.lacks, notes.optional)),
+            _ => None,
+        })
         .collect();
-    assert_eq!(done, kept);
+    let expected: Vec<(PathBuf, Vec<String>, Vec<String>)> = COMPONENTS
+        .iter()
+        .map(|file| {
+            let optional = match *file {
+                "buy_in_wallet_impl.rs" => vec!["deposit_refused".to_string()],
+                _ => Vec::new(),
+            };
+            (src.join(file), Vec::new(), optional)
+        })
+        .collect();
+    assert_eq!(kept, expected);
 }
 
 /// The generated adapters and register() compile against angzarr-embedded

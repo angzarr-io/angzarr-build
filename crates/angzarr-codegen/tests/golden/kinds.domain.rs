@@ -558,6 +558,10 @@ pub use ::angzarr_embedded::markup::CommandContext;
 /// it is from (its source domain and root), its sequence there and
 /// when it was recorded.
 pub use ::angzarr_embedded::markup::ProjectionContext;
+/// What a process manager rolls back with (decision 14.74): each
+/// step it completes paired, in code, with the undo that reverses
+/// it, and the rollback built from them.
+pub use ::angzarr_embedded::markup::Compensation;
 /// What a command handler fails with, one of four classes:
 /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
 /// a [`BusinessStatus`], FAILED_PRECONDITION unless `with_status`
@@ -791,6 +795,40 @@ impl From<Arrived> for LedgerStateOutput {
 impl From<Swept> for LedgerStateOutput {
     fn from(value: Swept) -> Self {
         LedgerStateOutput::Swept(value)
+    }
+}
+/// A fact of LedgerState: what a policy sourced from it translates a refusal into.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LedgerStateFact {
+    Arrived(Arrived),
+    Swept(Swept),
+}
+impl From<Arrived> for LedgerStateFact {
+    fn from(value: Arrived) -> Self {
+        LedgerStateFact::Arrived(value)
+    }
+}
+impl From<Swept> for LedgerStateFact {
+    fn from(value: Swept) -> Self {
+        LedgerStateFact::Swept(value)
+    }
+}
+impl<S> ::angzarr_embedded::markup::Translation<S> for LedgerStateFact
+where
+    S: ::angzarr_embedded::markup::Ingests<Arrived>
+        + ::angzarr_embedded::markup::Ingests<Swept>,
+{
+    fn fact(self) -> ::core::option::Option<::angzarr_embedded::Any> {
+        ::core::option::Option::Some(
+            match self {
+                LedgerStateFact::Arrived(value) => {
+                    ::angzarr_embedded::markup::pack_message(&value)
+                }
+                LedgerStateFact::Swept(value) => {
+                    ::angzarr_embedded::markup::pack_message(&value)
+                }
+            },
+        )
     }
 }
 /// An event of LedgerState, for a decision recording any number of them.
@@ -1668,5 +1706,117 @@ impl ::angzarr_embedded::markup::DomainMessage for Audited {
         wire: crate::wire::Audited,
     ) -> Result<Self, ::angzarr_embedded::WireError> {
         Audited::try_from(wire)
+    }
+}
+
+/// LedgerState: the interface of `kinds.v1.LedgerState`, generated from its protos: its
+/// implementation, `LedgerStateImpl`, is yours (`angzarr scaffold rust` writes it
+/// once), and the generated adapter (`adapters::LedgerState`) carries the markup
+/// and calls it.
+///
+/// Each handler takes its input and its `Context`; each `apply_` folds an
+/// event.
+pub trait LedgerState {
+    fn post(&self, cmd: &Post, ctx: &Context) -> Result<Posted, Failed<PostRefuses>>;
+
+    fn open(&self, cmd: &Open, ctx: &Context) -> Result<(Posted, Noted), Failed<Rejection>>;
+
+    fn four(
+        &self,
+        cmd: &Four,
+        ctx: &Context,
+    ) -> Result<(Posted, Noted, Cleared, Closed), Failed<Rejection>>;
+
+    fn maybe(&self, cmd: &Maybe, ctx: &Context) -> Result<Option<Posted>, Failed<Rejection>>;
+
+    fn maybe_both(
+        &self,
+        cmd: &MaybeBoth,
+        ctx: &Context,
+    ) -> Result<Option<(Posted, Noted)>, Failed<Rejection>>;
+
+    fn batch(
+        &self,
+        cmd: &Batch,
+        ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<PostRefused>>;
+
+    fn raw(&self, cmd: &Raw, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
+
+    fn arrived(&self, fact: &Arrived, ctx: &Context) -> Option<(Posted, Noted)>;
+
+    fn swept(&self, fact: &Swept, ctx: &Context) -> Vec<LedgerStateEvent>;
+
+    fn apply_posted(&mut self, event: &Posted);
+
+    fn apply_noted(&mut self, event: &Noted);
+
+    fn apply_cleared(&mut self, event: &Cleared);
+
+    fn apply_closed(&mut self, event: &Closed);
+}
+
+/// AuditState: the interface of `kinds.v1.AuditState`, generated from its protos: its
+/// implementation, `AuditStateImpl`, is yours (`angzarr scaffold rust` writes it
+/// once), and the generated adapter (`adapters::AuditState`) carries the markup
+/// and calls it.
+///
+/// Each handler takes its input and its `Context`; each `apply_` folds an
+/// event.
+pub trait AuditState {
+    fn audit(&self, cmd: &Audit, ctx: &Context) -> Result<Audited, Failed<AuditRefuses>>;
+
+    fn apply_audited(&mut self, event: &Audited);
+}
+
+/// LedgerView: the interface of `kinds.v1.LedgerView`, generated from its protos: its
+/// implementation, `LedgerViewImpl`, is yours (`angzarr scaffold rust` writes it
+/// once), and the generated adapter (`adapters::LedgerView`) carries the markup
+/// and calls it.
+///
+/// One async method per projected event, of any of its source domains
+/// (`ctx.stream()` says which), returning its `Bug` when the projection fails.
+pub trait LedgerView {
+    fn posted(
+        &mut self,
+        event: &Posted,
+        ctx: &ProjectionContext,
+    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;
+
+    fn audited(
+        &mut self,
+        event: &Audited,
+        ctx: &ProjectionContext,
+    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;
+}
+
+/// LedgerAuditPolicy: the interface of `kinds.v1.LedgerAuditPolicy`, generated from its protos: its
+/// implementation, `LedgerAuditPolicyImpl`, is yours (`angzarr scaffold rust` writes it
+/// once), and the generated adapter (`adapters::LedgerAuditPolicy`) carries the markup
+/// and calls it.
+///
+/// Each reaction takes the source stream's root, the event and its context, and
+/// returns what it sends its target, each with its target root: a command, or a
+/// fact the target declares, sent in the arm the target declares. Or its `Bug`:
+/// a defect, since a policy reacts to events the application's own domains
+/// recorded. Each `<command>_refused` is optional: its default declines,
+/// passing the refusal through to the source; an implementation translating it
+/// answers one of the source's facts.
+pub trait LedgerAuditPolicy {
+    fn noted(
+        &self,
+        source: &[u8],
+        event: &Noted,
+        ctx: &PolicyContext,
+    ) -> Result<Vec<(Vec<u8>, AuditStateOutput)>, Bug>;
+
+    fn audit_refused(
+        &self,
+        command: &Audit,
+        refusal: Option<AuditRefuses>,
+        ctx: &CommandContext,
+    ) -> Result<Option<LedgerStateFact>, Bug> {
+        let _ = (command, refusal, ctx);
+        Ok(None)
     }
 }

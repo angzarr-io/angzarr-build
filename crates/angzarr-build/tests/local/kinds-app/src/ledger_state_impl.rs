@@ -3,7 +3,6 @@
 //! methods it lacks, each `todo!()`.
 
 use crate::domain::*;
-use crate::ledger_state::LedgerState;
 
 /// The state the `apply_` methods fold.
 #[derive(Clone, Debug, Default)]

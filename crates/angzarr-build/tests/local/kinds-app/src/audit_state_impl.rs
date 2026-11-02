@@ -2,7 +2,6 @@
 //! `angzarr scaffold rust` and yours from then on: `--missing` adds the
 //! methods it lacks, each `todo!()`.
 
-use crate::audit_state::AuditState;
 use crate::domain::*;
 
 /// The state the `apply_` methods fold.

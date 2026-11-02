@@ -31,13 +31,16 @@ fn app(domain: &str) -> PythonApp {
 }
 
 fn blackjack(file: &str, domain: &str) -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BLACKJACK), &[file], &app(domain), &[])
+    scaffold_python(&descriptors(BLACKJACK), &[file], &app(domain), &[], &[])
         .unwrap_or_else(|e| panic!("{file} as {domain}: {e:?}"))
 }
 
+/// The source of the file of `files` the scaffold writes whose path ends
+/// with `suffix`.
 fn source<'a>(files: &'a [ScaffoldFile], suffix: &str) -> &'a str {
     &files
         .iter()
+        .filter(|f| matches!(f.owner, Owner::User | Owner::Generated))
         .find(|f| f.path.ends_with(suffix))
         .unwrap_or_else(|| {
             panic!(
@@ -82,10 +85,11 @@ fn test_a_projector_is_scaffolded_under_its_component_name() {
     let files = ledger();
     let package = "src/angzarr_projector_wallet_table_ledger";
     for (path, owner) in [
-        (format!("{package}/logic.py"), Owner::User),
+        (format!("{package}/_gen/logic.py"), Owner::Generated),
         (format!("{package}/logic_impl.py"), Owner::User),
-        (format!("{package}/domain.py"), Owner::Generated),
-        (format!("{package}/main.py"), Owner::Generated),
+        (format!("{package}/_gen/domain.py"), Owner::Generated),
+        (format!("{package}/_gen/main.py"), Owner::Generated),
+        (format!("{package}/__main__.py"), Owner::User),
         (
             format!("{package}/_gen/io/angzarr/examples/v1/ledger_projector_angzarr.py"),
             Owner::Generated,
@@ -108,7 +112,7 @@ fn test_a_projectors_logic_projects_each_event_of_every_source_asynchronously() 
     assert_has(
         logic,
         &[
-            "class LedgerProjectorLogic(Protocol):",
+            "class LedgerProjectorLogic(ABC):",
             "async def project_round_settled(self, projection: LedgerProjection, \
              event: RoundSettled, ctx: PageContext) -> LedgerProjection: ...",
             "async def project_funds_held(self, projection: LedgerProjection, \
@@ -150,9 +154,7 @@ fn test_a_projectors_dispatch_folds_both_sources_through_its_coroutines() {
     let main = source(&files, "/main.py");
     assert_has(
         main,
-        &[
-            "host.add_projector(new_ledger_projector_dispatch(LedgerProjectorLogicImpl()), DESCRIPTOR)",
-        ],
+        &["host.add_projector(new_ledger_projector_dispatch(ledger_projector_logic), DESCRIPTOR)"],
     );
 }
 
@@ -193,6 +195,7 @@ fn test_a_command_with_no_emits_returns_a_list_of_any_of_its_domains_events() {
         &["kinds/v1/kinds.proto"],
         &app("ledger"),
         &[],
+        &[],
     )
     .unwrap();
     assert_has(
@@ -212,6 +215,7 @@ fn test_a_command_with_no_emits_of_a_domain_with_no_events_returns_none() {
         &descriptors(&["lone/v1/lone.proto"]),
         &["lone/v1/lone.proto"],
         &app("slots"),
+        &[],
         &[],
     )
     .unwrap();
@@ -238,7 +242,7 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
     assert_has(
         logic,
         &[
-            "class TablePlayerPolicyLogic(Protocol):",
+            "class TablePlayerPolicyLogic(ABC):",
             "def turn_started(self, event: TurnStarted, source: bytes, ctx: PageContext) \
              -> list[tuple[bytes, DecideMove]]: ...",
         ],
@@ -311,7 +315,7 @@ fn test_a_policys_dispatch_addresses_each_output_to_its_target() {
     assert_has(
         main,
         &[
-            "host.add_policy(new_table_player_policy_dispatch(TablePlayerPolicyLogicImpl()), DESCRIPTOR)",
+            "host.add_policy(new_table_player_policy_dispatch(table_player_policy_logic), DESCRIPTOR)",
         ],
     );
 }
@@ -332,7 +336,7 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
     assert_has(
         logic,
         &[
-            "class BuyInLogic(Protocol):",
+            "class BuyInLogic(ABC):",
             // A fact the table's policy sends (ruling 9, decision 14.69).
             "def start_buy_in(self, fact: StartBuyIn, state: BuyInState, ctx: CommandContext) -> BuyInStarted: ...",
             "def seat_confirmation_refused(self, fact: SeatConfirmationRefused, state: BuyInState, \
@@ -352,7 +356,7 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
     assert_has(
         main,
         &[
-            "host.add_process_manager(new_buy_in_process_manager_dispatch(BuyInLogicImpl()), DESCRIPTOR)",
+            "host.add_process_manager(new_buy_in_process_manager_dispatch(buy_in_logic), DESCRIPTOR)",
         ],
     );
     let domain = source(&files, "/domain.py");
@@ -362,7 +366,7 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
 // ------------------------------------------------ refusals, cardinality
 
 fn till() -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(TILL), TILL, &app("till"), &[]).unwrap()
+    scaffold_python(&descriptors(TILL), TILL, &app("till"), &[], &[]).unwrap()
 }
 
 /// A decision returns its events or one of its typed refusals, several to
@@ -468,7 +472,8 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
 #[test]
 fn test_a_refusals_key_is_the_same_in_python_as_in_rust() {
     const KINDS: &str = "kinds/v1/kinds.proto";
-    let files = scaffold_python(&descriptors(&[KINDS]), &[KINDS], &app("ledger"), &[]).unwrap();
+    let files =
+        scaffold_python(&descriptors(&[KINDS]), &[KINDS], &app("ledger"), &[], &[]).unwrap();
     let domain = source(&files, "/domain.py");
     let cases = [
         (
@@ -591,6 +596,7 @@ fn test_a_projectors_default_name_is_its_anchor_in_kebab_case() {
         &[FILE],
         &app("projector-http-server-view"),
         &[],
+        &[],
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
     let dispatch = source(&files, "_angzarr.py");
@@ -612,6 +618,7 @@ fn test_a_projectors_default_name_is_its_anchor_in_kebab_case() {
 /// same. Each import of `angzarr_client`, and each attribute of the
 /// router (`_az.`), is one of these.
 const PUBLIC_IMPORTS: &[&str] = &[
+    "from angzarr_client import Compensation as Compensation",
     "from angzarr_client import ComponentHost, configure_logging",
     "from angzarr_client.child import run_child",
     "from angzarr_client.proto.io.angzarr.v1 import types_pb2 as _t",
@@ -746,6 +753,7 @@ fn test_a_projectors_input_domain_is_its_one_source() {
         &[FILE],
         &app("projector-page-counter"),
         &[],
+        &[],
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
     let dispatch = source(&files, "_angzarr.py");
@@ -788,6 +796,7 @@ fn test_a_policy_whose_target_takes_facts_only_sends_its_facts() {
         &descriptors(&[FILE]),
         &[FILE],
         &app("policy-pages-tally"),
+        &[],
         &[],
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
@@ -838,7 +847,7 @@ fn test_a_projectors_descriptor_lists_its_sources_in_order() {
 /// the source of the BuyInWallet policy, whose target, the wallet, takes
 /// Deposit and Hold, Hold refusing with InsufficientFunds.
 fn buyin_python(domain: &str, translate: &[Translate]) -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BUYIN), BUYIN, &app(domain), translate)
+    scaffold_python(&descriptors(BUYIN), BUYIN, &app(domain), translate, &[])
         .unwrap_or_else(|e| panic!("{domain}: {e:?}"))
 }
 
@@ -920,37 +929,50 @@ fn test_a_domain_handles_the_pass_through_refusal_of_each_command_that_declares_
 }
 
 /// A command the refusal switch translates reaches its source as the
-/// policy's fact, never as `CommandRefused`: the source's logic gets no
-/// `on_refused_<command>` for it. Hold is the toy buy-in's one command
-/// declaring `refuses`, so none is left.
+/// policy's fact, never as `CommandRefused`: the source's implementation is
+/// created with no `on_refused_<command>` for it, which stays optional in
+/// its interface. Hold is the toy buy-in's one command declaring
+/// `refuses`, so none is left.
 #[test]
 fn test_translate_drops_the_sources_pass_through_of_the_command_it_translates() {
     let untranslated = buyin_python("buyin", &[]);
-    assert!(source(&untranslated, "/logic.py").contains("def on_refused_hold("));
+    assert!(source(&untranslated, "/logic_impl.py").contains("def on_refused_hold("));
     let files = buyin_python("buyin", &[translate_hold()]);
-    let logic = source(&files, "/logic.py");
-    assert!(!logic.contains("on_refused_"), "{logic}");
+    let implementation = source(&files, "/logic_impl.py");
+    assert!(!implementation.contains("on_refused_"), "{implementation}");
+    assert!(source(&files, "/logic.py").contains("def on_refused_hold("));
 }
 
-/// The refusal switch set to translate (`--translate`, as the Rust
-/// scaffold's): the policy's logic gets `<command>_refused`, taking the
-/// refused command, its typed refusal or None and the refused command's
-/// context, returning a fact of its source; its dispatch registers it with
-/// the client's `on_refused` when the logic has it.
+/// A policy whose source takes facts may translate the refusal of each
+/// command it sends, in `<command>_refused`: taking the refused command,
+/// its typed refusal or None and the refused command's context, returning
+/// a fact of its source. Each is optional, in the reference protocol; the
+/// refusal switch (`--translate`) writes the one it selects into the
+/// implementation, returning the fact it selects; the dispatch registers
+/// each one the logic has with the client's `on_refused`.
 #[test]
 fn test_a_policy_translates_the_refused_command_the_switch_selects() {
     let files = buyin_python("policy-buyin-wallet", &[translate_hold()]);
     let logic = source(&files, "/logic.py");
+    let refusals = &logic[logic.find("(Protocol):").expect("the refusals protocol")..];
     assert_has(
-        logic,
+        refusals,
         &[
             "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: ...",
+            "def deposit_refused(self, command: Deposit, ctx: CommandContext) -> HoldLost: ...",
         ],
     );
-    assert!(!logic.contains("deposit_refused"), "{logic}");
+    let implementation = source(&files, "/logic_impl.py");
     assert_has(
-        source(&files, "/logic_impl.py"),
-        &["raise NotImplementedError  # TODO: translate the refusal of Hold"],
+        implementation,
+        &[
+            "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: \
+             raise NotImplementedError # TODO: translate the refusal of Hold",
+        ],
+    );
+    assert!(
+        !implementation.contains("deposit_refused"),
+        "{implementation}"
     );
     let domain = source(&files, "/domain.py");
     assert!(
@@ -974,13 +996,14 @@ fn test_a_policy_translates_the_refused_command_the_switch_selects() {
     assert_parses("logic.py", logic);
 }
 
-/// What the switch leaves alone is passed through: the policy's logic has
-/// no `<command>_refused`, and the generated files are the same either way,
-/// so a run without `--translate` keeps a translation the user's logic has.
+/// What the switch leaves alone is passed through: the policy's
+/// implementation has no `<command>_refused`, and the generated files are
+/// the same either way, so a run without `--translate` keeps a translation
+/// the user's logic has.
 #[test]
 fn test_a_policy_without_translate_passes_every_refusal_through() {
     let plain = buyin_python("policy-buyin-wallet", &[]);
-    assert!(!source(&plain, "/logic.py").contains("_refused"));
+    assert!(!source(&plain, "/logic_impl.py").contains("_refused"));
     let translated = buyin_python("policy-buyin-wallet", &[translate_hold()]);
     for (a, b) in plain.iter().zip(&translated) {
         if a.owner == Owner::Generated {
@@ -998,7 +1021,7 @@ fn test_scaffold_python_refuses_translate_for_an_unknown_policy() {
         ..translate_hold()
     };
     assert_eq!(
-        scaffold_python(&descriptors(BUYIN), BUYIN, &app("buyin"), &[selection]),
+        scaffold_python(&descriptors(BUYIN), BUYIN, &app("buyin"), &[selection], &[]),
         Err(CodegenError::Use(UseError::TranslateUnknownPolicy {
             policy: "buyin.v1.Nowhere".to_string()
         }))

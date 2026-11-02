@@ -89,32 +89,19 @@ fn test_markup_domain_generates_the_ledger_projectors_events_and_context() {
     );
 }
 
-/// The user's two files for a projector, as for every other kind: its
-/// interface, one async method per projected event (decision 14.50's
-/// ruling: an async user interface), and its implementation holding the
-/// projection.
+/// A projector's interface, as every other kind's, is the domain layer's:
+/// one async method per projected event (decision 14.50's ruling: an async
+/// user interface); its implementation, the user's, holds the projection.
 #[test]
 fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
-    let files = scaffold(&descriptors(BLACKJACK), &[LEDGER], &[]).unwrap();
-    let interface = files
-        .iter()
-        .find(|f| f.path == "ledger_projector.rs")
-        .unwrap_or_else(|| {
-            panic!(
-                "no ledger_projector.rs: {:?}",
-                files.iter().map(|f| &f.path).collect::<Vec<_>>()
-            )
-        });
+    let files = scaffold(&descriptors(BLACKJACK), &[LEDGER], &[], &[]).unwrap();
+    let interface = one(markup_domain(&descriptors(BLACKJACK), &[LEDGER], WIRE).unwrap());
     for expected in [
         "pub trait LedgerProjector {",
         "    fn round_settled(\n        &mut self,\n        event: &RoundSettled,\n        ctx: &ProjectionContext,\n    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;",
         "    fn funds_held(\n        &mut self,\n        event: &FundsHeld,\n        ctx: &ProjectionContext,\n    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;",
     ] {
-        assert!(
-            interface.source.contains(expected),
-            "{expected}:\n{}",
-            interface.source
-        );
+        assert!(interface.contains(expected), "{expected}:\n{interface}");
     }
     let implementation = files
         .iter()
@@ -135,7 +122,7 @@ fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
 /// the user's one implementation.
 #[test]
 fn test_adapters_mark_up_the_ledger_projector_for_each_source_domain() {
-    let source = adapters(&descriptors(BLACKJACK), &[LEDGER], &[], &|_| None).unwrap();
+    let source = adapters(&descriptors(BLACKJACK), &[LEDGER], &[]).unwrap();
     assert_eq!(source.matches("#[projector(").count(), 1, "{source}");
     assert!(
         source.contains(
@@ -209,7 +196,7 @@ fn test_policy_adapters_read_the_trigger_root_from_the_context() {
         "io/angzarr/examples/v1/player.proto",
         "io/angzarr/examples/v1/policies.proto",
     ];
-    let source = adapters(&descriptors(BLACKJACK), files, &["player"], &|_| None).unwrap();
+    let source = adapters(&descriptors(BLACKJACK), files, &["player"]).unwrap();
     assert!(!source.contains("fn source_root"), "{source}");
     assert!(source.contains("ctx.source_root()"), "{source}");
 }
@@ -224,7 +211,7 @@ fn test_policy_adapters_carry_the_spec_names() {
         "io/angzarr/examples/v1/player.proto",
         "io/angzarr/examples/v1/policies.proto",
     ];
-    let source = adapters(&descriptors(BLACKJACK), files, &["player"], &|_| None).unwrap();
+    let source = adapters(&descriptors(BLACKJACK), files, &["player"]).unwrap();
     for name in ["\"policy-table-player\"", "\"policy-player-table\""] {
         assert!(source.contains(name), "{name}:\n{source}");
     }

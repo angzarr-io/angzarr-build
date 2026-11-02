@@ -1,7 +1,6 @@
 //! WalletImpl: the scaffold of `Wallet`'s implementation, bodies written.
 
 use crate::domain::*;
-use crate::wallet::Wallet;
 
 /// The state the `apply_` methods fold.
 #[derive(Clone, Debug, Default)]

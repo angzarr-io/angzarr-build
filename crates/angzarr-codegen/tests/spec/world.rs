@@ -100,8 +100,8 @@ impl Generator {
         let outcome = descriptors(&set, &names, &version).and_then(|descriptors| {
             markup_domain(&set, &names, &wire)?;
             // The user's files `angzarr scaffold rust` writes: their checks.
-            scaffold(&set, &names, &self.translate)?;
-            let adapters = adapters(&set, &names, &[], &|_| None)?;
+            scaffold(&set, &names, &self.translate, &[])?;
+            let adapters = adapters(&set, &names, &[])?;
             Ok(Generated {
                 descriptors,
                 adapters,
@@ -154,7 +154,7 @@ impl Generator {
             protos: ProtoInput::Directory("protos".to_string()),
             rules_version: VERSION.to_string(),
         };
-        scaffold_python(set, &files, &app, &self.translate)
+        scaffold_python(set, &files, &app, &self.translate, &[])
             .expect("the Python scaffold")
             .into_iter()
             .map(|f| (f.path, f.source))

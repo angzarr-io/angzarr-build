@@ -6,7 +6,7 @@
 mod common;
 
 use angzarr_codegen::{
-    AppSeed, LICENCE_HEADER, ProtoInput, PythonApp, RetrySeed, ScaffoldFile, adapters, app,
+    AppSeed, LICENCE_HEADER, Owner, ProtoInput, PythonApp, RetrySeed, ScaffoldFile, adapters, app,
     descriptors_rs, markup_domain, register, register_only, scaffold, scaffold_python,
 };
 use common::*;
@@ -18,9 +18,14 @@ fn first_line(source: &str) -> &str {
     source.lines().next().unwrap_or("")
 }
 
+/// Every file of `files` the generator writes (not one it only reports,
+/// nor one another tool writes) is headed.
 fn assert_headed(files: &[ScaffoldFile]) {
     assert!(!files.is_empty());
-    for f in files {
+    for f in files
+        .iter()
+        .filter(|f| matches!(f.owner, Owner::User | Owner::Generated))
+    {
         let marker = if f.path.ends_with(".rs") { "//" } else { "#" };
         assert_eq!(
             first_line(&f.source),
@@ -38,7 +43,7 @@ fn the_header_is_the_rulings_line() {
 
 #[test]
 fn every_rust_scaffold_file_is_headed() {
-    assert_headed(&scaffold(&descriptors(BUYIN), BUYIN, &[]).unwrap());
+    assert_headed(&scaffold(&descriptors(BUYIN), BUYIN, &[], &[]).unwrap());
 }
 
 #[test]
@@ -51,7 +56,7 @@ fn every_python_scaffold_file_is_headed() {
         },
         rules_version: "0.1.0".to_string(),
     };
-    assert_headed(&scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[]).unwrap());
+    assert_headed(&scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[], &[]).unwrap());
 }
 
 #[test]
@@ -105,7 +110,7 @@ fn every_build_output_is_headed() {
     let set = descriptors(BUYIN);
     let line = format!("// {HEADER}");
     for source in [
-        adapters(&set, BUYIN, &[], &|_| None).unwrap(),
+        adapters(&set, BUYIN, &[]).unwrap(),
         register(&set, BUYIN, &[]).unwrap(),
         register_only(&set, BUYIN, &[]).unwrap(),
         descriptors_rs(&set, BUYIN, &[], "1.0.0").unwrap(),

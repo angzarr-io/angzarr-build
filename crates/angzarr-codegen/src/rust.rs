@@ -80,6 +80,7 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
             &format!(" A command of {}.", component.name),
         ));
         items.extend(output_enum(component));
+        items.extend(fact_enum(component));
         items.extend(plain_enum(
             &format_ident!("{}Event", component.name),
             &component.events,
@@ -129,7 +130,12 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         });
     }
     let file: syn::File = syn::parse2(items).expect("the emitter writes valid Rust");
-    prettyplease::unparse(&file)
+    let mut out = prettyplease::unparse(&file);
+    for interface in &package.interfaces {
+        out.push('\n');
+        out.push_str(interface);
+    }
+    out
 }
 
 /// The prost settings the domain layer is generated for, checked where the
@@ -302,6 +308,11 @@ fn handler_context() -> TokenStream {
         /// it is from (its source domain and root), its sequence there and
         /// when it was recorded.
         pub use #root::markup::ProjectionContext;
+
+        /// What a process manager rolls back with (decision 14.74): each
+        /// step it completes paired, in code, with the undo that reverses
+        /// it, and the rollback built from them.
+        pub use #root::markup::Compensation;
 
         /// What a command handler fails with, one of four classes:
         /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
@@ -695,6 +706,54 @@ fn output_enum(component: &crate::model::Component) -> TokenStream {
     }
 }
 
+/// A domain's facts as one choice (`<Domain>Fact`), when it takes any: one
+/// variant per fact, each `From` its type; what a policy's translating
+/// callback answers this domain, its source, with. It is a
+/// `markup::Translation` for any source ingesting each of its facts, so the
+/// markup packs whichever it holds.
+fn fact_enum(component: &crate::model::Component) -> TokenStream {
+    let facts: Vec<syn::Ident> = component
+        .inputs
+        .iter()
+        .filter(|i| i.fact)
+        .map(|i| ident(i.message.name()))
+        .collect();
+    if facts.is_empty() || !component.kind.is_domain() {
+        return quote!();
+    }
+    let name = format_ident!("{}", crate::scaffold::fact_name(component));
+    let root = root();
+    let m = quote!(#root::markup);
+    let doc = format!(
+        " A fact of {}: what a policy sourced from it translates a refusal into.",
+        component.name
+    );
+    quote! {
+        #[doc = #doc]
+        #[derive(Clone, Debug, PartialEq)]
+        pub enum #name { #(#facts(#facts)),* }
+
+        #(
+            impl From<#facts> for #name {
+                fn from(value: #facts) -> Self {
+                    #name::#facts(value)
+                }
+            }
+        )*
+
+        impl<S> #m::Translation<S> for #name
+        where
+            S: #(#m::Ingests<#facts>)+*,
+        {
+            fn fact(self) -> ::core::option::Option<#root::Any> {
+                ::core::option::Option::Some(match self {
+                    #(#name::#facts(value) => #m::pack_message(&value),)*
+                })
+            }
+        }
+    }
+}
+
 /// The `Payload` of the enum `name` of `variants`: each variant packed as
 /// its message, each type read back by its type URL, any other refused as
 /// the kernel's unknown type, and the types listed.
@@ -1013,4 +1072,56 @@ fn camel(screaming: &str) -> String {
                 .unwrap_or_default()
         })
         .collect()
+}
+
+/// The modules of the prost types of `files`' packages (`<package>.rs` in
+/// `OUT_DIR`), nested as the packages are (`io::angzarr::examples::v1`) so
+/// prost's `super::` paths resolve, each package's module carrying the
+/// allowance its output needs (its oneofs nest past the complexity gate's
+/// threshold): what a crate root `include!`s as its wire types, no
+/// allowance of its own. angzarr's own package is angzarr-proto's, never
+/// here.
+pub(crate) fn wire_modules(packages: &[String]) -> String {
+    /// One module of the tree: its children by name, and the package whose
+    /// types it holds, when one ends here.
+    #[derive(Default)]
+    struct Node {
+        children: std::collections::BTreeMap<String, Node>,
+        package: Option<String>,
+    }
+    fn tokens(name: &str, node: &Node) -> TokenStream {
+        let ident = format_ident!("{name}");
+        let children = node.children.iter().map(|(n, child)| tokens(n, child));
+        let (allow, include) = match &node.package {
+            Some(package) => {
+                let file = format!("/{package}.rs");
+                (
+                    quote!(#[allow(clippy::excessive_nesting)]),
+                    quote!(include!(concat!(env!("OUT_DIR"), #file));),
+                )
+            }
+            None => (quote!(), quote!()),
+        };
+        quote! {
+            #allow
+            pub mod #ident {
+                #include
+                #(#children)*
+            }
+        }
+    }
+    let mut root = Node::default();
+    for package in packages {
+        let mut node = &mut root;
+        for part in package.split('.') {
+            node = node.children.entry(part.to_string()).or_default();
+        }
+        node.package = Some(package.clone());
+    }
+    let modules = root.children.iter().map(|(n, child)| tokens(n, child));
+    let file: syn::File = syn::parse2(quote!(#(#modules)*)).expect("the emitter writes valid Rust");
+    format!(
+        "// @generated by angzarr-codegen. Do not edit: every build rewrites it.\n\n{}",
+        prettyplease::unparse(&file)
+    )
 }

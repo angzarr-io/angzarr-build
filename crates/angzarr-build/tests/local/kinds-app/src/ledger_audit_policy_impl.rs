@@ -3,7 +3,6 @@
 //! methods it lacks, each `todo!()`.
 
 use crate::domain::*;
-use crate::ledger_audit_policy::LedgerAuditPolicy;
 
 #[derive(Clone, Debug, Default)]
 pub struct LedgerAuditPolicyImpl;
@@ -26,8 +25,8 @@ impl LedgerAuditPolicy for LedgerAuditPolicyImpl {
         _command: &Audit,
         refusal: Option<AuditRefuses>,
         _ctx: &CommandContext,
-    ) -> Result<Arrived, Bug> {
+    ) -> Result<Option<LedgerStateFact>, Bug> {
         println!("audit refused: {refusal:?}");
-        Ok(Arrived {})
+        Ok(Some(Arrived {}.into()))
     }
 }

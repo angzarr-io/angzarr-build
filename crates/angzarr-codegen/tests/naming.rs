@@ -11,7 +11,7 @@ const NAMING: &str = "naming/v1/naming.proto";
 const BOTH: &[&str] = &[NAMING, "naming/v1/policy.proto"];
 
 fn files() -> Vec<ScaffoldFile> {
-    scaffold(&descriptors(BOTH), BOTH, &[]).unwrap()
+    scaffold(&descriptors(BOTH), BOTH, &[], &[]).unwrap()
 }
 
 fn generated() -> String {
@@ -29,8 +29,8 @@ fn test_names_are_snake_cased_at_each_word_an_acronym_and_a_digit() {
     let files = files();
     let interface = &files
         .iter()
-        .find(|f| f.path == "order_book.rs")
-        .unwrap_or_else(|| panic!("no order_book.rs: {files:#?}"))
+        .find(|f| f.path == "order_book_impl.rs")
+        .unwrap_or_else(|| panic!("no order_book_impl.rs: {files:#?}"))
         .source;
     for expected in [
         "fn assign_tracking_id(",
@@ -71,8 +71,7 @@ fn macros(source: &str) -> String {
 
 #[test]
 fn test_adapters_of_an_aggregate_import_the_aggregate_markup_only() {
-    let none = |_: &str| None;
-    let source = adapters(&descriptors(BOTH), BOTH, &[], &none).unwrap();
+    let source = adapters(&descriptors(BOTH), BOTH, &[]).unwrap();
     let line = macros(&source);
     assert!(line.contains("aggregate"), "{line}");
     assert!(!line.contains("process_manager"), "{line}");
@@ -82,16 +81,14 @@ fn test_adapters_of_an_aggregate_import_the_aggregate_markup_only() {
 /// sets), so adapters of it alone import no macro at all.
 #[test]
 fn test_adapters_of_a_remote_aggregate_alone_import_no_macro() {
-    let none = |_: &str| None;
-    let source = adapters(&descriptors(BOTH), BOTH, &["books"], &none).unwrap();
+    let source = adapters(&descriptors(BOTH), BOTH, &["books"]).unwrap();
     assert!(!source.contains("angzarr_embedded_macros"), "{source}");
     assert!(source.contains("impl CommandTarget for"), "{source}");
 }
 
 #[test]
 fn test_adapters_fold_a_decision_and_a_fact_of_several_events() {
-    let none = |_: &str| None;
-    let source = adapters(&descriptors(BOTH), BOTH, &[], &none).unwrap();
+    let source = adapters(&descriptors(BOTH), BOTH, &[]).unwrap();
     let flat = source.replace([' ', '\n'], "");
     for expected in [
         "Emit::of(None::<TrackingIDAssigned>)",

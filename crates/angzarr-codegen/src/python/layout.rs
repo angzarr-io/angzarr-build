@@ -27,19 +27,7 @@ pub(super) fn head(
 
 /// `text` wrapped at 79 columns, on spaces.
 pub(super) fn wrap(text: &str) -> String {
-    let mut lines: Vec<String> = vec![String::new()];
-    for word in text.split(' ') {
-        let line = lines.last_mut().expect("a line");
-        if !line.is_empty() && line.len() + 1 + word.len() > 79 {
-            lines.push(word.to_string());
-        } else {
-            if !line.is_empty() {
-                line.push(' ');
-            }
-            line.push_str(word);
-        }
-    }
-    lines.join("\n")
+    crate::common::wrap(text, 79)
 }
 
 /// `head(args)` at `indent`, on one line when it fits, else black's

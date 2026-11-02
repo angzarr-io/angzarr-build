@@ -1,7 +1,6 @@
 //! BuyInWalletImpl: the scaffold of `BuyInWallet`'s implementation, with Hold
 //! translated (the refusal switch), bodies written.
 
-use crate::buy_in_wallet::BuyInWallet;
 use crate::domain::*;
 
 #[derive(Clone, Debug, Default)]
@@ -28,9 +27,12 @@ impl BuyInWallet for BuyInWalletImpl {
         command: &Hold,
         refusal: Option<InsufficientFunds>,
         _ctx: &CommandContext,
-    ) -> Result<HoldLost, Bug> {
-        Ok(HoldLost {
-            short: refusal.map(|r| r.short).unwrap_or(command.cents),
-        })
+    ) -> Result<Option<BuyInFact>, Bug> {
+        Ok(Some(
+            HoldLost {
+                short: refusal.map(|r| r.short).unwrap_or(command.cents),
+            }
+            .into(),
+        ))
     }
 }

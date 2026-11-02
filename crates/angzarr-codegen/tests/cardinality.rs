@@ -1,23 +1,27 @@
 //! Emits cardinality (decision 14.50): the handler's result is typed from
 //! `CommandOptions.emits_cardinality`, ONE an event or a tuple, OPTIONAL
 //! that or nothing, MANY any number of the component's events. The kinds
-//! fixture (`kinds/v1/kinds.proto`) has an input of each; its scaffold and
-//! adapters are pinned by `tests/refusals.rs`'s golden files.
+//! fixture (`kinds/v1/kinds.proto`) has an input of each; its domain layer
+//! (its interfaces in it), scaffold and adapters are pinned by
+//! `tests/refusals.rs`'s golden files.
 
 mod common;
 
-use angzarr_codegen::{CodegenError, MarkupError, adapters, markup_domain, scaffold};
+use angzarr_codegen::{CodegenError, MarkupError, adapters, markup_domain};
 use common::*;
 
 const KINDS: &str = "kinds/v1/kinds.proto";
 
+/// The kinds fixture's domain layer, the ledger's interface in it.
 fn interface() -> String {
-    scaffold(&descriptors(&[KINDS]), &[KINDS], &[])
-        .unwrap()
-        .into_iter()
-        .find(|f| f.path == "ledger_state.rs")
-        .expect("ledger_state.rs")
-        .source
+    markup_domain(
+        &descriptors(&[KINDS]),
+        &[KINDS],
+        &[("kinds.v1", "crate::wire")],
+    )
+    .unwrap()
+    .remove(0)
+    .source
 }
 
 #[test]
@@ -39,7 +43,7 @@ fn test_each_cardinality_types_the_handlers_result() {
 
 #[test]
 fn test_the_adapter_hands_the_markup_each_cardinality() {
-    let source = adapters(&descriptors(&[KINDS]), &[KINDS], &[], &|_| None).unwrap();
+    let source = adapters(&descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
     let flat = source.replace([' ', '\n'], "");
     for expected in [
         // ONE and OPTIONAL of one type: the markup takes them as they are.
@@ -55,7 +59,7 @@ fn test_the_adapter_hands_the_markup_each_cardinality() {
         // A fact's closure is bound, then called: never called where it is
         // declared (clippy's redundant_closure_call).
         "letrecord=|events:Option<(Posted,Noted)>|",
-        "record(crate::ledger_state::LedgerState::arrived(&self.0,&fact,ctx))",
+        "record(crate::domain::LedgerState::arrived(&self.0,&fact,ctx))",
     ] {
         assert!(flat.contains(expected), "{expected}:\n{source}");
     }

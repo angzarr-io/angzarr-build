@@ -40,10 +40,17 @@ fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
     // layer of its own.
     let over = root.join("over");
     std::fs::create_dir_all(&over).unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"x\"\n\n[package.metadata.angzarr.domain]\ncrate = \"shop_proto\"\n",
+    )
+    .unwrap();
     // SAFETY: as above.
     unsafe { std::env::set_var("OUT_DIR", &over) };
     angzarr_build::app_without_domain("angzarr.yaml", &["shop/v1/shop.proto"], &[&fixtures])
         .unwrap();
     assert!(over.join("angzarr-register.rs").exists());
     assert!(!over.join("shop.v1.domain.rs").exists());
+    let layer = std::fs::read_to_string(over.join("angzarr-app.rs")).unwrap();
+    assert!(layer.contains("\npub use shop_proto::domain;\n"), "{layer}");
 }

@@ -1,66 +1,78 @@
 //! `--missing` for a Python file: a hand-written line-based reader of the
 //! user's class, finding the methods it has.
 
+use crate::common::snake;
 use crate::error::UseError;
-use crate::scaffold::ScaffoldFile;
+use crate::scaffold::{Completion, Existing, Found, ScaffoldFile, judge};
 
-/// `--missing` for a Python file: `existing`, the user's interface or
-/// implementation of `fresh`'s component, with the methods of `fresh` it
-/// lacks appended to its class; `None` when it lacks none. A method is
-/// present when the class has a method taking its message first; one
-/// taking an input as `cmd` where the proto declares a fact, or the
-/// reverse, is refused.
-pub(crate) fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, UseError> {
+/// [`crate::complete`] for a Python file: `existing`, the user's
+/// implementation of `fresh`'s component, judged against `fresh`'s class,
+/// the methods it is to have appended to its class. A file with no class
+/// (a manifest, a package marker) has nothing to complete.
+pub(crate) fn complete(
+    fresh: &ScaffoldFile,
+    existing: &str,
+    mode: Existing,
+) -> Result<Completion, UseError> {
     let not_found = || UseError::ScaffoldImplNotFound {
         path: fresh.path.clone(),
         component: fresh.component.clone(),
     };
     let Some(fresh_class) = class(&fresh.source, None) else {
-        return Ok(None);
+        return Ok(Completion::default());
     };
     let user_class = class(existing, Some(&fresh_class.name)).ok_or_else(not_found)?;
-    let package = fresh
-        .component
-        .rsplit_once('.')
-        .map_or("", |(package, _)| package);
-    let mut missing = Vec::new();
-    for method in &fresh_class.methods {
-        match user_class.methods.iter().find(|m| m.ty == method.ty) {
-            Some(found)
-                if is_input(&found.param)
-                    && is_input(&method.param)
-                    && found.param != method.param =>
-            {
-                return Err(UseError::InputMismatch {
-                    path: fresh.path.clone(),
-                    message: format!("{package}.{}", method.ty),
-                    expected: method.param.clone(),
-                    found: found.param.clone(),
-                });
-            }
-            Some(_) => {}
-            None => missing.push(&fresh.source[method.span.0..method.span.1]),
-        }
-    }
-    if missing.is_empty() {
-        return Ok(None);
+    let found = |c: &Class| -> Vec<Found> {
+        c.methods
+            .iter()
+            .map(|m| Found {
+                name: m.name.clone(),
+                ty: m.ty.clone(),
+                param: m.param.clone(),
+            })
+            .collect()
+    };
+    let (adding, mut completion) = judge(
+        fresh,
+        &found(&fresh_class),
+        &found(&user_class),
+        mode,
+        &handles,
+    )?;
+    if adding.is_empty() {
+        return Ok(completion);
     }
     let end = user_class.end;
     let mut insert = String::new();
-    for block in missing {
+    for i in adding {
+        let (from, to) = fresh_class.methods[i].span;
         insert.push('\n');
-        insert.push_str(block);
+        insert.push_str(&fresh.source[from..to]);
     }
     let mut completed = existing.to_string();
     if !completed[..end].ends_with('\n') {
         insert.insert(0, '\n');
     }
     completed.insert_str(end, &insert);
-    Ok(Some(completed))
+    completion.completed = Some(completed);
+    Ok(completion)
 }
 
-fn is_input(param: &str) -> bool {
-    param == "cmd" || param == "fact"
+/// Whether `method` is a handler the scaffold writes, named as it names one
+/// for the message it takes: a decision or a reaction (`<message>`), a fold
+/// (`apply_<message>`), a projection (`project_<message>`) or a refusal
+/// callback (`on_refused_<message>`, `<message>_refused`). Any other method
+/// is the user's own.
+fn handles(method: &Found) -> bool {
+    let message = snake(&method.ty);
+    [
+        message.clone(),
+        format!("apply_{message}"),
+        format!("project_{message}"),
+        format!("on_refused_{message}"),
+        format!("{message}_refused"),
+    ]
+    .contains(&method.name)
 }
 
 /// A class of a Python module: its name, its methods and where its body
@@ -71,9 +83,11 @@ struct Class {
     end: usize,
 }
 
-/// One method: the first parameter after `self`, its annotated type, and
-/// its text (from its `def` to the end of its body, newline included).
+/// One method: its name, the first parameter after `self`, its annotated
+/// type, and its text (from its `def` to the end of its body, newline
+/// included).
 struct PyMethod {
+    name: String,
     param: String,
     ty: String,
     span: (usize, usize),
@@ -138,6 +152,7 @@ fn class(source: &str, name: Option<&str>) -> Option<Class> {
             continue;
         };
         methods.push(PyMethod {
+            name: def_name(&text),
             param,
             ty,
             span: (lines[i].0, lines[stop].0 + lines[stop].1.len()),
@@ -148,6 +163,16 @@ fn class(source: &str, name: Option<&str>) -> Option<Class> {
         methods,
         end,
     })
+}
+
+/// The name a `def` (or `async def`) defines.
+fn def_name(def: &str) -> String {
+    let rest = def.trim_start();
+    let rest = rest.strip_prefix("async ").unwrap_or(rest);
+    let rest = rest.strip_prefix("def ").unwrap_or(rest);
+    rest.chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect()
 }
 
 /// The first parameter after `self` of a `def` but the state or the
@@ -233,7 +258,7 @@ fn split_top(text: &str, at: char) -> Option<(&str, &str)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{first_param, params, split_top};
+    use super::{def_name, first_param, params, split_top};
 
     fn trimmed(def: &str) -> Option<Vec<String>> {
         params(def).map(|parts| parts.iter().map(|p| p.trim().to_string()).collect())
@@ -278,6 +303,13 @@ mod tests {
         assert_eq!(split_top("x = f(a=1)", '='), Some(("x ", " f(a=1)")));
         assert_eq!(split_top("f(a: b)[c: d]", ':'), None);
         assert_eq!(split_top("(a)[b]{c}: d", ':'), Some(("(a)[b]{c}", " d")));
+    }
+
+    #[test]
+    fn a_defs_name_is_read_past_async_and_its_indent() {
+        assert_eq!(def_name("    def apply_x(self, state: S):"), "apply_x");
+        assert_eq!(def_name("    async def project_y(self):"), "project_y");
+        assert_eq!(def_name("def z2_w(self)"), "z2_w");
     }
 
     #[test]

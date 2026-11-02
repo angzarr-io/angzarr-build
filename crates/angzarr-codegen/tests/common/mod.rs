@@ -56,6 +56,22 @@ pub fn text(tokens: impl ToTokens) -> String {
 }
 
 /// The inherent impl of `ty` in `file`.
+/// The adapters' source as a file of their module's items: the generated
+/// file is the module `adapters`, carrying its allowances.
+#[allow(dead_code)]
+pub fn parse_adapters(source: &str) -> syn::File {
+    let file = syn::parse_file(source).expect("the adapters parse");
+    let content = file.items.iter().find_map(|i| match i {
+        syn::Item::Mod(m) if m.ident == "adapters" => {
+            m.content.as_ref().map(|(_, items)| items.clone())
+        }
+        _ => None,
+    });
+    let mut file = syn::parse_file("").expect("an empty file parses");
+    file.items = content.expect("the adapters module");
+    file
+}
+
 pub fn inherent_impl<'a>(file: &'a syn::File, ty: &str) -> &'a syn::ItemImpl {
     file.items
         .iter()

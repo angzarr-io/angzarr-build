@@ -31,6 +31,7 @@ component-name = { $component }'s name "{ $name }" is not lower-case letters, di
 cardinality-without-emits = { $message } declares no emits and the emits cardinality { $cardinality }; only MANY is accepted without emits
 emits-tuple = { $message } emits { $count } types as one tuple, more than the markup's four; declare it MANY
 refusal-choice-name = { $message } is named { $name }, which the generated domain layer gives the refusals of { $command }; rename it
+interface-name = { $message } is named { $name }, which the generated domain layer gives { $component }'s interface or its facts; rename it, or name the component (its component option's name)
 input-mismatch = { $path } takes { $message } as { $found }, but the proto declares it a { $expected }
 python-no-domain = the protos declare no component of the domain, or named, { $domain }
 app-config = the host config does not read as one: { $cause }

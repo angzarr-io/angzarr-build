@@ -224,6 +224,8 @@ pub(crate) struct Package {
     /// Domain types, in the order they were reached.
     pub messages: Vec<MessageDescriptor>,
     pub enums: Vec<EnumDescriptor>,
+    /// Each component's interface the package's layer declares, as source.
+    pub interfaces: Vec<String>,
 }
 
 /// The markup domain layer's packages by name: every type the inputs,

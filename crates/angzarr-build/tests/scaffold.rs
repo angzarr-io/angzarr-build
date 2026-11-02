@@ -1,14 +1,17 @@
 //! The file side of the scaffold and of the generated layer: the scaffold
-//! (each component's interface and implementation) goes into the user's
-//! `src` once and is never overwritten, `Existing::Complete` (`--missing`)
-//! adds only absent methods, and the adapters and `register` go into the
-//! output directory, regenerated every build.
+//! (each component's implementation) goes into the user's `src` once and
+//! is never overwritten, `Existing::Complete` (`--missing`) adds only its
+//! absent required methods, and what it lacks is reported; a generated
+//! path holding a file without the generated marker is refused, never
+//! overwritten; an orphaned generated file under `_gen` is deleted; and the
+//! adapters and `register` go into the output directory, regenerated every
+//! build.
 
 use std::path::Path;
 
 use angzarr_build::{
-    BuildError, BuildWarning, Existing, Scaffolded, Translate, adapters_from, adapters_into,
-    markup_domain_into, register_into, scaffold_into,
+    BuildError, Existing, Notes, Scaffolded, Translate, adapters_into, markup_domain_into,
+    register_into, scaffold_into,
 };
 use angzarr_codegen::{CodegenError, UseError};
 
@@ -22,12 +25,8 @@ const BUYIN: &[&str] = &[
     "buyin/v1/policies.proto",
 ];
 const FILES: &[&str] = &[
-    "buy_in.rs",
     "buy_in_impl.rs",
-    "buy_in_wallet.rs",
     "buy_in_wallet_impl.rs",
-    "wallet.rs",
-    "wallet_buy_in.rs",
     "wallet_buy_in_impl.rs",
     "wallet_impl.rs",
 ];
@@ -45,7 +44,7 @@ fn empty_dir() -> TestDir {
 }
 
 fn scaffold(src: &Path, existing: Existing) -> Vec<Scaffolded> {
-    let mut done = scaffold_into(src, BUYIN, &[&fixtures()], &[], existing).unwrap();
+    let mut done = scaffold_into(src, BUYIN, &[&fixtures()], &[], &[], existing).unwrap();
     done.sort_by_key(|d| format!("{d:?}"));
     done
 }
@@ -65,63 +64,90 @@ fn test_scaffold_into_writes_each_absent_file() {
 }
 
 #[test]
-fn test_scaffold_into_never_overwrites_a_users_file() {
+fn test_scaffold_into_never_overwrites_a_users_file_and_reports_what_it_lacks() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
-    let mine = "//! The user's wallet, nothing like the scaffold.\n";
-    std::fs::write(src.join("wallet.rs"), mine).unwrap();
+    let mine = "//! The user's wallet.\n\nimpl Wallet for WalletImpl {}\n";
+    std::fs::write(src.join("wallet_impl.rs"), mine).unwrap();
     let done = scaffold(&src, Existing::Keep);
-    assert!(
-        done.contains(&Scaffolded::Kept(src.join("wallet.rs"))),
-        "{done:?}"
-    );
+    let lacks = done
+        .iter()
+        .find_map(|d| match d {
+            Scaffolded::Kept { path, notes } if path.ends_with("wallet_impl.rs") => {
+                Some(notes.lacks.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{done:?}"));
+    assert_eq!(lacks, ["deposit", "hold", "apply_deposited", "apply_held"]);
     assert_eq!(
-        std::fs::read_to_string(src.join("wallet.rs")).unwrap(),
+        std::fs::read_to_string(src.join("wallet_impl.rs")).unwrap(),
         mine
     );
 }
 
+/// The interface an earlier scaffold wrote beside the implementation is
+/// the domain layer's now: reported where it is, never deleted.
 #[test]
-fn test_scaffold_into_with_complete_adds_only_absent_stubs() {
+fn test_scaffold_into_reports_an_earlier_interface_file_as_obsolete() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
-    let path = src.join("buy_in_wallet.rs");
+    let old = "//! The wallet's interface, as an earlier scaffold wrote it.\n";
+    std::fs::write(src.join("wallet.rs"), old).unwrap();
+    let done = scaffold(&src, Existing::Keep);
+    assert!(
+        done.contains(&Scaffolded::Obsolete(src.join("wallet.rs"))),
+        "{done:?}"
+    );
+    assert_eq!(std::fs::read_to_string(src.join("wallet.rs")).unwrap(), old);
+}
+
+/// `--missing` adds no optional callback; the switch (`--translate`) adds
+/// the one it selects to an existing implementation.
+#[test]
+fn test_scaffold_into_adds_a_selected_refused_method_to_an_existing_file() {
+    let src = empty_dir();
+    scaffold(&src, Existing::Keep);
+    let path = src.join("buy_in_wallet_impl.rs");
     let before = std::fs::read_to_string(&path).unwrap();
-    // The switch now translates Hold for BuyInWallet: its refused method is
-    // the one method absent, from the interface and the implementation.
+    assert!(
+        scaffold(&src, Existing::Complete)
+            .iter()
+            .all(|d| matches!(d, Scaffolded::Kept { .. }))
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
     let translate = [Translate {
         policy: "buyin.v1.BuyInWalletPolicy".to_string(),
         command: "buyin.v1.Hold".to_string(),
         fact: "buyin.v1.HoldLost".to_string(),
     }];
-    let mut done =
-        scaffold_into(&src, BUYIN, &[&fixtures()], &translate, Existing::Complete).unwrap();
-    done.sort_by_key(|d| format!("{d:?}"));
-    let mut expected: Vec<Scaffolded> = FILES
-        .iter()
-        .map(|f| match *f {
-            "buy_in_wallet.rs" | "buy_in_wallet_impl.rs" => Scaffolded::Completed(src.join(f)),
-            _ => Scaffolded::Kept(src.join(f)),
-        })
-        .collect();
-    expected.sort_by_key(|d| format!("{d:?}"));
-    assert_eq!(done, expected);
+    let done = scaffold_into(&src, BUYIN, &[&fixtures()], &translate, &[], Existing::Keep).unwrap();
+    assert!(
+        done.contains(&Scaffolded::Completed {
+            path: path.clone(),
+            notes: Notes {
+                optional: vec!["deposit_refused".to_string()],
+                ..Notes::default()
+            },
+        }),
+        "{done:?}"
+    );
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("fn hold_refused("), "{after}");
-    assert!(after.len() > before.len());
+    assert!(after.starts_with(&before[..before.rfind('}').unwrap()]));
 }
 
 #[test]
 fn test_scaffold_into_with_complete_refuses_an_input_the_proto_contradicts() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
-    let path = src.join("buy_in.rs");
+    let path = src.join("buy_in_impl.rs");
     // The user took HoldLost, a fact, as a command.
     let mine = std::fs::read_to_string(&path)
         .unwrap()
-        .replace("fact: &HoldLost", "cmd: &HoldLost");
+        .replace("_fact: &HoldLost", "_cmd: &HoldLost");
     std::fs::write(&path, &mine).unwrap();
-    let error = scaffold_into(&src, BUYIN, &[&fixtures()], &[], Existing::Complete)
+    let error = scaffold_into(&src, BUYIN, &[&fixtures()], &[], &[], Existing::Complete)
         .expect_err("a mismatched marker");
     assert!(
         matches!(
@@ -181,6 +207,7 @@ fn test_adapters_into_writes_the_generated_adapters() {
         source.contains("pub struct Wallet(pub crate::wallet_impl::WalletImpl);"),
         "{source}"
     );
+    assert!(source.contains("pub mod adapters {"), "{source}");
 }
 
 #[test]
@@ -202,7 +229,7 @@ fn test_scaffold_into_rescaffolded_leaves_every_users_file_byte_identical() {
         .collect();
     let done = scaffold(&src, Existing::Complete);
     assert!(
-        done.iter().all(|d| matches!(d, Scaffolded::Kept(_))),
+        done.iter().all(|d| matches!(d, Scaffolded::Kept { .. })),
         "{done:?}"
     );
     let after: Vec<String> = FILES
@@ -212,24 +239,119 @@ fn test_scaffold_into_rescaffolded_leaves_every_users_file_byte_identical() {
     assert_eq!(before, after);
 }
 
-/// A policy's interface the adapters read is not there: a warning naming
-/// it, not silence. With the interfaces in place, none.
-#[test]
-fn test_adapters_from_warns_of_a_policys_interface_that_is_not_there() {
-    let out = empty_dir();
-    let src = empty_dir();
-    let warnings = adapters_from(&out, &src, BUYIN, &[&fixtures()], &[]).unwrap();
-    let missing = |file: &str| BuildWarning::InterfaceMissing {
-        path: src.join(file).display().to_string(),
+// ------------------------------------------------------------- generated
+
+/// The spec's protos: the angzarr-project submodule's `proto`.
+fn spec() -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../angzarr-project/proto")
+        .display()
+        .to_string()
+}
+
+/// The player's Python project scaffolded into `root` (no buf, no lock).
+fn player(root: &Path) -> Result<Vec<Scaffolded>, BuildError> {
+    let app = angzarr_build::PythonApp {
+        domain: "player".to_string(),
+        protos: angzarr_build::ProtoInput::Directory(spec()),
+        rules_version: "0.1.0".to_string(),
     };
+    angzarr_build::scaffold_python_into(
+        root,
+        &["io/angzarr/examples/v1/player.proto"],
+        &[&spec()],
+        &app,
+        &[],
+        &[],
+        Existing::Keep,
+    )
+}
+
+const GEN: &str = "src/angzarr_player/_gen";
+
+/// A generated path holding a file without the generated marker (a hand
+/// edit, or a hand-written file in its place) is refused, never
+/// overwritten, and the run writes nothing (item S, H1).
+#[test]
+fn test_a_generated_file_without_the_marker_is_refused_and_nothing_written() {
+    let root = empty_dir();
+    player(&root).unwrap();
+    let domain = root.join(GEN).join("domain.py");
+    let mine = "\"\"\"My own domain, written in place of the generated one.\"\"\"\n";
+    std::fs::write(&domain, mine).unwrap();
+    let logic = root.join(GEN).join("logic.py");
+    std::fs::remove_file(&logic).unwrap();
+    let error = player(&root).expect_err("an unmarked generated file");
     assert_eq!(
-        warnings,
-        [missing("buy_in_wallet.rs"), missing("wallet_buy_in.rs")]
+        error,
+        BuildError::GeneratedUnmarked {
+            path: domain.display().to_string()
+        }
     );
-    assert!(out.join("angzarr-adapters.rs").exists());
-    scaffold(&src, Existing::Keep);
-    assert_eq!(
-        adapters_from(&out, &src, BUYIN, &[&fixtures()], &[]).unwrap(),
-        []
+    assert!(error.remedy().is_some());
+    assert_eq!(std::fs::read_to_string(&domain).unwrap(), mine);
+    assert!(!logic.exists(), "nothing is written when one is refused");
+}
+
+/// A marked generated file that differs is the CLI's, and rewritten.
+#[test]
+fn test_a_marked_generated_file_is_regenerated() {
+    let root = empty_dir();
+    player(&root).unwrap();
+    let main = root.join(GEN).join("main.py");
+    let fresh = std::fs::read_to_string(&main).unwrap();
+    std::fs::write(&main, format!("{fresh}# edited\n")).unwrap();
+    let done = player(&root).unwrap();
+    assert!(
+        done.contains(&Scaffolded::Regenerated(main.clone())),
+        "{done:?}"
     );
+    assert_eq!(std::fs::read_to_string(&main).unwrap(), fresh);
+}
+
+/// A file at a user's path that carries the generated marker is an earlier
+/// CLI's generated file (`__main__.py` was one), rewritten as the user's;
+/// a user's file without it is never touched.
+#[test]
+fn test_an_earlier_clis_generated_file_at_a_users_path_becomes_the_users() {
+    let root = empty_dir();
+    player(&root).unwrap();
+    let dunder = root.join("src/angzarr_player/__main__.py");
+    let fresh = std::fs::read_to_string(&dunder).unwrap();
+    std::fs::write(
+        &dunder,
+        "# @generated by angzarr-codegen. Do not edit.\nfrom angzarr_player.main import main\n\nmain()\n",
+    )
+    .unwrap();
+    let done = player(&root).unwrap();
+    assert!(
+        done.contains(&Scaffolded::Regenerated(dunder.clone())),
+        "{done:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&dunder).unwrap(), fresh);
+}
+
+/// Under `_gen`, a marked file this run does not write is an orphan and is
+/// deleted; buf's message types (written after) and anything without the
+/// marker are kept (item S Q9).
+#[test]
+fn test_an_orphaned_generated_file_under_gen_is_deleted() {
+    let root = empty_dir();
+    player(&root).unwrap();
+    let v1 = root.join(GEN).join("io/angzarr/examples/v1");
+    let orphan = v1.join("gone_angzarr.py");
+    let marked = std::fs::read_to_string(root.join(GEN).join("__init__.py")).unwrap();
+    std::fs::write(&orphan, &marked).unwrap();
+    let pb2 = v1.join("player_pb2.py");
+    std::fs::write(&pb2, &marked).unwrap();
+    let notes = v1.join("NOTES.txt");
+    std::fs::write(&notes, "mine\n").unwrap();
+    let done = player(&root).unwrap();
+    assert!(
+        done.contains(&Scaffolded::Deleted(orphan.clone())),
+        "{done:?}"
+    );
+    assert!(!orphan.exists());
+    assert!(pb2.exists(), "buf's own is not an orphan");
+    assert!(notes.exists(), "an unmarked file is never deleted");
 }

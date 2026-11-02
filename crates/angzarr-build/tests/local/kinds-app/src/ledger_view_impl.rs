@@ -3,7 +3,6 @@
 //! methods it lacks, each `todo!()`.
 
 use crate::domain::*;
-use crate::ledger_view::LedgerView;
 
 /// The projection the methods update.
 #[derive(Clone, Debug, Default)]

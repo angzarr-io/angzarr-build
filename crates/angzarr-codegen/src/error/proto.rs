@@ -39,6 +39,13 @@ pub enum ProtoError {
         name: String,
         command: String,
     },
+    /// A domain type `message` takes `name`, which the generated domain
+    /// layer gives `component`'s interface or its facts' choice.
+    InterfaceName {
+        message: String,
+        name: String,
+        component: String,
+    },
 }
 
 impl fmt::Display for ProtoError {
@@ -59,6 +66,7 @@ impl Diagnostic for ProtoError {
             ProtoError::EnumZero { .. } => code!("enum-zero"),
             ProtoError::ReservedName { .. } => code!("reserved-name"),
             ProtoError::RefusalChoiceName { .. } => code!("refusal-choice-name"),
+            ProtoError::InterfaceName { .. } => code!("interface-name"),
         }
     }
 
@@ -80,6 +88,11 @@ impl Diagnostic for ProtoError {
                 name,
                 command,
             } => texts![message, name, command],
+            E::InterfaceName {
+                message,
+                name,
+                component,
+            } => texts![message, name, component],
         }
     }
 }
@@ -116,6 +129,11 @@ pub(super) fn samples() -> Vec<ProtoError> {
             message: text("message"),
             name: text("name"),
             command: text("command"),
+        },
+        E::InterfaceName {
+            message: text("message"),
+            name: text("name"),
+            component: text("component"),
         },
     ]
 }

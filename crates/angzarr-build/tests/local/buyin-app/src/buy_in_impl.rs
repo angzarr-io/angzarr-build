@@ -1,6 +1,5 @@
 //! BuyInImpl: the scaffold of `BuyIn`'s implementation, bodies written.
 
-use crate::buy_in::BuyIn;
 use crate::domain::*;
 
 /// The state the `apply_` methods fold.

@@ -1,23 +1,27 @@
 //! What a project's protos give an angzarr-embedded application besides the
-//! domain layer, split so the user's logic never names the runtime:
+//! domain types, split so the user never edits a generated file and a run
+//! never rewrites the user's (decision item S):
 //!
 //! - the user's, written once into the source tree by `angzarr scaffold
-//!   rust` and completed with `--missing`: per component an interface (a
-//!   trait over the domain types) and its implementation (every body
-//!   `todo!()`), neither importing anything of angzarr-embedded directly:
-//!   their context types, `Failed`, `BusinessStatus`, `RetryableStatus`
-//!   and `Bug` are the generated domain layer's re-exports and its own
+//!   rust`: per component its implementation (`<component>_impl.rs`, every
+//!   body `todo!()`) of the component's interface, importing nothing of
+//!   angzarr-embedded directly: their context types, `Failed`,
+//!   `BusinessStatus`, `RetryableStatus`, `Compensation` and `Bug` are the
+//!   generated domain layer's re-exports and its own
 //!   (`Failed::retryable_bug(status, &bug)` and `Failed::immediate(&bug)`
 //!   included);
-//! - the CLI's, regenerated into `OUT_DIR` every build: the adapters
-//!   ([`adapters`]), each component's angzarr-embedded markup delegating to
-//!   its interface, and [`register`], which registers every adapter with
-//!   angzarr-embedded's `Registry`, so an application calls one function.
+//! - the CLI's, regenerated into `OUT_DIR` every build: each component's
+//!   interface, a trait over the domain types, in the domain layer
+//!   ([`markup_domain`]), so an implementation in another crate implements
+//!   it; the adapters ([`adapters`]), each component's angzarr-embedded
+//!   markup delegating to its interface; and [`register`], which registers
+//!   every adapter with angzarr-embedded's `Registry`, so an application
+//!   calls one function.
 //!
-//! A change to the runtime or to the scaffold touches only the generated
-//! layer. Pure, as the rest of the crate: descriptors (and, for
-//! [`complete`], the user's current file) in, source out. Reading and
-//! writing files is angzarr-build's.
+//! A change to the protos reaches the user as a compile error on their
+//! implementation, never inside the generated layer. Pure, as the rest of
+//! the crate: descriptors (and, for [`complete`], the user's current file)
+//! in, source out. Reading and writing files is angzarr-build's.
 
 use proc_macro2::TokenStream;
 use prost_reflect::MessageDescriptor;
@@ -37,24 +41,93 @@ pub struct ScaffoldFile {
     /// Where it goes, relative to the crate's `src` (`wallet.rs`) or the
     /// project's root.
     pub path: String,
+    /// The file as it is created: a user's implementation holds a stub of
+    /// every required method and of the optional ones it is created with.
     pub source: String,
     pub owner: Owner,
+    /// A user's implementation's optional methods, by name: the refusal
+    /// callbacks its interface offers and never requires. Every other
+    /// method of `source` is required.
+    pub optional: Vec<String>,
+    /// The optional methods selected for it (`--translate`,
+    /// `--on-refused`), by name: each is in `source`, and is added to an
+    /// existing file that lacks it.
+    pub selected: Vec<String>,
+}
+
+impl ScaffoldFile {
+    /// A file with no optional methods.
+    pub(crate) fn new(component: String, path: String, source: String, owner: Owner) -> Self {
+        ScaffoldFile {
+            component,
+            path,
+            source,
+            owner,
+            optional: Vec::new(),
+            selected: Vec::new(),
+        }
+    }
 }
 
 /// Who owns a scaffolded file.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Owner {
-    /// The user's: written once when absent, then only ever completed with
-    /// `--missing`.
+    /// The user's: written once when absent; an existing one is only ever
+    /// completed with the stubs it lacks.
     User,
-    /// The CLI's: rewritten on every run, never edited by hand.
+    /// The CLI's: rewritten on every run, opening with the generated
+    /// marker ([`crate::GENERATED_MARKER`]), never edited by hand.
     Generated,
+    /// A file an earlier scaffold wrote and this one no longer does (an
+    /// interface now generated elsewhere): reported where it is, never
+    /// written or deleted.
+    Obsolete,
+    /// A generated file another tool writes in the same run (buf's message
+    /// types): never written here, and never swept as an orphan.
+    External,
+}
+
+/// A user's existing file against its fresh scaffold ([`complete`]): the
+/// file with what is to be added, and what is reported.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct Completion {
+    /// The file with the stubs added, when any is: `--missing`'s required
+    /// methods, and the selected optional ones.
+    pub completed: Option<String>,
+    pub notes: Notes,
+}
+
+/// What a user's existing file lacks, and has beyond, against its fresh
+/// scaffold, each method by name: reported, never acted on.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct Notes {
+    /// Required methods it lacks and that are not added.
+    pub lacks: Vec<String>,
+    /// Methods for a message the protos no longer declare there.
+    pub obsolete: Vec<String>,
+    /// Optional methods its interface offers that it does not define.
+    pub optional: Vec<String>,
+    /// A manifest's pins that are not this CLI's.
+    pub drift: Vec<PinDrift>,
+}
+
+/// A dependency a user's manifest pins at another revision than this CLI's
+/// scaffold would: reported, the manifest never edited (item S Q8).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct PinDrift {
+    /// The dependency, as the manifest names it (`angzarr-client`).
+    pub dependency: String,
+    /// The revision the manifest pins.
+    pub pinned: String,
+    /// The revision this CLI pins.
+    pub cli: String,
 }
 
 /// angzarr-cli's refusal switch (backlog OB-7), set to translate for one
-/// command of one policy: the policy's interface gets a `<command>_refused`
-/// method returning `fact`, a fact of its source. Every command without one
-/// is passed through, the default.
+/// command of one policy: the policy's implementation is written with its
+/// `<command>_refused` callback, translating the refusal into `fact`, a
+/// fact of its source. Every command it does not translate is passed
+/// through, the default.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Translate {
     /// The policy's anchor message, e.g. `buyin.v1.BuyInWalletPolicy`.
@@ -65,9 +138,13 @@ pub struct Translate {
     pub fact: String,
 }
 
-/// The scaffold of every component declared in `files`, two files each:
-/// its interface (`<component>.rs`, a trait) and its implementation
-/// (`<component>_impl.rs`), the user's.
+/// The scaffold of every component declared in `files`: its
+/// implementation (`<component>_impl.rs`), the user's, of its generated
+/// interface; and the interface an earlier scaffold wrote beside it
+/// (`<component>.rs`), now the domain layer's, [`Owner::Obsolete`]. A
+/// policy's translating callbacks are optional, each written when the
+/// refusal switch translates its command (`translate`) or `on_refused`
+/// names it (by full name).
 ///
 /// A policy is scaffolded when an aggregate or a process manager of the
 /// descriptor set owns each of its `input_domain` and `output_domain`.
@@ -75,6 +152,7 @@ pub fn scaffold(
     descriptor_set: &[u8],
     files: &[&str],
     translate: &[Translate],
+    on_refused: &[String],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let pool = checked_pool(descriptor_set, translate)?;
@@ -85,20 +163,40 @@ pub fn scaffold(
         }
         let stem = snake(&component.name);
         let anchor = component.anchor.full_name().to_string();
-        let selected: Vec<&Translate> = selected(translate, component).collect();
-        let methods = interface_methods(component, &pool, &selected)?;
-        out.push(ScaffoldFile {
-            component: anchor.clone(),
-            path: format!("{stem}.rs"),
-            source: interface_source(component, &methods),
-            owner: Owner::User,
-        });
-        out.push(ScaffoldFile {
-            component: anchor,
-            path: format!("{stem}_impl.rs"),
-            source: impl_source(component, &methods),
-            owner: Owner::User,
-        });
+        let methods = interface_methods(component, &pool)?;
+        let chosen = |m: &&Method| {
+            m.refused.as_deref().is_some_and(|refused| {
+                on_refused.iter().any(|c| c == refused)
+                    || selected(translate, component).any(|t| t.command == refused)
+            })
+        };
+        let stubs: Vec<&Method> = methods
+            .iter()
+            .filter(|m| m.refused.is_none() || chosen(m))
+            .collect();
+        out.push(ScaffoldFile::new(
+            anchor.clone(),
+            format!("{stem}.rs"),
+            String::new(),
+            Owner::Obsolete,
+        ));
+        let mut implementation = ScaffoldFile::new(
+            anchor,
+            format!("{stem}_impl.rs"),
+            impl_source(component, &stubs),
+            Owner::User,
+        );
+        implementation.optional = methods
+            .iter()
+            .filter(|m| m.refused.is_some())
+            .map(|m| m.name.clone())
+            .collect();
+        implementation.selected = methods
+            .iter()
+            .filter(chosen)
+            .map(|m| m.name.clone())
+            .collect();
+        out.push(implementation);
     }
     Ok(crate::headed_files(out))
 }
@@ -170,6 +268,10 @@ struct Method {
     /// (`impl Future<Output = ..> + Send`), its implementation's is an
     /// `async fn`.
     asynchronous: bool,
+    /// The refused command (its full name), for an optional refusal
+    /// callback, which the interface gives a default declining it; `None`
+    /// for a required method.
+    refused: Option<String>,
 }
 
 impl Method {
@@ -248,15 +350,14 @@ fn param(name: &str, ty: impl Into<String>) -> (String, String) {
     (name.to_string(), ty.into())
 }
 
-/// A component's interface, by kind.
+/// A component's interface, by kind, required methods first.
 fn interface_methods(
     component: &Component,
     pool: &[Component],
-    translate: &[&Translate],
 ) -> Result<Vec<Method>, CodegenError> {
     match component.kind {
         ComponentKind::Projector => Ok(projector_methods(component)),
-        ComponentKind::Policy => policy_methods(component, pool, translate),
+        ComponentKind::Policy => policy_methods(component, pool),
         ComponentKind::Aggregate | ComponentKind::ProcessManager => Ok(domain_methods(component)),
     }
 }
@@ -272,17 +373,18 @@ fn projector_methods(component: &Component) -> Vec<Method> {
         ],
         returns: Some("Result<(), Bug>".to_string()),
         asynchronous: true,
+        refused: None,
     });
     projections.collect()
 }
 
-/// A policy's interface: a reaction per event, and a translating callback
-/// per selected refusal of a command it sends.
-fn policy_methods(
-    component: &Component,
-    pool: &[Component],
-    translate: &[&Translate],
-) -> Result<Vec<Method>, CodegenError> {
+/// A policy's interface: a reaction per event, and, when its source takes
+/// facts, an optional translating callback per command it sends
+/// (`<command>_refused`: the command, its typed refusal if it declares one
+/// and the refused command's context, returning one of the source's facts,
+/// [`fact_name`], or `None`, the refusal passed through: the interface's
+/// default).
+fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Method>, CodegenError> {
     let target = component.target(pool)?;
     let reactions = component.events.iter().map(|event| Method {
         name: method(event.name()),
@@ -297,23 +399,32 @@ fn policy_methods(
             output_name(target)
         )),
         asynchronous: false,
+        refused: None,
     });
-    let callbacks = translate.iter().map(|selection| {
-        let short = |full: &str| full.rsplit('.').next().unwrap_or(full).to_string();
-        let (command, fact) = (short(&selection.command), short(&selection.fact));
-        let refusal = target.input(&selection.command).and_then(refusal_type);
-        let mut params = vec![param("command", format!("&{command}"))];
-        params.extend(refusal.map(|r| param("refusal", format!("Option<{r}>"))));
-        params.push(param("ctx", "&CommandContext"));
-        Method {
-            name: format!("{}_refused", snake(&command)),
-            receiver: "&self",
-            params,
-            returns: Some(format!("Result<{fact}, Bug>")),
-            asynchronous: false,
-        }
+    let source = owner(pool, &component.input_domain).filter(|s| s.inputs.iter().any(|i| i.fact));
+    let callbacks = source.into_iter().flat_map(|source| {
+        target.inputs.iter().filter(|i| !i.fact).map(move |input| {
+            let command = input.message.name();
+            let mut params = vec![param("command", format!("&{command}"))];
+            params.extend(refusal_type(input).map(|r| param("refusal", format!("Option<{r}>"))));
+            params.push(param("ctx", "&CommandContext"));
+            Method {
+                name: format!("{}_refused", snake(command)),
+                receiver: "&self",
+                params,
+                returns: Some(format!("Result<Option<{}>, Bug>", fact_name(source))),
+                asynchronous: false,
+                refused: Some(input.message.full_name().to_string()),
+            }
+        })
     });
     Ok(reactions.chain(callbacks).collect())
+}
+
+/// The domain layer's choice of a domain's facts (`<Domain>Fact`): what a
+/// translating callback answers its source with.
+pub(crate) fn fact_name(domain: &Component) -> String {
+    format!("{}Fact", domain.name)
 }
 
 /// An aggregate's or a process manager's interface: a decision per command,
@@ -334,6 +445,7 @@ fn domain_methods(component: &Component) -> Vec<Method> {
             params: vec![param(arg, format!("&{ty}")), param("ctx", "&Context")],
             returns: Some(returns),
             asynchronous: false,
+            refused: None,
         }
     });
     let folds = component.events.iter().map(|event| Method {
@@ -342,68 +454,78 @@ fn domain_methods(component: &Component) -> Vec<Method> {
         params: vec![param("event", format!("&{}", event.name()))],
         returns: None,
         asynchronous: false,
+        refused: None,
     });
     decisions.chain(folds).collect()
 }
 
+/// A component's interface, as the domain layer declares it: a trait over
+/// the domain types, each optional refusal callback with its default
+/// (declining: the refusal passed through).
 fn interface_source(component: &Component, methods: &[Method]) -> String {
     let name = &component.name;
     let anchor = component.anchor.full_name();
-    let mut out = if component.kind == ComponentKind::Projector {
-        format!(
-            "//! {name}: the interface of `{anchor}`, written once by\n\
-             //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
-             //! methods it lacks. One async method per projected event, of any of its\n\
-             //! source domains (`ctx.stream()` says which), returning its `Bug` when\n\
-             //! the projection fails. The generated adapter\n\
-             //! (`crate::adapters::{name}`) carries the markup.\n\n"
-        )
-    } else if component.kind == ComponentKind::Policy {
-        format!(
-            "//! {name}: the interface of `{anchor}`, written once by\n\
-             //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
-             //! methods it lacks. Each reaction takes the source stream's root, the\n\
-             //! event and its context, and returns what it sends its target, each with\n\
-             //! its target root: a command, or a fact the target declares, sent in the\n\
-             //! arm the target declares by the generated adapter\n\
-             //! (`crate::adapters::{name}`, which carries the markup). Or its `Bug`: a\n\
-             //! defect, since a policy reacts to events the application's own domains\n\
-             //! recorded.\n\n"
-        )
-    } else {
-        format!(
-            "//! {name}: the interface of `{anchor}`, written once by\n\
-             //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
-             //! methods it lacks. It names only `crate::domain`'s types, its handlers'\n\
-             //! `Context` among them; the generated adapter (`crate::adapters::{name}`)\n\
-             //! carries the markup and calls it.\n\n"
-        )
+    let what = match component.kind {
+        ComponentKind::Projector => {
+            "One async method per projected event, of any of its source domains \
+             (`ctx.stream()` says which), returning its `Bug` when the projection fails."
+        }
+        ComponentKind::Policy => {
+            "Each reaction takes the source stream's root, the event and its context, \
+             and returns what it sends its target, each with its target root: a command, \
+             or a fact the target declares, sent in the arm the target declares. Or its \
+             `Bug`: a defect, since a policy reacts to events the application's own \
+             domains recorded. Each `<command>_refused` is optional: its default declines, \
+             passing the refusal through to the source; an implementation translating it \
+             answers one of the source's facts."
+        }
+        ComponentKind::Aggregate | ComponentKind::ProcessManager => {
+            "Each handler takes its input and its `Context`; each `apply_` folds an event."
+        }
     };
-    out.push_str("use crate::domain::*;\n\n");
+    let head = format!(
+        "{name}: the interface of `{anchor}`, generated from its protos: its \
+         implementation, `{name}Impl`, is yours (`angzarr scaffold rust` writes it \
+         once), and the generated adapter (`adapters::{name}`) carries the markup and \
+         calls it."
+    );
+    let mut out = String::new();
+    for (i, paragraph) in [head.as_str(), what].iter().enumerate() {
+        if i > 0 {
+            out.push_str("///\n");
+        }
+        for line in crate::common::wrap(paragraph, 76).lines() {
+            out.push_str(&format!("/// {line}\n"));
+        }
+    }
     out.push_str(&format!("pub trait {name} {{\n"));
     let body: Vec<String> = methods
         .iter()
-        .map(|m| format!("{}\n", m.signature("", ";", false)))
+        .map(|m| match &m.refused {
+            None => format!("{}\n", m.signature("", ";", false)),
+            Some(_) => {
+                let names: Vec<&str> = m.params.iter().map(|(p, _)| p.as_str()).collect();
+                format!(
+                    "{}\n        let _ = ({});\n        Ok(None)\n    }}\n",
+                    m.signature("", " {", false),
+                    names.join(", ")
+                )
+            }
+        })
         .collect();
     out.push_str(&body.join("\n"));
     out.push_str("}\n");
     out
 }
 
-fn impl_source(component: &Component, methods: &[Method]) -> String {
+fn impl_source(component: &Component, methods: &[&Method]) -> String {
     let name = &component.name;
     let mut out = format!(
-        "//! {name}Impl: the implementation of `{name}`, written once by\n\
-         //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
-         //! methods it lacks, each `todo!()`.\n\n"
+        "//! {name}Impl: the implementation of `{name}`, the generated domain layer's\n\
+         //! interface, written once by `angzarr scaffold rust` and yours from then on:\n\
+         //! `--missing` adds the required methods it lacks, each `todo!()`.\n\n"
     );
-    let mut uses = [
-        "use crate::domain::*;".to_string(),
-        format!("use crate::{}::{name};", snake(name)),
-    ];
-    uses.sort();
-    out.push_str(&uses.join("\n"));
-    out.push_str("\n\n");
+    out.push_str("use crate::domain::*;\n\n");
     if component.kind == ComponentKind::Policy {
         out.push_str(&format!(
             "#[derive(Clone, Debug, Default)]\npub struct {name}Impl;\n\n"
@@ -446,21 +568,56 @@ pub(crate) fn file(tokens: TokenStream) -> String {
 
 // ------------------------------------------------------------- --missing
 
-/// `existing`, the user's file for `fresh`'s component, with the methods
-/// of `fresh` that it lacks inserted into its trait (an interface) or its
-/// trait impl (an implementation), and nothing else changed; `None` when it
-/// lacks none. A method is present when the user's has one taking the same
-/// message; one taking an input as `cmd` where the proto declares a fact
-/// (`fact`), or the reverse, is refused, the file left as it is.
+/// What [`complete`] does with a user's file that exists.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Existing {
+    /// Leave its required methods to the user, reporting the ones it lacks:
+    /// the file is the user's.
+    Keep,
+    /// `--missing`: add the required methods it lacks, changing nothing
+    /// else.
+    Complete,
+}
+
+/// One method of a scaffold or of the user's file: its name, the message it
+/// takes first and the parameter it takes it as.
+pub(crate) struct Found {
+    pub name: String,
+    pub ty: String,
+    pub param: String,
+}
+
+/// `existing`, the user's file for `fresh`'s component, against `fresh`: the
+/// required methods it lacks (added with `Existing::Complete`, else
+/// reported), the selected optional methods it lacks (added), the optional
+/// ones it does not define and the obsolete ones it has (reported), and
+/// nothing else changed. A method is present when the user's has one taking
+/// the same message; one taking an input as `cmd` where the proto declares
+/// a fact (`fact`), or the reverse, is refused, the file left as it is. A
+/// file with nothing to complete (a manifest) is kept as it is.
 ///
-/// The methods are inserted in one place, before the closing brace; one
-/// needing a type the file does not import yet compiles once the user adds
-/// the import.
-pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, CodegenError> {
-    // A Python project's files (and its pyproject.toml, which has no stubs
-    // to complete).
+/// The methods are inserted in one place, at the end of the trait impl or
+/// class; one needing a type the file does not import yet works once the
+/// user adds the import.
+pub fn complete(
+    fresh: &ScaffoldFile,
+    existing: &str,
+    mode: Existing,
+) -> Result<Completion, CodegenError> {
+    if fresh.path.ends_with(".py") {
+        return Ok(crate::python::complete(fresh, existing, mode)?);
+    }
+    if fresh.path.ends_with(".toml") {
+        return Ok(Completion {
+            completed: None,
+            notes: Notes {
+                drift: pin_drift(&fresh.source, existing),
+                ..Notes::default()
+            },
+        });
+    }
     if !fresh.path.ends_with(".rs") {
-        return Ok(crate::python::complete(fresh, existing)?);
+        return Ok(Completion::default());
     }
     let not_found = || UseError::ScaffoldImplNotFound {
         path: fresh.path.clone(),
@@ -469,42 +626,35 @@ pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, 
     let fresh_file = syn::parse_file(&fresh.source).expect("a scaffold parses");
     // A file with neither has nothing to complete.
     let Some(fresh_block) = block(&fresh_file, None) else {
-        return Ok(None);
+        return Ok(Completion::default());
     };
     let user_file = syn::parse_file(existing).map_err(|_| not_found())?;
     let user_block = block(&user_file, Some(&fresh_block)).ok_or_else(not_found)?;
-
-    let package = fresh
-        .component
-        .rsplit_once('.')
-        .map_or("", |(package, _)| package);
-    let mut missing = Vec::new();
-    for method in &fresh_block.methods {
-        match user_block.methods.iter().find(|m| m.ty == method.ty) {
-            Some(found)
-                if is_input(&found.param)
-                    && is_input(&method.param)
-                    && found.param != method.param =>
-            {
-                return Err(UseError::InputMismatch {
-                    path: fresh.path.clone(),
-                    message: format!("{package}.{}", method.ty),
-                    expected: method.param.clone(),
-                    found: found.param.clone(),
-                }
-                .into());
-            }
-            Some(_) => {}
-            None => missing.push(method),
-        }
-    }
-    if missing.is_empty() {
-        return Ok(None);
+    let found = |b: &Block| -> Vec<Found> {
+        b.methods
+            .iter()
+            .map(|m| Found {
+                name: m.name.clone(),
+                ty: m.ty.clone(),
+                param: m.param.clone(),
+            })
+            .collect()
+    };
+    let (adding, mut completion) = judge(
+        fresh,
+        &found(&fresh_block),
+        &found(&user_block),
+        mode,
+        &|_| true,
+    )?;
+    if adding.is_empty() {
+        return Ok(completion);
     }
 
     // The methods as the scaffold lays them out, a blank line before each.
     let mut stubs = String::new();
-    for method in missing {
+    for i in adding {
+        let method = &fresh_block.methods[i];
         let start = line_start(&fresh.source, method.lines.0);
         let end = line_start(&fresh.source, method.lines.1 + 1);
         stubs.push('\n');
@@ -526,7 +676,94 @@ pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, 
     };
     let mut completed = existing.to_string();
     completed.insert_str(at, &stubs);
-    Ok(Some(completed))
+    completion.completed = Some(completed);
+    Ok(completion)
+}
+
+/// The judgement of a user's file against its fresh scaffold, the two read
+/// as [`Found`] methods (`ours` saying which of the user's methods are the
+/// scaffold's kind, a message's handler, and not the user's own helpers):
+/// the indices of `fresh_methods` to add, and the [`Completion`]'s reports.
+/// Refused when the user takes an input as the other kind.
+pub(crate) fn judge(
+    fresh: &ScaffoldFile,
+    fresh_methods: &[Found],
+    user_methods: &[Found],
+    mode: Existing,
+    ours: &dyn Fn(&Found) -> bool,
+) -> Result<(Vec<usize>, Completion), UseError> {
+    let package = fresh
+        .component
+        .rsplit_once('.')
+        .map_or("", |(package, _)| package);
+    let mut adding = Vec::new();
+    let mut completion = Completion::default();
+    for (i, method) in fresh_methods.iter().enumerate() {
+        match user_methods.iter().find(|m| m.ty == method.ty) {
+            Some(found)
+                if is_input(&found.param)
+                    && is_input(&method.param)
+                    && found.param != method.param =>
+            {
+                return Err(UseError::InputMismatch {
+                    path: fresh.path.clone(),
+                    message: format!("{package}.{}", method.ty),
+                    expected: method.param.clone(),
+                    found: found.param.clone(),
+                });
+            }
+            Some(_) => {}
+            None if fresh.selected.contains(&method.name) => adding.push(i),
+            None if fresh.optional.contains(&method.name) => {}
+            None if mode == Existing::Complete => adding.push(i),
+            None => completion.notes.lacks.push(method.name.clone()),
+        }
+    }
+    let defined = |name: &str| user_methods.iter().any(|m| m.name == name);
+    let added = |name: &str| adding.iter().any(|&i| fresh_methods[i].name == name);
+    completion.notes.optional = fresh
+        .optional
+        .iter()
+        .filter(|name| !defined(name) && !added(name))
+        .cloned()
+        .collect();
+    completion.notes.obsolete = user_methods
+        .iter()
+        .filter(|m| ours(m))
+        .filter(|m| !fresh_methods.iter().any(|f| f.ty == m.ty))
+        .filter(|m| !fresh.optional.contains(&m.name))
+        .map(|m| m.name.clone())
+        .collect();
+    Ok((adding, completion))
+}
+
+/// The dependencies `existing`, a user's manifest (TOML), pins at another
+/// revision than `fresh`, the manifest as this CLI would write it: each
+/// `<name> = { .., rev = "<rev>" .. }` line of `fresh` against the line of
+/// the same name in `existing`. A dependency the manifest does not pin by
+/// revision (a path, a branch) is the user's choice, and not drift.
+pub(crate) fn pin_drift(fresh: &str, existing: &str) -> Vec<PinDrift> {
+    let pins = |text: &str| -> Vec<(String, String)> {
+        text.lines()
+            .filter_map(|line| {
+                let (name, value) = line.split_once('=')?;
+                let rev = value.split("rev = \"").nth(1)?.split('"').next()?;
+                Some((name.trim().to_string(), rev.to_string()))
+            })
+            .collect()
+    };
+    let mine = pins(existing);
+    pins(fresh)
+        .into_iter()
+        .filter_map(|(dependency, cli)| {
+            let (_, pinned) = mine.iter().find(|(name, _)| *name == dependency)?;
+            (*pinned != cli).then(|| PinDrift {
+                dependency,
+                pinned: pinned.clone(),
+                cli,
+            })
+        })
+        .collect()
 }
 
 /// The byte offset where 1-based line `line` of `text` starts (the length
@@ -551,11 +788,12 @@ struct Block {
     close: proc_macro2::LineColumn,
 }
 
-/// One method of a [`Block`]: the message it takes (the last segment of
-/// its first parameter's type that is not the source root) and the
-/// parameter it takes it as (a leading `_` dropped), and its first and
+/// One method of a [`Block`]: its name, the message it takes (the last
+/// segment of its first parameter's type that is not the source root) and
+/// the parameter it takes it as (a leading `_` dropped), and its first and
 /// last lines.
 struct BlockMethod {
+    name: String,
     ty: String,
     param: String,
     lines: (usize, usize),
@@ -615,6 +853,7 @@ fn block(file: &syn::File, like: Option<&Block>) -> Option<Block> {
             .filter_map(|(sig, first, last)| {
                 let (param, ty) = first_message(sig)?;
                 Some(BlockMethod {
+                    name: sig.ident.to_string(),
                     ty,
                     param,
                     lines: (first, last),
@@ -687,26 +926,24 @@ fn application(components: &[Component]) -> Vec<&Component> {
         .collect()
 }
 
-/// The generated adapters of every component declared in `files`: each
-/// aggregate's, process manager's, policy's and projector's
-/// angzarr-embedded markup, every handler delegating to the component's
-/// interface on its implementation
-/// (`crate::<component>_impl::<Component>Impl`). What a child process
-/// serves is in `remote`, a domain by its stream domain, a policy or a
-/// projector by its name in the application. A remote domain has no markup
-/// here: it is its command set (`CommandTarget`) and its event set
-/// (`EventSource`), so a policy can name it as its source or target; it is
-/// never registered. A remote policy or projector has nothing here.
-///
-/// `interface` reads the user's interface of a policy (its path relative to
-/// `src`, `buy_in_wallet.rs`): each `<command>_refused` method there is the
-/// refusal switch set to translate that command, and gets its
-/// `#[on_refused]` callback.
+/// The generated adapters of every component declared in `files`, as the
+/// module `adapters` (carrying the allowances generated code needs, so no
+/// include site does): each aggregate's, process manager's, policy's and
+/// projector's angzarr-embedded markup, every handler delegating to the
+/// component's interface (the domain layer's trait, [`markup_domain`]) on
+/// its implementation (`crate::<component>_impl::<Component>Impl`). A
+/// policy's adapter has an `#[on_refused]` callback per command its
+/// interface may translate the refusal of, which the interface's default
+/// declines. What a child process serves is in `remote`, a domain by its
+/// stream domain, a policy or a projector by its name in the application.
+/// A remote domain has no markup here: it is its command set
+/// (`CommandTarget`) and its event set (`EventSource`), so a policy can name
+/// it as its source or target; it is never registered. A remote policy or
+/// projector has nothing here.
 pub fn adapters(
     descriptor_set: &[u8],
     files: &[&str],
     remote: &[&str],
-    interface: &dyn Fn(&str) -> Option<String>,
 ) -> Result<String, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let root = root();
@@ -729,8 +966,9 @@ pub fn adapters(
                 has_policy = true;
                 markup.extend(["Commands", "PolicyContext"]);
                 macros.extend(["on_event", "policy"]);
-                let source = interface(&format!("{}.rs", snake(&component.name)));
-                let refused = source.as_deref().map(refused_methods).unwrap_or_default();
+                let methods = policy_methods(component, &components)?;
+                let refused: Vec<&Method> =
+                    methods.iter().filter(|m| m.refused.is_some()).collect();
                 if !refused.is_empty() {
                     markup.extend(["CommandContext", "Refusal"]);
                     macros.push("on_refused");
@@ -777,34 +1015,40 @@ pub fn adapters(
     } else {
         quote!()
     };
+    let doc = " The adapter layer: each component's angzarr-embedded markup, every \
+               handler delegating to the component's interface (the domain layer's \
+               trait) on its implementation (the user's). A domain's handlers fail \
+               with the generated layer's `Failed`, whose size is not the \
+               application's to choose.";
     let source = file(quote! {
-        #[allow(unused_imports)]
-        use #root::markup::{#(#markup),*};
-        #uuid
-        #macros
-        use crate::domain::*;
-        #items
+        #[doc = #doc]
+        #[allow(clippy::result_large_err)]
+        pub mod adapters {
+            #[allow(unused_imports)]
+            use #root::markup::{#(#markup),*};
+            #uuid
+            #macros
+            use crate::domain::*;
+            #items
+        }
     });
     Ok(crate::headed(
         ".rs",
         format!(
             "// @generated by angzarr-codegen from {}. Do not edit.\n//\n\
-         // The adapter layer: each component's angzarr-embedded markup, every\n\
-         // handler delegating to the component's interface (the user's trait) on its\n\
-         // implementation. Regenerated every build; the interface and implementation\n\
-         // are the user's and are never touched. A domain's handlers fail with the\n\
-         // generated layer's `Failed`, whose size is not the application's to\n\
-         // choose: its impl allows `clippy::result_large_err`.\n\n{source}",
+             // Regenerated every build; the implementations are the user's and are\n\
+             // never touched.\n\n{source}",
             files.join(", ")
         ),
     ))
 }
 
 /// A component's adapter: its type, wrapping the user's implementation,
-/// and the user's interface each of its handlers delegates to.
+/// and the interface each of its handlers delegates to.
 struct Adapter {
     name: syn::Ident,
-    /// The user's trait, `crate::<stem>::<Component>`.
+    /// The component's interface, the domain layer's trait,
+    /// `crate::domain::<Component>`.
     interface: TokenStream,
     /// The user's type it wraps, `crate::<stem>_impl::<Component>Impl`.
     implementation: TokenStream,
@@ -812,12 +1056,11 @@ struct Adapter {
 
 impl Adapter {
     fn of(component: &Component) -> Adapter {
-        let stem = format_ident!("{}", snake(&component.name));
         let stem_impl = format_ident!("{}_impl", snake(&component.name));
         let name = ident(&component.name);
         let name_impl = format_ident!("{}Impl", component.name);
         Adapter {
-            interface: quote!(crate::#stem::#name),
+            interface: quote!(crate::domain::#name),
             implementation: quote!(crate::#stem_impl::#name_impl),
             name,
         }
@@ -915,7 +1158,7 @@ fn domain_markup(kind: ComponentKind) -> &'static str {
 }
 
 /// A domain's adapter: its handler per input and fold per event, each
-/// delegating to the user's interface.
+/// delegating to its interface.
 fn domain_adapter(component: &Component) -> TokenStream {
     let adapter = Adapter::of(component);
     let declaration = adapter.declaration(component);
@@ -1139,83 +1382,13 @@ fn remote_domain(component: &Component) -> TokenStream {
     }
 }
 
-/// A `<command>_refused` method of a policy's interface: its name, the
-/// command it takes, whether it takes the typed refusal (beside the
-/// refused command's context, which it always takes), and the fact its
-/// `Result` answers.
-struct Refused {
-    name: String,
-    command: String,
-    refusal: Option<String>,
-    fact: String,
-}
-
-/// The `<command>_refused` methods of a policy's interface `source`.
-fn refused_methods(source: &str) -> Vec<Refused> {
-    let Ok(file) = syn::parse_file(source) else {
-        return Vec::new();
-    };
-    let last = |ty: &syn::Type| -> Option<String> {
-        let mut ty = ty;
-        if let syn::Type::Reference(r) = ty {
-            ty = &r.elem;
-        }
-        let syn::Type::Path(p) = ty else { return None };
-        let seg = p.path.segments.last()?;
-        if let syn::PathArguments::AngleBracketed(args) = &seg.arguments
-            && let Some(syn::GenericArgument::Type(inner)) = args.args.first()
-            && let syn::Type::Path(inner) = inner
-        {
-            return Some(inner.path.segments.last()?.ident.to_string());
-        }
-        Some(seg.ident.to_string())
-    };
-    let mut out = Vec::new();
-    for item in &file.items {
-        let syn::Item::Trait(t) = item else { continue };
-        for item in &t.items {
-            let syn::TraitItem::Fn(f) = item else {
-                continue;
-            };
-            let name = f.sig.ident.to_string();
-            if !name.ends_with("_refused") {
-                continue;
-            }
-            let typed: Vec<&syn::Type> = f
-                .sig
-                .inputs
-                .iter()
-                .filter_map(|i| match i {
-                    syn::FnArg::Typed(t) => Some(&*t.ty),
-                    _ => None,
-                })
-                .collect();
-            let syn::ReturnType::Type(_, output) = &f.sig.output else {
-                continue;
-            };
-            let (Some(command), Some(fact)) = (typed.first().and_then(|t| last(t)), last(output))
-            else {
-                continue;
-            };
-            out.push(Refused {
-                name,
-                command,
-                refusal: typed
-                    .get(1)
-                    .and_then(|t| last(t))
-                    .filter(|t| t != "CommandContext"),
-                fact,
-            });
-        }
-        break;
-    }
-    out
-}
-
+/// A policy's adapter: its reaction per event, each output in the arm its
+/// target declares, and an `#[on_refused]` callback per `refused` method of
+/// its interface, each delegating to it.
 fn policy_adapter(
     component: &Component,
     components: &[Component],
-    refused: &[Refused],
+    refused: &[&Method],
 ) -> TokenStream {
     let adapter = Adapter::of(component);
     let declaration = adapter.declaration(component);
@@ -1266,22 +1439,25 @@ fn policy_adapter(
             }
         }
     });
-    let callbacks = refused.iter().map(|r| {
+    let fact = format_ident!("{}", fact_name(source));
+    let callbacks = refused.iter().filter_map(|r| {
         let m = format_ident!("{}", r.name);
-        let command = ident(&r.command);
-        let fact = ident(&r.fact);
-        // A command refusing several types: their choice, each type tried
-        // in turn.
-        let several = target
+        let input = target
             .inputs
             .iter()
-            .find(|i| i.message.name() == r.command)
-            .filter(|i| i.refuses.len() > 1);
-        let args = match (&r.refusal, several) {
-            (Some(_), Some(input)) => {
+            .find(|i| Some(i.message.full_name()) == r.refused.as_deref())?;
+        let command = ident(input.message.name());
+        // A command refusing several types: their choice, each type tried
+        // in turn.
+        let args = match input.refuses.as_slice() {
+            [] => quote!(refusal.command()),
+            [one] => {
+                let one = ident(one.name());
+                quote!(refusal.command(), refusal.refusal::<#one>())
+            }
+            several => {
                 let choice = format_ident!("{}", refusal_choice_name(&input.message));
-                let types: Vec<syn::Ident> =
-                    input.refuses.iter().map(|t| ident(t.name())).collect();
+                let types: Vec<syn::Ident> = several.iter().map(|t| ident(t.name())).collect();
                 let (first, rest) = (&types[0], &types[1..]);
                 quote! {
                     refusal.command(),
@@ -1289,22 +1465,17 @@ fn policy_adapter(
                         #(.or_else(|| refusal.refusal::<#rest>().map(#choice::#rest)))*
                 }
             }
-            (Some(refusal), None) => {
-                let refusal = ident(refusal);
-                quote!(refusal.command(), refusal.refusal::<#refusal>())
-            }
-            (None, _) => quote!(refusal.command()),
         };
-        quote! {
+        Some(quote! {
             #[on_refused(#command)]
             fn #m(
                 &self,
                 refusal: &Refusal<#command>,
                 ctx: &CommandContext,
-            ) -> ::core::result::Result<#fact, Bug> {
+            ) -> ::core::result::Result<::core::option::Option<#fact>, Bug> {
                 #interface::#m(&self.0, #args, ctx)
             }
-        }
+        })
     });
     quote! {
         #declaration
@@ -1435,14 +1606,56 @@ fn registration(
 /// angzarr-proto's. The layer checks the first two where it is compiled: a
 /// prost crate built otherwise fails with `angzarr-codegen-wire-bytes` or
 /// `angzarr-codegen-wire-map` at the field.
+///
+/// Each component's interface ([`interface_source`]) is in its package's
+/// layer, a policy's in its own package's when that package has a layer,
+/// else in its target's: the trait its adapter delegates to and the user
+/// implements, so an implementation in another crate implements it.
 pub fn markup_domain(
     descriptor_set: &[u8],
     files: &[&str],
     wire: &[(&str, &str)],
 ) -> Result<Vec<Generated>, CodegenError> {
-    generate(
-        model::build_markup(descriptor_set, files)?,
-        wire,
-        crate::rust::markup_package,
-    )
+    let mut packages = model::build_markup(descriptor_set, files)?;
+    let components = model::components(descriptor_set, files, ALL_KINDS)?;
+    for component in application(&components) {
+        let methods = interface_methods(component, &components)?;
+        let own = component.anchor.package_name();
+        let package = if packages.contains_key(own) || component.kind != ComponentKind::Policy {
+            own.to_string()
+        } else {
+            component
+                .target(&components)?
+                .anchor
+                .package_name()
+                .to_string()
+        };
+        let layer = packages.entry(package).or_default();
+        let mut names = vec![component.name.clone()];
+        if component.kind.is_domain() && component.inputs.iter().any(|i| i.fact) {
+            names.push(fact_name(component));
+        }
+        let taken = layer
+            .messages
+            .iter()
+            .map(|m| (m.full_name().to_string(), m.name().to_string()))
+            .chain(
+                layer
+                    .enums
+                    .iter()
+                    .map(|e| (e.full_name().to_string(), crate::common::enum_name(e))),
+            );
+        for (message, local) in taken {
+            if names.contains(&local) {
+                return Err(crate::error::ProtoError::InterfaceName {
+                    message,
+                    name: local,
+                    component: component.anchor.full_name().to_string(),
+                }
+                .into());
+            }
+        }
+        layer.interfaces.push(interface_source(component, &methods));
+    }
+    generate(packages, wire, crate::rust::markup_package)
 }

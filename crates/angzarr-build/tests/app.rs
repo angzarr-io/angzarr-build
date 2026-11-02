@@ -65,9 +65,11 @@ fn actions(root: &Path, done: &[Scaffolded]) -> Vec<(String, &'static str)> {
         .map(|d| {
             let (path, action) = match d {
                 Scaffolded::Created(p) => (p, "created"),
-                Scaffolded::Completed(p) => (p, "completed"),
+                Scaffolded::Completed { path, .. } => (path, "completed"),
                 Scaffolded::Regenerated(p) => (p, "regenerated"),
-                Scaffolded::Kept(p) => (p, "kept"),
+                Scaffolded::Kept { path, .. } => (path, "kept"),
+                Scaffolded::Obsolete(p) => (p, "obsolete"),
+                Scaffolded::Deleted(p) => (p, "deleted"),
             };
             let rel = path.strip_prefix(root).unwrap_or(path);
             (rel.display().to_string(), action)
@@ -108,7 +110,7 @@ fn rescaffolding_an_app_unchanged_keeps_every_file_byte_for_byte() {
 }
 
 #[test]
-fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_clis_files() {
+fn rescaffolding_never_overwrites_the_users_files_and_rewrites_the_clis_build_script() {
     let root = empty_dir();
     scaffold(&root, SHOP, &seed());
     let config = format!(
@@ -116,12 +118,12 @@ fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_cl
         read(&root, "angzarr.yaml")
     );
     let driver = "// mine\npub async fn drive(_: &angzarr_embedded_host::App) -> Result<(), Box<dyn std::error::Error>> { Ok(()) }\n";
+    let main = format!("{}\npub mod mine;\n", read(&root, "src/main.rs"));
     std::fs::write(root.join("angzarr.yaml"), &config).unwrap();
     std::fs::write(root.join("src/driver.rs"), driver).unwrap();
-    let main = read(&root, "src/main.rs");
+    std::fs::write(root.join("src/main.rs"), &main).unwrap();
     let build = read(&root, "build.rs");
-    std::fs::write(root.join("src/main.rs"), "// edited by hand\n").unwrap();
-    std::fs::write(root.join("build.rs"), "// edited by hand\n").unwrap();
+    std::fs::write(root.join("build.rs"), format!("{build}// edited\n")).unwrap();
 
     // A different seed changes nothing of a config that exists.
     let other = AppSeed {
@@ -139,7 +141,7 @@ fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_cl
             ("angzarr.yaml".to_string(), "kept"),
             ("build.rs".to_string(), "regenerated"),
             ("src/driver.rs".to_string(), "kept"),
-            ("src/main.rs".to_string(), "regenerated"),
+            ("src/main.rs".to_string(), "kept"),
         ]
     );
     assert_eq!(read(&root, "angzarr.yaml"), config);
@@ -148,13 +150,42 @@ fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_cl
     assert_eq!(read(&root, "build.rs"), build);
 }
 
+/// The build script is the CLI's: one without the generated marker (written
+/// by hand in its place) is refused, never overwritten (item S, H1).
 #[test]
-fn an_edit_to_the_config_is_followed_by_the_next_main() {
+fn a_build_script_without_the_marker_is_refused() {
+    let root = empty_dir();
+    scaffold(&root, SHOP, &seed());
+    std::fs::write(root.join("build.rs"), "// mine\nfn main() {}\n").unwrap();
+    let refused = app_scaffold_into(&root, SHOP, &[&fixtures()], &seed());
+    assert!(
+        matches!(&refused, Err(BuildError::GeneratedUnmarked { path }) if path.ends_with("build.rs")),
+        "{refused:?}"
+    );
+    assert_eq!(read(&root, "build.rs"), "// mine\nfn main() {}\n");
+}
+
+/// The application's main is the user's, written once with a module per
+/// in-process component's implementation (item S Q7): an edit to the
+/// config is followed by the build's generated layer, never by a rewrite
+/// of main.
+#[test]
+fn main_is_written_once_with_the_in_process_implementations() {
     let root = empty_dir();
     scaffold(&root, BUYIN, &seed());
-    assert!(read(&root, "src/main.rs").contains("pub mod buy_in;"));
-    // The user moves the buy-in (its process manager, pmg-buyin) to a
-    // Python child.
+    let main = read(&root, "src/main.rs");
+    for module in [
+        "pub mod buy_in_impl;",
+        "pub mod wallet_impl;",
+        "pub mod driver;",
+    ] {
+        assert!(main.contains(module), "{module}:\n{main}");
+    }
+    assert!(!main.contains("pub mod buy_in;"), "{main}");
+    assert!(
+        main.contains("include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-app.rs\"));"),
+        "{main}"
+    );
     let config = read(&root, "angzarr.yaml").replace(
         "  - name: pmg-buyin\n    kind: domain\n    language: rust\n",
         "  - name: pmg-buyin\n    kind: domain\n    language: python\n    \
@@ -163,9 +194,35 @@ fn an_edit_to_the_config_is_followed_by_the_next_main() {
     assert_ne!(config, read(&root, "angzarr.yaml"));
     std::fs::write(root.join("angzarr.yaml"), &config).unwrap();
     scaffold(&root, BUYIN, &seed());
-    let main = read(&root, "src/main.rs");
-    assert!(!main.contains("pub mod buy_in;"), "{main}");
-    assert!(main.contains("pub mod wallet;"), "{main}");
+    assert_eq!(read(&root, "src/main.rs"), main);
+}
+
+/// A manifest is the user's: its pins that are not this CLI's are
+/// reported, and it is never edited (item S Q8).
+#[test]
+fn a_manifests_drifted_pin_is_reported_and_the_manifest_kept() {
+    let root = empty_dir();
+    scaffold(&root, SHOP, &seed());
+    let rev = angzarr_build::ANGZARR_EMBEDDED_REV;
+    let manifest = read(&root, "Cargo.toml").replace(rev, "0123abcd");
+    std::fs::write(root.join("Cargo.toml"), &manifest).unwrap();
+    let done = scaffold(&root, SHOP, &seed());
+    let drift = done
+        .iter()
+        .find_map(|d| match d {
+            Scaffolded::Kept { path, notes } if path.ends_with("Cargo.toml") => {
+                Some(notes.drift.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{done:?}"));
+    assert!(
+        drift
+            .iter()
+            .any(|d| d.dependency == "angzarr-embedded" && d.pinned == "0123abcd" && d.cli == rev),
+        "{drift:?}"
+    );
+    assert_eq!(read(&root, "Cargo.toml"), manifest);
 }
 
 #[test]
@@ -210,9 +267,15 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_command_and_eve
         "angzarr-adapters.rs",
         "angzarr-descriptors.rs",
         "angzarr-register.rs",
+        "angzarr-app.rs",
     ] {
         assert!(out.join(file).exists(), "{file}");
     }
+    let layer = std::fs::read_to_string(out.join("angzarr-app.rs")).unwrap();
+    assert!(
+        layer.contains("pub mod domain {\n    include!(concat!(env!(\"OUT_DIR\"), \"/buyin.v1.domain.rs\"));\n}"),
+        "{layer}"
+    );
     let register = std::fs::read_to_string(out.join("angzarr-register.rs")).unwrap();
     assert!(register.contains("adapters::Wallet"), "{register}");
     // The Python child's process manager, listed by its name, is its
@@ -249,16 +312,31 @@ fn app_without_domain_into_writes_the_layer_but_the_wire_types_and_domain_layer(
          \n",
     )
     .unwrap();
+    std::fs::write(
+        out.join("Cargo.toml"),
+        "[package]\nname = \"x\"\n\n[package.metadata.angzarr.domain]\ncrate = \"buyin_proto\"\nwire = \"buyin_proto::v1\"\n",
+    )
+    .unwrap();
     app_without_domain_into(&out, &config, BUYIN, &[&fixtures()]).unwrap();
     for file in [
         "angzarr-adapters.rs",
         "angzarr-descriptors.rs",
         "angzarr-register.rs",
+        "angzarr-app.rs",
     ] {
         assert!(out.join(file).exists(), "{file}");
     }
     for file in ["buyin.v1.rs", "buyin.v1.domain.rs"] {
         assert!(!out.join(file).exists(), "{file} is the domain crate's");
+    }
+    // The layer main.rs includes names the manifest's domain crate.
+    let layer = std::fs::read_to_string(out.join("angzarr-app.rs")).unwrap();
+    for expected in [
+        "\npub use buyin_proto::domain;\n",
+        "\npub use buyin_proto::v1 as wire;\n",
+        "include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-adapters.rs\"));",
+    ] {
+        assert!(layer.contains(expected), "{expected}:\n{layer}");
     }
 }
 
@@ -279,10 +357,9 @@ fn rescaffolding_follows_the_domain_crate_the_manifest_on_disk_names() {
             ("angzarr.yaml".to_string(), "kept"),
             ("build.rs".to_string(), "regenerated"),
             ("src/driver.rs".to_string(), "kept"),
-            ("src/main.rs".to_string(), "regenerated"),
+            ("src/main.rs".to_string(), "kept"),
         ]
     );
-    assert!(read(&root, "src/main.rs").contains("\npub use shop_proto::domain;\n"));
     assert!(read(&root, "build.rs").contains("angzarr_build::app_without_domain("));
     assert_eq!(read(&root, "Cargo.toml"), manifest);
     // A seed's domain crate does not rewrite the user's manifest.
@@ -294,7 +371,7 @@ fn rescaffolding_follows_the_domain_crate_the_manifest_on_disk_names() {
         ..seed()
     };
     scaffold(&root, SHOP, &over);
-    assert!(read(&root, "src/main.rs").contains("\npub use shop_proto::domain;\n"));
+    assert!(!read(&root, "build.rs").contains("other"));
 }
 
 #[test]

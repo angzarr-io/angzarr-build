@@ -14,7 +14,7 @@ mod common;
 
 use angzarr_codegen::{
     AppError, AppLint, AppSeed, CodegenError, DomainCrate, Exposure, Owner, RetrySeed,
-    ScaffoldFile, Warning, app, child_components, lint_app, remote_domains,
+    ScaffoldFile, Warning, app, app_layer, child_components, lint_app, remote_domains,
 };
 use common::*;
 
@@ -72,7 +72,8 @@ fn golden(app: &str, path: &str) -> String {
 
 /// Every file of `files` is `app`'s golden (rewritten under
 /// `ANGZARR_BLESS`), and owned as the split says: the host config, the
-/// manifest and the driver the user's, build.rs and main.rs the CLI's.
+/// manifest, main.rs and the driver the user's, build.rs the CLI's (item S
+/// Q7).
 fn assert_golden(app: &str, files: &[ScaffoldFile]) {
     assert_eq!(
         paths(files),
@@ -86,7 +87,7 @@ fn assert_golden(app: &str, files: &[ScaffoldFile]) {
     );
     for f in files {
         let owner = match f.path.as_str() {
-            "angzarr.yaml" | "Cargo.toml" | "src/driver.rs" => Owner::User,
+            "angzarr.yaml" | "Cargo.toml" | "src/driver.rs" | "src/main.rs" => Owner::User,
             _ => Owner::Generated,
         };
         assert_eq!(f.owner, owner, "{}", f.path);
@@ -132,16 +133,22 @@ fn an_app_over_a_domain_crate_reuses_its_domain_layer_and_generates_none() {
     assert_golden("blackjack-domain-crate", &files);
     let main = &file(&files, "src/main.rs").source;
     assert!(
-        main.contains("\npub use examples_proto::domain;\n"),
+        main.contains("include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-app.rs\"));"),
         "{main}"
     );
+    // The generated layer main.rs includes names the domain crate's.
+    let layer = app_layer(&[], Some(&examples_proto()));
     assert!(
-        main.contains("\npub use examples_proto::v1 as wire;\n"),
-        "{main}"
+        layer.contains("\npub use examples_proto::domain;\n"),
+        "{layer}"
     );
     assert!(
-        !main.contains(".domain.rs") && !main.contains("examples.v1.rs"),
-        "no generated wire types or domain layer: {main}"
+        layer.contains("\npub use examples_proto::v1 as wire;\n"),
+        "{layer}"
+    );
+    assert!(
+        !layer.contains(".domain.rs") && !layer.contains("examples.v1.rs"),
+        "no generated wire types or domain layer: {layer}"
     );
     let build = &file(&files, "build.rs").source;
     assert!(
@@ -167,12 +174,15 @@ fn a_domain_crate_with_no_wire_path_has_no_wire_module() {
         ..blackjack()
     };
     let files = app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None).unwrap();
-    let main = &file(&files, "src/main.rs").source;
+    let layer = app_layer(&[], seeded.domain.as_ref());
     assert!(
-        main.contains("\npub use examples_proto::domain;\n"),
-        "{main}"
+        layer.contains("\npub use examples_proto::domain;\n"),
+        "{layer}"
     );
-    assert!(!main.contains("wire"), "{main}");
+    assert!(
+        !layer.contains(" as wire;") && !layer.contains("mod wire"),
+        "{layer}"
+    );
     let manifest = &file(&files, "Cargo.toml").source;
     assert!(
         manifest.contains("\n[package.metadata.angzarr.domain]\ncrate = \"examples_proto\"\n\n"),
@@ -191,10 +201,15 @@ fn the_manifest_on_disk_names_the_domain_crate_not_the_seed() {
     let manifest = file(&over, "Cargo.toml").source.clone();
     // The user's manifest names the crate: the seed (none) is unused.
     let files = app(&set, BLACKJACK, &blackjack(), None, Some(&manifest)).unwrap();
-    assert_eq!(file(&files, "Cargo.toml").source, manifest);
+    // The manifest as this CLI would write it from the seed, which an
+    // existing one's pins are judged against; the one on disk is kept.
     assert_eq!(
-        file(&files, "src/main.rs").source,
-        file(&over, "src/main.rs").source
+        file(&files, "Cargo.toml").source,
+        file(
+            &app(&set, BLACKJACK, &blackjack(), None, None).unwrap(),
+            "Cargo.toml"
+        )
+        .source
     );
     assert_eq!(
         file(&files, "build.rs").source,
@@ -205,8 +220,8 @@ fn the_manifest_on_disk_names_the_domain_crate_not_the_seed() {
     let mine = file(&plain, "Cargo.toml").source.clone();
     let files = app(&set, BLACKJACK, &seeded, None, Some(&mine)).unwrap();
     assert_eq!(
-        file(&files, "src/main.rs").source,
-        file(&plain, "src/main.rs").source
+        file(&files, "build.rs").source,
+        file(&plain, "build.rs").source
     );
 }
 
@@ -300,13 +315,13 @@ fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
 }
 
 #[test]
-fn the_generated_main_registers_only_the_in_process_components_and_their_policies() {
+fn main_declares_only_the_in_process_components_implementations() {
     let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None, None).unwrap();
     let main = &file(&files, "src/main.rs").source;
     for module in [
-        "pub mod table_aggregate;",
-        "pub mod table_player_policy;",
-        "pub mod player_table_policy;",
+        "pub mod table_aggregate_impl;",
+        "pub mod table_player_policy_impl;",
+        "pub mod player_table_policy_impl;",
     ] {
         assert!(main.contains(module), "{module}:\n{main}");
     }
@@ -385,8 +400,8 @@ fn an_existing_config_is_the_input_the_generated_files_follow_not_the_seed() {
     assert_eq!(config.owner, Owner::User);
     assert_eq!(config.source, mine, "the config on disk is passed through");
     let main = &file(&files, "src/main.rs").source;
-    assert!(main.contains("pub mod player_aggregate;"), "{main}");
-    assert!(!main.contains("pub mod table_aggregate;"), "{main}");
+    assert!(main.contains("pub mod player_aggregate_impl;"), "{main}");
+    assert!(!main.contains("pub mod table_aggregate_impl;"), "{main}");
 }
 
 #[test]
@@ -1008,7 +1023,7 @@ fn a_seed_puts_each_component_it_names_in_its_language() {
     // The Python policy is the child's: no module of it in main.rs.
     let main = &file(&files, "src/main.rs").source;
     assert!(!main.contains("pub mod table_player_policy"), "{main}");
-    assert!(main.contains("pub mod player_table_policy;"), "{main}");
+    assert!(main.contains("pub mod player_table_policy_impl;"), "{main}");
 }
 
 #[test]

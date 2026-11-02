@@ -46,13 +46,17 @@ fn test_the_kinds_domain_layer_matches_the_golden_file() {
 
 #[test]
 fn test_the_kinds_adapters_match_the_golden_file() {
-    let source = adapters(&descriptors(&[KINDS]), &[KINDS], &[], &|_| None).unwrap();
+    let source = adapters(&descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
     golden("kinds.adapters.rs", &source);
 }
 
 #[test]
 fn test_the_kinds_scaffold_matches_the_golden_files() {
-    for file in scaffold(&descriptors(&[KINDS]), &[KINDS], &[]).unwrap() {
+    for file in scaffold(&descriptors(&[KINDS]), &[KINDS], &[], &[])
+        .unwrap()
+        .iter()
+        .filter(|f| f.owner == angzarr_codegen::Owner::User)
+    {
         golden(&format!("rust/kinds/{}", file.path), &file.source);
     }
 }
@@ -71,19 +75,14 @@ fn test_a_refusal_key_is_its_full_name_then_its_reason_in_kebab_case() {
 
 #[test]
 fn test_a_command_refusing_several_types_refuses_with_their_choice() {
-    let files = scaffold(&descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
-    let interface = files
-        .iter()
-        .find(|f| f.path == "ledger_state.rs")
-        .expect("ledger_state.rs");
+    let interface = kinds_domain();
     assert!(
-        interface.source.contains(
+        interface.contains(
             "fn post(&self, cmd: &Post, ctx: &Context) -> Result<Posted, Failed<PostRefuses>>;"
         ),
-        "{}",
-        interface.source
+        "{interface}"
     );
-    let adapters = adapters(&descriptors(&[KINDS]), &[KINDS], &[], &|_| None).unwrap();
+    let adapters = adapters(&descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
     assert!(
         adapters.contains(".map_err(PostRefuses::widen)"),
         "{adapters}"
@@ -152,7 +151,7 @@ fn test_a_reasons_status_is_its_values_refusal_status() {
     // A refusal with no Reason has no code to take a status from: the
     // handler's own stands.
     assert!(!domain.contains("impl Unreasoned {"), "{domain}");
-    let adapters = adapters(&descriptors(&[KINDS]), &[KINDS], &[], &|_| None).unwrap();
+    let adapters = adapters(&descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
     for refused in [
         ".map_err(PostRefuses::with_code_status).map_err(PostRefuses::widen)",
         ".map_err(PostRefused::with_code_status).map_err(Failed::widen)",

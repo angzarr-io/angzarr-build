@@ -11,7 +11,10 @@ use crate::model::{ComponentKind, Input};
 use super::convert::{converter_pair, converters, pb2_class, table};
 use super::layout::{call, head, wrap};
 use super::logic::logic_name;
-use super::{GENERATED, PythonApp, Refusable, Unit, alias, pb2_module, reached};
+use super::{
+    GENERATED, PythonApp, Refusable, Unit, alias, dispatch_package, pb2_module, reached, relative,
+    relative_module,
+};
 
 /// The dispatch's table type, by kind: the client's public dispatch.
 fn dispatch_type(kind: ComponentKind) -> &'static str {
@@ -46,8 +49,9 @@ fn dispatch_doc(unit: &Unit, package: &str, logic: &str) -> String {
     let doc = wrap(&format!(
         "\"\"\"The {name}'s dispatch for the router binding, the client's public \
          ``{}``: each entry decodes the wire payload, converts it to the plain types \
-         (:mod:`{package}.domain`), calls ``{logic}``, {what} A hand-written dispatch \
-         built on the same public API may take its place.",
+         (:mod:`{package}._gen.domain`), calls ``{logic}``, {what} A hand-written \
+         dispatch built on the same public API may be hosted in its place, from \
+         ``__main__.py``.",
         dispatch_type(unit.kind()),
     ));
     format!("{doc}\n\"\"\"\n")
@@ -100,9 +104,10 @@ pub(super) fn dispatch(app: &PythonApp, unit: &Unit) -> String {
     let package = app.package();
     let logic = logic_name(app, unit);
     let (messages, _) = reached(unit);
+    let here = dispatch_package(unit);
     let mut modules = BTreeSet::new();
     for m in &messages {
-        modules.insert((pb2_module(app, m), alias(m)));
+        modules.insert((relative(&here, &pb2_module(m)), alias(m)));
     }
     let stdlib = match unit.kind() {
         ComponentKind::Aggregate | ComponentKind::ProcessManager => "import dataclasses\n\n",
@@ -114,17 +119,20 @@ pub(super) fn dispatch(app: &PythonApp, unit: &Unit) -> String {
     } else {
         "from angzarr_client.proto.io.angzarr.v1 import types_pb2 as _t\n"
     };
+    let (domain_from, domain) = relative(&here, &["domain".to_string()]);
     let mut out = format!(
         "{GENERATED}{}\nfrom __future__ import annotations\n\n\
          {stdlib}import angzarr_client.router as _az\n{types}\n\
-         from {package} import domain as _d\n",
+         from {domain_from} import {domain} as _d\n",
         dispatch_doc(unit, &package, &logic),
     );
-    for (module, alias) in &modules {
-        let (parent, leaf) = module.rsplit_once('.').unwrap_or(("", module));
+    for ((parent, leaf), alias) in &modules {
         out.push_str(&format!("from {parent} import {leaf} as {alias}\n"));
     }
-    out.push_str(&format!("from {package}.logic import {logic}\n"));
+    out.push_str(&format!(
+        "from {} import {logic}\n",
+        relative_module(&here, &["logic".to_string()])
+    ));
     out.push_str(
         "\n\ndef _decode(message, payload):\n    try:\n        message.ParseFromString(payload.value)\n    except Exception as exc:\n        raise _az.any_decode_error(payload.type_url, exc)\n    return message\n",
     );
@@ -218,8 +226,10 @@ fn register(registrar: &str, message: &MessageDescriptor, method: &str) -> Strin
 }
 
 /// `if hasattr(logic, "<method>"):` registering `thunk` for `command`'s
-/// refusals with the client's `on_refused`: the user's logic decides, as
-/// the Rust adapters read the user's interface.
+/// refusals with the client's `on_refused`: the user's logic decides, its
+/// callback optional (the interface's reference protocol, never
+/// subclassed), as a Rust implementation overrides its interface's
+/// declining default.
 fn register_refused(command: &MessageDescriptor, method: &str, thunk: &str) -> String {
     let mut out = format!("    if hasattr(logic, \"{method}\"):\n");
     out.push_str(&call(

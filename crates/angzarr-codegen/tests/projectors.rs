@@ -39,7 +39,7 @@ fn test_a_projector_subscribes_to_its_input_domains() {
 
 #[test]
 fn test_the_projector_adapter_projects_every_source_under_its_name() {
-    let source = adapters(&common::descriptors(&[KINDS]), &[KINDS], &[], &|_| None).unwrap();
+    let source = adapters(&common::descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
     assert!(
         source.contains(
             "#[projector(name = \"projector-ledger-view\", sources = [\"ledger\", \"audit\"])]"
@@ -57,12 +57,12 @@ fn test_the_projector_adapter_projects_every_source_under_its_name() {
 #[test]
 fn test_one_input_domain_is_the_one_entry_list() {
     const ONE: &str = "kinds/v1/one_source.proto";
-    let source = adapters(&common::descriptors(&[ONE]), &[ONE], &[], &|_| None).unwrap();
+    let source = adapters(&common::descriptors(&[ONE]), &[ONE], &[]).unwrap();
     assert!(
         source.contains("#[projector(name = \"projector-thing-view\", sources = [\"things\"])]"),
         "{source}"
     );
-    let files = scaffold(&common::descriptors(&[ONE]), &[ONE], &[]).unwrap();
+    let files = scaffold(&common::descriptors(&[ONE]), &[ONE], &[], &[]).unwrap();
     assert!(files.iter().any(|f| f.path == "thing_view_impl.rs"));
 }
 

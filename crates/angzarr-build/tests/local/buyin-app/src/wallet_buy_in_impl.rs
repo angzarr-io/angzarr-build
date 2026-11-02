@@ -2,7 +2,6 @@
 //! written. The buy-in's root is the one the Hold carried.
 
 use crate::domain::*;
-use crate::wallet_buy_in::WalletBuyIn;
 
 #[derive(Clone, Debug, Default)]
 pub struct WalletBuyInImpl;

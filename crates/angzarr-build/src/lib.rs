@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use angzarr_diagnostic::{Arg, Diagnostic, catalog, code};
 
 pub use angzarr_codegen::{
-    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Exposure, Linted,
-    ProtoInput, PythonApp, RetrySeed, Translate, Warning,
+    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Existing, Exposure,
+    Linted, Notes, PinDrift, ProtoInput, PythonApp, RetrySeed, Translate, Warning,
 };
 
 /// This crate's en-US messages: its package name, and its catalog, each id
@@ -35,7 +35,8 @@ pub const EN_US: (&str, &str) = (
 
 /// The prost types of `protos`, by package (`<package>.rs` in `OUT_DIR`),
 /// with angzarr's settings: `prost::Name` on every message, ordered maps,
-/// and angzarr's own types taken from angzarr-proto.
+/// and angzarr's own types taken from angzarr-proto; and `angzarr-wire.rs`,
+/// their modules nested as their packages are ([`wire_into`]).
 pub fn wire(protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
     wire_into(&out_dir()?, protos, includes)
 }
@@ -107,87 +108,24 @@ pub fn stand_ins_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<
 }
 
 /// The generated adapters of every component in `protos`
-/// (`angzarr-adapters.rs` in `OUT_DIR`), for the crate root to `include!`
-/// as `pub mod adapters` (see `angzarr_codegen::adapters`).
+/// (`angzarr-adapters.rs` in `OUT_DIR`), the module `adapters` with the
+/// allowances it needs, for the crate root to `include!` (see
+/// `angzarr_codegen::adapters`).
 pub fn adapters(protos: &[&str], includes: &[&str], remote: &[&str]) -> Result<(), BuildError> {
     adapters_into(&out_dir()?, protos, includes, remote)
 }
 
-/// [`adapters`], into `out`, the user's interfaces under the crate's `src`
-/// (`CARGO_MANIFEST_DIR`): each warning ([`adapters_from`]) is printed as
-/// a `cargo:warning`, its code and its English.
+/// [`adapters`], into `out`.
 pub fn adapters_into(
     out: &Path,
     protos: &[&str],
     includes: &[&str],
     remote: &[&str],
 ) -> Result<(), BuildError> {
-    let src = std::env::var_os("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_default()
-        .join("src");
-    for warning in adapters_from(out, &src, protos, includes, remote)? {
-        println!("{}", cargo_warning(&warning));
-    }
-    Ok(())
-}
-
-/// [`adapters`], into `out`, reading the user's interfaces under `src`: a
-/// policy's declares the commands it translates the refusals of. A
-/// policy's interface that is not there (not scaffolded yet, or moved) is
-/// a [`BuildWarning::InterfaceMissing`], not silence: its adapter gets no
-/// refusal callbacks, and Cargo reruns the script when the file appears.
-pub fn adapters_from(
-    out: &Path,
-    src: &Path,
-    protos: &[&str],
-    includes: &[&str],
-    remote: &[&str],
-) -> Result<Vec<BuildWarning>, BuildError> {
     let bytes = build_descriptors(out, protos, includes)?;
-    let missing = std::cell::RefCell::new(Vec::new());
-    let read = |path: &str| {
-        let full = src.join(path);
-        println!("cargo:rerun-if-changed={}", full.display());
-        let found = std::fs::read_to_string(&full).ok();
-        if found.is_none() {
-            missing.borrow_mut().push(BuildWarning::InterfaceMissing {
-                path: full.display().to_string(),
-            });
-        }
-        found
-    };
-    let source =
-        angzarr_codegen::adapters(&bytes, protos, remote, &read).map_err(BuildError::Codegen)?;
+    let source = angzarr_codegen::adapters(&bytes, protos, remote).map_err(BuildError::Codegen)?;
     let path = out.join("angzarr-adapters.rs");
-    std::fs::write(&path, source).map_err(|e| io(&path, &e))?;
-    Ok(missing.into_inner())
-}
-
-/// What generation went on past, reported to the build (`cargo:warning`).
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum BuildWarning {
-    /// A policy's interface the adapters read for its refusal switch is not
-    /// at `path`: its adapter gets no refusal callbacks.
-    InterfaceMissing { path: String },
-}
-
-/// Its code and args (decision 14.37); a build script shows it in English
-/// ([`cargo_warning`]).
-impl fmt::Display for BuildWarning {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
-    }
-}
-
-/// `warning` as a build script reports it: a `cargo:warning` line, its code
-/// and its English.
-fn cargo_warning(warning: &BuildWarning) -> String {
-    format!(
-        "cargo:warning={}: {}",
-        warning.code(),
-        English(EN_US.1, warning)
-    )
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))
 }
 
 /// A diagnostic in English where a build script shows it: its message in
@@ -197,20 +135,6 @@ struct English<'a>(&'static str, &'a dyn Diagnostic);
 impl fmt::Display for English<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         catalog::render(self.0, self.1, f)
-    }
-}
-
-impl Diagnostic for BuildWarning {
-    fn code(&self) -> &'static str {
-        match self {
-            BuildWarning::InterfaceMissing { .. } => code!("interface-missing"),
-        }
-    }
-
-    fn args(&self) -> Vec<(&'static str, Arg)> {
-        match self {
-            BuildWarning::InterfaceMissing { path } => vec![("path", path.as_str().into())],
-        }
     }
 }
 
@@ -289,8 +213,7 @@ fn manifest_dir() -> PathBuf {
         .unwrap_or_default()
 }
 
-/// [`app`], into `out`, the user's interfaces under the `src` beside
-/// `config`.
+/// [`app`], into `out`, the host config at `config`.
 pub fn app_into(
     out: &Path,
     config: &Path,
@@ -300,8 +223,8 @@ pub fn app_into(
     app_layer_into(out, config, protos, includes, true)
 }
 
-/// [`app_without_domain`], into `out`, the user's interfaces under the
-/// `src` beside `config`.
+/// [`app_without_domain`], into `out`, the host config at `config` and the
+/// manifest beside it (its domain crate).
 pub fn app_without_domain_into(
     out: &Path,
     config: &Path,
@@ -342,12 +265,7 @@ fn app_layer_into(
     let listed = angzarr_codegen::in_process_components(&text).map_err(BuildError::Codegen)?;
     let listed: Vec<&str> = listed.iter().map(String::as_str).collect();
     if domain {
-        let mut packages: Vec<String> = names
-            .iter()
-            .filter_map(|c| c.component.rsplit_once('.').map(|(p, _)| p.to_string()))
-            .collect();
-        packages.sort();
-        packages.dedup();
+        let packages = packages(&names);
         let wire: Vec<(&str, &str)> = packages
             .iter()
             .map(|p| (p.as_str(), "crate::wire"))
@@ -355,23 +273,43 @@ fn app_layer_into(
         wire_into(out, protos, includes)?;
         markup_domain_into(out, protos, includes, &wire)?;
     }
-    let src = config.parent().unwrap_or(Path::new("")).join("src");
-    for warning in adapters_from(out, &src, protos, includes, &remote)? {
-        println!("{}", cargo_warning(&warning));
-    }
+    adapters_into(out, protos, includes, &remote)?;
     descriptors_into(out, protos, includes, &remote, &rules_version())?;
     let source =
         angzarr_codegen::register_only(&bytes, protos, &listed).map_err(BuildError::Codegen)?;
     let path = out.join("angzarr-register.rs");
-    std::fs::write(&path, source).map_err(|e| io(&path, &e))
+    std::fs::write(&path, source).map_err(|e| io(&path, &e))?;
+    let crate_domain = if domain {
+        None
+    } else {
+        let manifest = config.parent().unwrap_or(Path::new("")).join("Cargo.toml");
+        println!("cargo:rerun-if-changed={}", manifest.display());
+        let text = std::fs::read_to_string(&manifest).map_err(|e| io(&manifest, &e))?;
+        angzarr_codegen::manifest_domain_crate(&text).map_err(BuildError::Codegen)?
+    };
+    let path = out.join("angzarr-app.rs");
+    let own = if domain { packages(&names) } else { Vec::new() };
+    let layer = angzarr_codegen::app_layer(&own, crate_domain.as_ref());
+    std::fs::write(&path, layer).map_err(|e| io(&path, &e))
+}
+
+/// The proto packages of `names`' components, each once, sorted.
+fn packages(names: &[angzarr_codegen::ComponentName]) -> Vec<String> {
+    let mut packages: Vec<String> = names
+        .iter()
+        .filter_map(|c| c.component.rsplit_once('.').map(|(p, _)| p.to_string()))
+        .collect();
+    packages.sort();
+    packages.dedup();
+    packages
 }
 
 /// The startup of an angzarr-embedded application (see
 /// `angzarr_codegen::app`) under `root`, the crate root: `angzarr.yaml`,
-/// `Cargo.toml` and `src/driver.rs` written once from `seed` and the
-/// user's from then on; `build.rs` and `src/main.rs` the CLI's, rewritten
-/// from the protos and the `angzarr.yaml` and `Cargo.toml` on disk on every
-/// run. A config with lints is refused and nothing is written.
+/// `Cargo.toml`, `src/main.rs` and `src/driver.rs` written once from `seed`
+/// and the user's from then on; `build.rs` the CLI's, rewritten from the
+/// protos and the `angzarr.yaml` and `Cargo.toml` on disk on every run. A
+/// config with lints is refused and nothing is written.
 pub fn app_scaffold_into(
     root: &Path,
     protos: &[&str],
@@ -404,27 +342,26 @@ pub fn lint_app(config: &Path, protos: &[&str], includes: &[&str]) -> Result<Lin
     angzarr_codegen::lint_app(&text, &bytes, protos).map_err(BuildError::Codegen)
 }
 
-/// What [`scaffold_into`] does with a component's file that exists.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Existing {
-    /// Leave it as it is: the file is the user's.
-    Keep,
-    /// `--missing`: add the stubs it lacks, changing nothing else.
-    Complete,
-}
-
 /// What [`scaffold_into`] did with one component's file.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Scaffolded {
     /// It was absent, and is written.
     Created(PathBuf),
-    /// It existed and lacked stubs, which are added.
-    Completed(PathBuf),
-    /// It existed and is unchanged.
-    Kept(PathBuf),
+    /// The user's, it existed and lacked stubs, which are added; with what
+    /// it still lacks, has beyond, and pins otherwise.
+    Completed { path: PathBuf, notes: Notes },
+    /// It existed and is unchanged; a user's with what it lacks, has
+    /// beyond, and pins otherwise.
+    Kept { path: PathBuf, notes: Notes },
     /// A generated file (the CLI's, never the user's) that existed with
     /// other content, rewritten.
     Regenerated(PathBuf),
+    /// A file an earlier scaffold wrote and this one does not: left for the
+    /// user to delete.
+    Obsolete(PathBuf),
+    /// A generated file under a `_gen` that this run did not write: an
+    /// orphan, deleted (item S Q9).
+    Deleted(PathBuf),
 }
 
 /// The markup scaffold of every component in `protos`, one file each
@@ -437,28 +374,32 @@ pub fn scaffold_into(
     protos: &[&str],
     includes: &[&str],
     translate: &[Translate],
+    on_refused: &[String],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
-    let files =
-        angzarr_codegen::scaffold(&bytes, protos, translate).map_err(BuildError::Codegen)?;
+    let files = angzarr_codegen::scaffold(&bytes, protos, translate, on_refused)
+        .map_err(BuildError::Codegen)?;
     write_scaffold(src, files, existing)
 }
 
 /// The uv project of one Python domain (see
 /// `angzarr_codegen::scaffold_python`) under `root`, as [`scaffold_into`]
 /// writes a Rust scaffold: a user's file once, a generated file every time,
-/// `translate` being the refusal switch's translate selections.
+/// `translate` being the refusal switch's translate selections and
+/// `on_refused` the refused commands whose callbacks are written (by full
+/// name).
 pub fn scaffold_python_into(
     root: &Path,
     protos: &[&str],
     includes: &[&str],
     app: &PythonApp,
     translate: &[Translate],
+    on_refused: &[String],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
-    let files = angzarr_codegen::scaffold_python(&bytes, protos, app, translate)
+    let files = angzarr_codegen::scaffold_python(&bytes, protos, app, translate, on_refused)
         .map_err(BuildError::Codegen)?;
     write_scaffold(root, files, existing)
 }
@@ -509,43 +450,66 @@ fn with_siblings(protos: &[&str], includes: &[impl AsRef<Path>]) -> Vec<String> 
 }
 
 /// Writes `files` under `root`: an absent file is created; an existing
-/// user's file is kept, or completed with `Existing::Complete`; an existing
-/// generated file is rewritten when it differs. Every file is decided
-/// before any is written, so a refusal writes none.
+/// user's file is kept, or completed with what it lacks
+/// ([`angzarr_codegen::complete`]), and reported; an existing generated
+/// file is rewritten when it differs, and only when it carries the
+/// generated marker ([`angzarr_codegen::is_generated`]): one without it is
+/// refused, so a hand edit is never overwritten. A file at a user's path
+/// that carries the marker is an earlier CLI's generated file, and is
+/// rewritten as the user's. An obsolete file is reported where it is. Every
+/// file is decided before any is written, so a refusal writes none. Then
+/// each `_gen` the files are under is swept ([`sweep`]).
 fn write_scaffold(
     root: &Path,
     files: Vec<angzarr_codegen::ScaffoldFile>,
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
+    use angzarr_codegen::Owner;
     let mut writes = Vec::new();
     let mut done = Vec::new();
+    let ours: Vec<PathBuf> = files
+        .iter()
+        .filter(|f| f.owner != Owner::Obsolete)
+        .map(|f| root.join(&f.path))
+        .collect();
     for file in files {
         let path = root.join(&file.path);
-        if !path.exists() {
-            writes.push((path.clone(), file.source));
-            done.push(Scaffolded::Created(path));
-            continue;
+        let present = path.exists();
+        match file.owner {
+            Owner::External => continue,
+            Owner::Obsolete if present => {
+                done.push(Scaffolded::Obsolete(path));
+                continue;
+            }
+            Owner::Obsolete => continue,
+            Owner::User | Owner::Generated if !present => {
+                writes.push((path.clone(), file.source));
+                done.push(Scaffolded::Created(path));
+                continue;
+            }
+            Owner::User | Owner::Generated => {}
         }
         let mine = std::fs::read_to_string(&path).map_err(|e| io(&path, &e))?;
-        if file.owner == angzarr_codegen::Owner::Generated {
-            if mine == file.source {
-                done.push(Scaffolded::Kept(path));
-            } else {
-                writes.push((path.clone(), file.source));
-                done.push(Scaffolded::Regenerated(path));
+        let stale = angzarr_codegen::is_generated(&mine);
+        if file.owner == Owner::Generated && mine == file.source {
+            done.push(Scaffolded::Kept {
+                path,
+                notes: Notes::default(),
+            });
+        } else if file.owner == Owner::Generated || stale {
+            writes.push((path.clone(), file.source));
+            done.push(Scaffolded::Regenerated(path));
+        } else {
+            let completion =
+                angzarr_codegen::complete(&file, &mine, existing).map_err(BuildError::Codegen)?;
+            let notes = completion.notes;
+            match completion.completed {
+                Some(completed) => {
+                    writes.push((path.clone(), completed));
+                    done.push(Scaffolded::Completed { path, notes });
+                }
+                None => done.push(Scaffolded::Kept { path, notes }),
             }
-            continue;
-        }
-        if existing == Existing::Keep {
-            done.push(Scaffolded::Kept(path));
-            continue;
-        }
-        match angzarr_codegen::complete(&file, &mine).map_err(BuildError::Codegen)? {
-            Some(completed) => {
-                writes.push((path.clone(), completed));
-                done.push(Scaffolded::Completed(path));
-            }
-            None => done.push(Scaffolded::Kept(path)),
         }
     }
     for (path, source) in writes {
@@ -554,13 +518,69 @@ fn write_scaffold(
         }
         std::fs::write(&path, source).map_err(|e| io(&path, &e))?;
     }
+    let _ = (
+        gen_dirs(root, &ours),
+        sweep as fn(&Path, &[PathBuf], &mut Vec<Scaffolded>) -> _,
+    );
     Ok(done)
 }
 
+/// The generated directory name ([`sweep`]): the one path every gate of a
+/// project excludes.
+const GEN: &str = "_gen";
+
+/// Each `_gen` directory `files` are under (`root`-relative), once.
+fn gen_dirs(root: &Path, files: &[PathBuf]) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for file in files {
+        let Ok(relative) = file.strip_prefix(root) else {
+            continue;
+        };
+        let mut dir = root.to_path_buf();
+        for part in relative.components() {
+            dir.push(part);
+            if part.as_os_str() == GEN {
+                if !dirs.contains(&dir) {
+                    dirs.push(dir.clone());
+                }
+                break;
+            }
+        }
+    }
+    dirs
+}
+
+/// Deletes each file under `dir` that carries the generated marker and is
+/// not one of `ours` (this run's): an orphan of a component, or a proto, no
+/// longer scaffolded (item S Q9). A file without the marker is never
+/// touched, nor is anything that is not text.
+fn sweep(dir: &Path, ours: &[PathBuf], done: &mut Vec<Scaffolded>) -> Result<(), BuildError> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
+    let mut entries: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
+    entries.sort();
+    for path in entries {
+        if path.is_dir() {
+            sweep(&path, ours, done)?;
+            continue;
+        }
+        let orphan = !ours.contains(&path)
+            && std::fs::read_to_string(&path)
+                .is_ok_and(|text| angzarr_codegen::is_generated(&text));
+        if orphan {
+            std::fs::remove_file(&path).map_err(|e| io(&path, &e))?;
+            done.push(Scaffolded::Deleted(path));
+        }
+    }
+    Ok(())
+}
+
 /// The message types of a scaffolded Python project: `buf generate` run in
-/// `root` (its `buf.gen.yaml`), then every generated module's imports
-/// rerooted (`angzarr_codegen::reroot_python`): angzarr's own under
-/// `angzarr_client.proto`, the project's under its `_gen`.
+/// `root` (its `buf.gen.yaml`), then every generated module headed with the
+/// generated marker and its imports rerooted
+/// (`angzarr_codegen::reroot_python`): angzarr's own under
+/// `angzarr_client.proto`, the project's relative, within its `_gen`.
 pub fn proto_gen_python(root: &Path, app: &PythonApp) -> Result<(), BuildError> {
     run(root, "buf", &["generate"], |detail| BuildError::Buf {
         detail,
@@ -585,10 +605,15 @@ pub fn proto_gen_python(root: &Path, app: &PythonApp) -> Result<(), BuildError> 
     packages.sort();
     packages.dedup();
     let packages: Vec<&str> = packages.iter().map(String::as_str).collect();
-    let rules = angzarr_codegen::python_reroots(app, &packages);
+    let rules = angzarr_codegen::python_reroots(&packages);
     for module in modules {
         let source = std::fs::read_to_string(&module).map_err(|e| io(&module, &e))?;
-        let rerooted = angzarr_codegen::reroot_python(&source, &rules);
+        let package = module
+            .parent()
+            .and_then(|dir| dir.strip_prefix(&gen_dir).ok())
+            .map(|dir| dir.to_string_lossy().replace(['/', '\\'], "."))
+            .unwrap_or_default();
+        let rerooted = angzarr_codegen::reroot_python(&source, &rules, &package);
         if rerooted != source {
             std::fs::write(&module, rerooted).map_err(|e| io(&module, &e))?;
         }
@@ -649,10 +674,13 @@ fn scratch_dir() -> Result<PathBuf, BuildError> {
     Ok(dir)
 }
 
-/// [`wire`], into `out`.
+/// [`wire`], into `out`; and `angzarr-wire.rs`, the modules nesting them as
+/// their packages do, so prost's `super::` paths resolve, with the
+/// allowances prost's output needs (see `angzarr_codegen::wire_modules`),
+/// for the crate root to `include!`.
 pub fn wire_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<(), BuildError> {
+    let bytes = build_descriptors(out, protos, includes)?;
     let includes = with_angzarr(out, includes)?;
-    rerun_if_changed(protos, &includes);
     prost_build::Config::new()
         .enable_type_names()
         .btree_map(["."])
@@ -661,7 +689,10 @@ pub fn wire_into(out: &Path, protos: &[&str], includes: &[&str]) -> Result<(), B
         .compile_protos(protos, &includes)
         .map_err(|e| BuildError::Prost {
             detail: e.to_string(),
-        })
+        })?;
+    let modules = angzarr_codegen::wire_modules(&bytes, protos).map_err(BuildError::Codegen)?;
+    let path = out.join("angzarr-wire.rs");
+    std::fs::write(&path, modules).map_err(|e| io(&path, &e))
 }
 
 /// Each package's domain layer, as `<package>.domain.rs` in `out`.
@@ -764,6 +795,9 @@ pub enum BuildError {
     Buf { detail: String },
     /// `uv` could not run, or failed.
     Uv { detail: String },
+    /// A generated file's path holds a file without the generated marker:
+    /// edited by hand, or written by hand in its place. Never overwritten.
+    GeneratedUnmarked { path: String },
     /// The generator refused the protos.
     Codegen(angzarr_codegen::CodegenError),
 }
@@ -802,6 +836,7 @@ impl Diagnostic for BuildError {
             BuildError::Prost { .. } => code!("prost"),
             BuildError::Buf { .. } => code!("buf"),
             BuildError::Uv { .. } => code!("uv"),
+            BuildError::GeneratedUnmarked { .. } => code!("generated-unmarked"),
             BuildError::Codegen(_) => code!("codegen"),
         }
     }
@@ -819,19 +854,38 @@ impl Diagnostic for BuildError {
             | BuildError::Uv { detail } => {
                 vec![("detail", detail.as_str().into())]
             }
+            BuildError::GeneratedUnmarked { path } => vec![("path", path.as_str().into())],
             BuildError::Codegen(error) => vec![("error", Arg::nested(error))],
+        }
+    }
+}
+
+impl BuildError {
+    /// What the user can do about it, a coded message, when there is
+    /// something: a generated path holding an unmarked file is restored or
+    /// deleted, so the next run writes it.
+    pub fn remedy(&self) -> Option<angzarr_diagnostic::Report> {
+        match self {
+            BuildError::GeneratedUnmarked { .. } => Some(angzarr_diagnostic::Report::new(code!(
+                "generated-unmarked-remedy"
+            ))),
+            _ => None,
         }
     }
 }
 
 /// One value of every error this crate defines, for the catalog test.
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
-    let s = || "x".to_string();
     let mut samples: Vec<Box<dyn Diagnostic>> = error_samples()
         .into_iter()
         .map(|e| Box::new(e) as Box<dyn Diagnostic>)
         .collect();
-    samples.push(Box::new(BuildWarning::InterfaceMissing { path: s() }));
+    samples.extend(
+        error_samples()
+            .iter()
+            .filter_map(BuildError::remedy)
+            .map(|r| Box::new(r) as Box<dyn Diagnostic>),
+    );
     samples
 }
 
@@ -848,6 +902,7 @@ fn error_samples() -> Vec<BuildError> {
         BuildError::Prost { detail: s() },
         BuildError::Buf { detail: s() },
         BuildError::Uv { detail: s() },
+        BuildError::GeneratedUnmarked { path: s() },
         BuildError::Codegen(angzarr_codegen::UseError::NoWirePath { package: s() }.into()),
     ]
 }
@@ -856,7 +911,7 @@ fn error_samples() -> Vec<BuildError> {
 mod tests {
     use angzarr_diagnostic::{Diagnostic, code};
 
-    use super::{BuildError, BuildWarning, EN_US, English, cargo_warning, error_samples};
+    use super::{BuildError, EN_US, English, error_samples};
 
     /// Every crate's catalog a build script shows, in Fluent.
     fn fluent() -> angzarr_fmt::Catalog {
@@ -876,8 +931,8 @@ mod tests {
     }
 
     /// A build script's English is Fluent's rendering of the catalogs, for
-    /// every error it can show: its own, the generator's refusals (nested in
-    /// [`BuildError::Codegen`]), and its warnings.
+    /// every error it can show: its own, and the generator's refusals (nested
+    /// in [`BuildError::Codegen`]).
     #[test]
     fn a_build_scripts_english_is_the_catalogs_for_every_error() {
         let catalog = fluent();
@@ -893,32 +948,6 @@ mod tests {
             let shown = English(angzarr_codegen::EN_US.1, &*refusal).to_string();
             assert_eq!(shown, rendered(&catalog, &*refusal), "{}", refusal.code());
         }
-        let warning = BuildWarning::InterfaceMissing {
-            path: "x".to_string(),
-        };
-        assert_eq!(
-            cargo_warning(&warning),
-            format!(
-                concat!("cargo:warning=", code!("interface-missing"), ": {}"),
-                rendered(&catalog, &warning)
-            )
-        );
-    }
-
-    #[test]
-    fn a_warning_is_a_cargo_warning_naming_the_missing_interface() {
-        let warning = BuildWarning::InterfaceMissing {
-            path: "src/buy_in_wallet.rs".to_string(),
-        };
-        assert_eq!(
-            cargo_warning(&warning),
-            concat!(
-                "cargo:warning=",
-                code!("interface-missing"),
-                ": src/buy_in_wallet.rs, a policy's interface, is not there: its adapter \
-                 translates no refusal; scaffold it, or move it back"
-            )
-        );
     }
 
     #[test]

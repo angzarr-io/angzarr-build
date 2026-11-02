@@ -9,4 +9,5 @@ prost = prost-build failed: { $detail }
 codegen = { $error }
 buf = buf generate failed: { $detail }
 uv = uv failed: { $detail }
-interface-missing = { $path }, a policy's interface, is not there: its adapter translates no refusal; scaffold it, or move it back
+generated-unmarked = { $path } is where a generated file goes, but it does not carry the generated marker (@generated): it was edited by hand, or written in its place, and is not overwritten
+generated-unmarked-remedy = move your changes out of it (generated files are rewritten on every run; your code goes in the files written once), then restore it or delete it so the next run writes it. A file an older angzarr-cli wrote without the marker is safe to delete

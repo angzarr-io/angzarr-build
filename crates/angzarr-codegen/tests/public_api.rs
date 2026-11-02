@@ -31,6 +31,7 @@ const ALLOWED: &[&str] = &[
     "angzarr_embedded::markup::BusinessStatus",
     "angzarr_embedded::markup::CommandContext",
     "angzarr_embedded::markup::CommandTarget",
+    "angzarr_embedded::markup::Compensation",
     "angzarr_embedded::markup::Commands",
     "angzarr_embedded::markup::Context",
     "angzarr_embedded::markup::decode_message",
@@ -48,6 +49,7 @@ const ALLOWED: &[&str] = &[
     "angzarr_embedded::markup::Refuses",
     "angzarr_embedded::markup::Report",
     "angzarr_embedded::markup::RetryableStatus",
+    "angzarr_embedded::markup::Translation",
     "angzarr_embedded::markup::type_url_of",
     "angzarr_embedded::angzarr_diagnostic::Arg",
     "angzarr_embedded::angzarr_diagnostic::Arg::from",
@@ -136,7 +138,7 @@ fn generated(files: &[&str], wire: &[(&str, &str)], remote: &[&str]) -> Vec<Stri
         .into_iter()
         .map(|g| g.source)
         .collect();
-    sources.push(adapters(&set, files, remote, &|_| None).unwrap());
+    sources.push(adapters(&set, files, remote).unwrap());
     sources.push(register(&set, files, remote).unwrap());
     sources.push(descriptors_rs(&set, files, remote, "1").unwrap());
     sources

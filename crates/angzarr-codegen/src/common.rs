@@ -140,3 +140,21 @@ pub(crate) fn screaming(camel: &str) -> String {
     }
     out
 }
+
+/// `text` wrapped at `width` columns, on spaces: prose for a generated
+/// comment or docstring.
+pub(crate) fn wrap(text: &str, width: usize) -> String {
+    let mut lines: Vec<String> = vec![String::new()];
+    for word in text.split(' ') {
+        let line = lines.last_mut().expect("a line");
+        if !line.is_empty() && line.len() + 1 + word.len() > width {
+            lines.push(word.to_string());
+        } else {
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+    }
+    lines.join("\n")
+}
