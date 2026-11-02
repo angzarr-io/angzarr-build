@@ -9,6 +9,7 @@
 //! Enums convert by number, so nothing here depends on how prost names
 //! variants.
 
+use angzarr_diagnostic::code;
 use proc_macro2::{Span, TokenStream};
 use prost_reflect::{EnumDescriptor, FieldDescriptor, Kind, MessageDescriptor};
 use quote::{format_ident, quote};
@@ -171,10 +172,17 @@ fn wire_settings(messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStrea
     if checks.is_empty() {
         return TokenStream::new();
     }
+    // The compile errors' codes are this crate's, named by the package
+    // that generates them (code!), written into the generated source as
+    // literals.
     let bytes = bytes.then(|| {
+        let message = concat!(
+            code!("wire-bytes"),
+            ": a bytes field of the prost types is `{Self}`; the domain layer is generated for `Vec<u8>`"
+        );
         quote! {
             #[diagnostic::on_unimplemented(
-                message = "angzarr-codegen-wire-bytes: a bytes field of the prost types is `{Self}`; the domain layer is generated for `Vec<u8>`",
+                message = #message,
                 label = "not `Vec<u8>`",
                 note = "build the prost types with angzarr_build::wire, or prost-build with its default bytes"
             )]
@@ -186,9 +194,13 @@ fn wire_settings(messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStrea
         }
     });
     let maps = maps.then(|| {
+        let message = concat!(
+            code!("wire-map"),
+            ": a map field of the prost types is `{Self}`; the domain layer is generated for `BTreeMap`"
+        );
         quote! {
             #[diagnostic::on_unimplemented(
-                message = "angzarr-codegen-wire-map: a map field of the prost types is `{Self}`; the domain layer is generated for `BTreeMap`",
+                message = #message,
                 label = "not a `BTreeMap`",
                 note = "build the prost types with angzarr_build::wire, or prost-build with btree_map([\".\"])"
             )]

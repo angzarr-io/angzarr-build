@@ -688,7 +688,7 @@ fn test_the_users_files_of_every_kind_name_nothing_of_the_harness() {
 /// Runs `script` with python3 beside `domain` (a generated `domain.py`),
 /// an `angzarr_client.router` stub standing in for the client.
 fn run_domain(domain: &str, script: &str) -> std::process::Output {
-    let dir = TestDir::new("angzarr-codegen-python-components");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-python-components"));
     let client = dir.join("angzarr_client");
     std::fs::create_dir_all(&client).unwrap();
     std::fs::write(client.join("__init__.py"), "").unwrap();

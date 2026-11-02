@@ -270,7 +270,7 @@ fn test_generated_register_composes_with_a_hand_written_component() {
 /// the crate `stub`: the diagnostics, if rustc refused it.
 fn compile_with_stub(stub: &str, source: &str) -> Result<(), String> {
     use std::process::Command;
-    let dir = TestDir::new("angzarr-codegen-table-generation");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-table-generation"));
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let rustc = |args: &[&str]| {
         Command::new(&rustc)

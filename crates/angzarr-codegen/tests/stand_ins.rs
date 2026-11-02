@@ -85,7 +85,7 @@ fn test_every_domain_of_the_files_gets_a_stand_in_and_nothing_else_does() {
 fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
     use std::process::Command;
     let source = stand_ins(&descriptors(BLACKJACK), &[PLAYER]).unwrap();
-    let dir = TestDir::new("angzarr-codegen-stand-ins");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-stand-ins"));
     std::fs::write(
         dir.join("stub.rs"),
         "pub mod markup {\n\

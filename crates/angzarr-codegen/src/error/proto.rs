@@ -4,7 +4,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic, code};
 
 use super::{text, texts};
 
@@ -52,13 +52,13 @@ impl std::error::Error for ProtoError {}
 impl Diagnostic for ProtoError {
     fn code(&self) -> &'static str {
         match self {
-            ProtoError::Descriptors { .. } => "angzarr-codegen-descriptors",
-            ProtoError::Oneof { .. } => "angzarr-codegen-oneof",
-            ProtoError::NestedType { .. } => "angzarr-codegen-nested-type",
-            ProtoError::WellKnownType { .. } => "angzarr-codegen-well-known-type",
-            ProtoError::EnumZero { .. } => "angzarr-codegen-enum-zero",
-            ProtoError::ReservedName { .. } => "angzarr-codegen-reserved-name",
-            ProtoError::RefusalChoiceName { .. } => "angzarr-codegen-refusal-choice-name",
+            ProtoError::Descriptors { .. } => code!("descriptors"),
+            ProtoError::Oneof { .. } => code!("oneof"),
+            ProtoError::NestedType { .. } => code!("nested-type"),
+            ProtoError::WellKnownType { .. } => code!("well-known-type"),
+            ProtoError::EnumZero { .. } => code!("enum-zero"),
+            ProtoError::ReservedName { .. } => code!("reserved-name"),
+            ProtoError::RefusalChoiceName { .. } => code!("refusal-choice-name"),
         }
     }
 

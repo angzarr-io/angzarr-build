@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic, code};
 
 use super::{text, texts};
 
@@ -92,41 +92,41 @@ impl std::error::Error for MarkupError {}
 impl Diagnostic for MarkupError {
     fn code(&self) -> &'static str {
         match self {
-            MarkupError::UnknownComponent { .. } => "angzarr-codegen-unknown-component",
-            MarkupError::UnknownEmit { .. } => "angzarr-codegen-unknown-emit",
-            MarkupError::UnknownRefusal { .. } => "angzarr-codegen-unknown-refusal",
-            MarkupError::UnownedDomain { .. } => "angzarr-codegen-unowned-domain",
-            MarkupError::UnsupportedKind { .. } => "angzarr-codegen-unsupported-kind",
-            MarkupError::Commutative { .. } => "angzarr-codegen-commutative",
-            MarkupError::RefusesOnFact { .. } => "angzarr-codegen-refuses-on-fact",
+            MarkupError::UnknownComponent { .. } => code!("unknown-component"),
+            MarkupError::UnknownEmit { .. } => code!("unknown-emit"),
+            MarkupError::UnknownRefusal { .. } => code!("unknown-refusal"),
+            MarkupError::UnownedDomain { .. } => code!("unowned-domain"),
+            MarkupError::UnsupportedKind { .. } => code!("unsupported-kind"),
+            MarkupError::Commutative { .. } => code!("commutative"),
+            MarkupError::RefusesOnFact { .. } => code!("refuses-on-fact"),
             MarkupError::InputDomainsOnNonProjector { .. } => {
-                "angzarr-codegen-input-domains-on-non-projector"
+                code!("input-domains-on-non-projector")
             }
             MarkupError::InputDomainsWithInputDomain { .. } => {
-                "angzarr-codegen-input-domains-with-input-domain"
+                code!("input-domains-with-input-domain")
             }
-            MarkupError::DuplicateSource { .. } => "angzarr-codegen-duplicate-source",
-            MarkupError::UnlistedSource { .. } => "angzarr-codegen-unlisted-source",
-            MarkupError::UnprojectedSource { .. } => "angzarr-codegen-unprojected-source",
-            MarkupError::ComponentName { .. } => "angzarr-codegen-component-name",
+            MarkupError::DuplicateSource { .. } => code!("duplicate-source"),
+            MarkupError::UnlistedSource { .. } => code!("unlisted-source"),
+            MarkupError::UnprojectedSource { .. } => code!("unprojected-source"),
+            MarkupError::ComponentName { .. } => code!("component-name"),
             MarkupError::CardinalityWithoutEmits { .. } => {
-                "angzarr-codegen-cardinality-without-emits"
+                code!("cardinality-without-emits")
             }
-            MarkupError::EmitsTuple { .. } => "angzarr-codegen-emits-tuple",
+            MarkupError::EmitsTuple { .. } => code!("emits-tuple"),
             MarkupError::RefusalStatusMisplaced { .. } => {
-                "angzarr-codegen-refusal-status-misplaced"
+                code!("refusal-status-misplaced")
             }
             MarkupError::ProcessManagerSubscribes { .. } => {
-                "angzarr-codegen-process-manager-subscribes"
+                code!("process-manager-subscribes")
             }
             MarkupError::ProcessManagerOutputDomain { .. } => {
-                "angzarr-codegen-process-manager-output-domain"
+                code!("process-manager-output-domain")
             }
-            MarkupError::NoOutputDomain { .. } => "angzarr-codegen-no-output-domain",
+            MarkupError::NoOutputDomain { .. } => code!("no-output-domain"),
             MarkupError::StartsOnNonProcessManager { .. } => {
-                "angzarr-codegen-starts-on-non-process-manager"
+                code!("starts-on-non-process-manager")
             }
-            MarkupError::ForeignRefusal { .. } => "angzarr-codegen-foreign-refusal",
+            MarkupError::ForeignRefusal { .. } => code!("foreign-refusal"),
         }
     }
 

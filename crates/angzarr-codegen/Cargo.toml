@@ -33,5 +33,10 @@ angzarr-fmt.workspace = true
 cucumber = "0.21"
 prost = "0.14"
 
+# The build writes the catalog's source under the crate's name
+# (angzarr_diagnostic::build): no catalog spells its crate's name.
+[build-dependencies]
+angzarr-diagnostic = { workspace = true, features = ["build"] }
+
 [lints]
 workspace = true

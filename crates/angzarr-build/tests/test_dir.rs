@@ -25,18 +25,22 @@ fn panicking_with(prefix: &str, keep: bool) -> PathBuf {
 
 #[test]
 fn a_test_dir_is_fresh_and_empty_under_the_temporary_directory() {
-    let dir = TestDir::new("angzarr-build-test-dir");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-test-dir"));
     assert!(dir.is_dir());
     assert!(std::fs::read_dir(&dir).unwrap().next().is_none());
     assert_eq!(dir.parent(), Some(std::env::temp_dir().as_path()));
     let name = dir.file_name().unwrap().to_string_lossy().into_owned();
-    let pid = format!("angzarr-build-test-dir-{}-", std::process::id());
+    let pid = format!(
+        "{}-test-dir-{}-",
+        env!("CARGO_PKG_NAME"),
+        std::process::id()
+    );
     assert!(name.starts_with(&pid), "{name}");
 }
 
 #[test]
 fn a_test_dir_and_its_contents_go_when_it_drops() {
-    let dir = TestDir::new("angzarr-build-test-dir");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-test-dir"));
     std::fs::create_dir_all(dir.join("a/b")).unwrap();
     std::fs::write(dir.join("a/b/file"), "x").unwrap();
     let path = dir.to_path_buf();
@@ -46,13 +50,13 @@ fn a_test_dir_and_its_contents_go_when_it_drops() {
 
 #[test]
 fn a_test_dir_goes_when_its_test_panics() {
-    let path = panicking_with("angzarr-build-test-dir-panic", false);
+    let path = panicking_with(concat!(env!("CARGO_PKG_NAME"), "-test-dir-panic"), false);
     assert!(!path.exists(), "{}", path.display());
 }
 
 #[test]
 fn a_test_dir_kept_on_panic_stays_when_its_test_panics() {
-    let path = panicking_with("angzarr-build-test-dir-kept", true);
+    let path = panicking_with(concat!(env!("CARGO_PKG_NAME"), "-test-dir-kept"), true);
     let kept = path.join("file").is_file();
     std::fs::remove_dir_all(&path).unwrap();
     assert!(kept, "{}", path.display());
@@ -60,7 +64,7 @@ fn a_test_dir_kept_on_panic_stays_when_its_test_panics() {
 
 #[test]
 fn a_test_dir_kept_on_panic_still_goes_when_its_test_passes() {
-    let dir = TestDir::keeping_on_panic("angzarr-build-test-dir-kept", true);
+    let dir = TestDir::keeping_on_panic(concat!(env!("CARGO_PKG_NAME"), "-test-dir-kept"), true);
     let path = dir.to_path_buf();
     drop(dir);
     assert!(!path.exists(), "{}", path.display());

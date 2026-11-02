@@ -32,7 +32,7 @@ pub fn spec() -> PathBuf {
 /// first, so its options (the ones the generator reads) are the spec's,
 /// then angzarr-proto's for what the spec does not hold.
 pub fn descriptors(files: &[&str]) -> Vec<u8> {
-    let dir = TestDir::new("angzarr-codegen-scaffold-test");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-scaffold-test"));
     let angzarr = angzarr_proto::protos::write_include_dir(&dir.join("angzarr")).unwrap();
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let out: PathBuf = dir.join("set.bin");

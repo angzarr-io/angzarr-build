@@ -11,7 +11,7 @@ use test_dir::TestDir;
 
 #[test]
 fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
-    let root = TestDir::new("angzarr-build-app-out");
+    let root = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-app-out"));
     let out = root.join("out");
     std::fs::create_dir_all(&out).unwrap();
     std::fs::write(

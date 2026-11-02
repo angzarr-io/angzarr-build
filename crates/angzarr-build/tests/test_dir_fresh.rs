@@ -8,14 +8,14 @@ use test_dir::TestDir;
 
 #[test]
 fn a_leftover_at_a_test_dirs_name_is_cleared() {
-    let first = TestDir::new("angzarr-build-test-dir-fresh");
+    let first = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-test-dir-fresh"));
     let name = first.file_name().unwrap().to_string_lossy().into_owned();
     let (stem, n) = name.rsplit_once('-').unwrap();
     let next: usize = n.parse::<usize>().unwrap() + 1;
     let leftover = first.with_file_name(format!("{stem}-{next}"));
     std::fs::create_dir_all(&leftover).unwrap();
     std::fs::write(leftover.join("debris"), "x").unwrap();
-    let second = TestDir::new("angzarr-build-test-dir-fresh");
+    let second = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-test-dir-fresh"));
     assert_eq!(second.path(), leftover);
     assert!(std::fs::read_dir(&second).unwrap().next().is_none());
 }

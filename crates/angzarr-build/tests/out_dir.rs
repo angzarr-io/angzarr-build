@@ -10,7 +10,7 @@ use test_dir::TestDir;
 
 #[test]
 fn test_descriptors_writes_into_out_dir_with_the_crates_version() {
-    let out = TestDir::new("angzarr-build-out-dir");
+    let out = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-out-dir"));
     // SAFETY: this binary's one test; nothing else reads the environment.
     unsafe { std::env::set_var("OUT_DIR", &out) };
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))

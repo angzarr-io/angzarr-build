@@ -9,7 +9,7 @@ use test_dir::TestDir;
 
 #[test]
 fn test_stand_ins_writes_into_out_dir() {
-    let out = TestDir::new("angzarr-build-stand-ins");
+    let out = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-stand-ins"));
     // SAFETY: this binary's one test; nothing else reads the environment.
     unsafe { std::env::set_var("OUT_DIR", &out) };
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))

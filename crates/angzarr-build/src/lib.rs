@@ -19,15 +19,19 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use angzarr_diagnostic::{Arg, Diagnostic, catalog};
+use angzarr_diagnostic::{Arg, Diagnostic, catalog, code};
 
 pub use angzarr_codegen::{
     ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Exposure, Linted,
     ProtoInput, PythonApp, RetrySeed, Translate, Warning,
 };
 
-/// This crate's en-US messages.
-pub const EN_US: &str = include_str!("../locales/en-US/angzarr-build.ftl");
+/// This crate's en-US messages: its package name, and its catalog, each id
+/// under that name (written by the build, `angzarr_diagnostic::build`).
+pub const EN_US: (&str, &str) = (
+    env!("CARGO_PKG_NAME"),
+    include_str!(concat!(env!("OUT_DIR"), "/en-US.ftl")),
+);
 
 /// The prost types of `protos`, by package (`<package>.rs` in `OUT_DIR`),
 /// with angzarr's settings: `prost::Name` on every message, ordered maps,
@@ -182,7 +186,7 @@ fn cargo_warning(warning: &BuildWarning) -> String {
     format!(
         "cargo:warning={}: {}",
         warning.code(),
-        English(EN_US, warning)
+        English(EN_US.1, warning)
     )
 }
 
@@ -199,7 +203,7 @@ impl fmt::Display for English<'_> {
 impl Diagnostic for BuildWarning {
     fn code(&self) -> &'static str {
         match self {
-            BuildWarning::InterfaceMissing { .. } => "angzarr-build-interface-missing",
+            BuildWarning::InterfaceMissing { .. } => code!("interface-missing"),
         }
     }
 
@@ -636,7 +640,8 @@ fn run(
 fn scratch_dir() -> Result<PathBuf, BuildError> {
     static RUN: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "angzarr-build-{}-{}",
+        "{}-{}-{}",
+        env!("CARGO_PKG_NAME"),
         std::process::id(),
         RUN.fetch_add(1, Ordering::Relaxed)
     ));
@@ -779,9 +784,9 @@ impl fmt::Debug for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BuildError::Codegen(error) => {
-                fmt::Display::fmt(&English(angzarr_codegen::EN_US, error), f)
+                fmt::Display::fmt(&English(angzarr_codegen::EN_US.1, error), f)
             }
-            _ => fmt::Display::fmt(&English(EN_US, self), f),
+            _ => fmt::Display::fmt(&English(EN_US.1, self), f),
         }
     }
 }
@@ -791,13 +796,13 @@ impl std::error::Error for BuildError {}
 impl Diagnostic for BuildError {
     fn code(&self) -> &'static str {
         match self {
-            BuildError::NoOutDir => "angzarr-build-no-out-dir",
-            BuildError::Io { .. } => "angzarr-build-io",
-            BuildError::Protoc { .. } => "angzarr-build-protoc",
-            BuildError::Prost { .. } => "angzarr-build-prost",
-            BuildError::Buf { .. } => "angzarr-build-buf",
-            BuildError::Uv { .. } => "angzarr-build-uv",
-            BuildError::Codegen(_) => "angzarr-build-codegen",
+            BuildError::NoOutDir => code!("no-out-dir"),
+            BuildError::Io { .. } => code!("io"),
+            BuildError::Protoc { .. } => code!("protoc"),
+            BuildError::Prost { .. } => code!("prost"),
+            BuildError::Buf { .. } => code!("buf"),
+            BuildError::Uv { .. } => code!("uv"),
+            BuildError::Codegen(_) => code!("codegen"),
         }
     }
 
@@ -849,15 +854,15 @@ fn error_samples() -> Vec<BuildError> {
 
 #[cfg(test)]
 mod tests {
-    use angzarr_diagnostic::Diagnostic;
+    use angzarr_diagnostic::{Diagnostic, code};
 
     use super::{BuildError, BuildWarning, EN_US, English, cargo_warning, error_samples};
 
     /// Every crate's catalog a build script shows, in Fluent.
     fn fluent() -> angzarr_fmt::Catalog {
         let mut catalog = angzarr_fmt::Catalog::en_us();
-        catalog.add(angzarr_codegen::EN_US).unwrap();
-        catalog.add(EN_US).unwrap();
+        catalog.add(angzarr_codegen::EN_US.1).unwrap();
+        catalog.add(EN_US.1).unwrap();
         catalog
     }
 
@@ -885,7 +890,7 @@ mod tests {
             );
         }
         for refusal in angzarr_codegen::diagnostic_samples() {
-            let shown = English(angzarr_codegen::EN_US, &*refusal).to_string();
+            let shown = English(angzarr_codegen::EN_US.1, &*refusal).to_string();
             assert_eq!(shown, rendered(&catalog, &*refusal), "{}", refusal.code());
         }
         let warning = BuildWarning::InterfaceMissing {
@@ -894,7 +899,7 @@ mod tests {
         assert_eq!(
             cargo_warning(&warning),
             format!(
-                "cargo:warning=angzarr-build-interface-missing: {}",
+                concat!("cargo:warning=", code!("interface-missing"), ": {}"),
                 rendered(&catalog, &warning)
             )
         );
@@ -907,23 +912,28 @@ mod tests {
         };
         assert_eq!(
             cargo_warning(&warning),
-            "cargo:warning=angzarr-build-interface-missing: src/buy_in_wallet.rs, a policy's \
-             interface, is not there: its adapter translates no refusal; scaffold it, or move \
-             it back"
+            concat!(
+                "cargo:warning=",
+                code!("interface-missing"),
+                ": src/buy_in_wallet.rs, a policy's interface, is not there: its adapter \
+                 translates no refusal; scaffold it, or move it back"
+            )
         );
     }
 
     #[test]
     fn an_error_displays_as_its_code_and_args() {
-        let error = BuildError::Codegen(
-            angzarr_codegen::UseError::NoWirePath {
-                package: "shop.v1".to_string(),
-            }
-            .into(),
-        );
+        let refusal = angzarr_codegen::UseError::NoWirePath {
+            package: "shop.v1".to_string(),
+        };
+        let error = BuildError::Codegen(refusal.clone().into());
         assert_eq!(
             error.to_string(),
-            "angzarr-build-codegen error=angzarr-codegen-no-wire-path error.package=shop.v1"
+            format!(
+                "{} error={} error.package=shop.v1",
+                code!("codegen"),
+                refusal.code()
+            )
         );
     }
 }

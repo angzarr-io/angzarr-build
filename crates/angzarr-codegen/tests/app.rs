@@ -14,7 +14,7 @@ mod common;
 
 use angzarr_codegen::{
     AppError, AppLint, AppSeed, CodegenError, DomainCrate, Exposure, Owner, RetrySeed,
-    ScaffoldFile, app, child_components, lint_app, remote_domains,
+    ScaffoldFile, Warning, app, child_components, lint_app, remote_domains,
 };
 use common::*;
 
@@ -1087,7 +1087,7 @@ fn a_process_manager_with_a_starting_input_is_not_warned_of() {
         linted
             .warnings
             .iter()
-            .all(|w| angzarr_diagnostic::Diagnostic::code(w) != "angzarr-codegen-no-starting-input"),
+            .all(|w| !matches!(w, Warning::NoStartingInput { .. })),
         "{:?}",
         linted.warnings
     );

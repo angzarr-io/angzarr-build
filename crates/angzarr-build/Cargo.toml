@@ -22,5 +22,10 @@ prost-build = "0.14"
 angzarr-fmt.workspace = true
 syn = { version = "3.0.9", features = ["full"] }
 
+# The build writes the catalog's source under the crate's name
+# (angzarr_diagnostic::build): no catalog spells its crate's name.
+[build-dependencies]
+angzarr-diagnostic = { workspace = true, features = ["build"] }
+
 [lints]
 workspace = true

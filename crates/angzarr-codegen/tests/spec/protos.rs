@@ -187,7 +187,7 @@ impl Protos {
 /// importable: the spec's own protos first, then angzarr-proto's. They are
 /// written to a [`TestDir`] of their own, removed when compiled.
 pub fn compile(files: &BTreeMap<String, String>) -> Vec<u8> {
-    let dir = TestDir::new("angzarr-codegen-spec");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-spec"));
     let protos = dir.join("protos");
     std::fs::create_dir_all(&protos).expect("a scratch directory");
     for (path, text) in files {

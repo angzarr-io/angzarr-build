@@ -21,7 +21,7 @@ fn fixtures() -> String {
 
 /// A fresh, empty output directory.
 fn out_dir() -> TestDir {
-    TestDir::new("angzarr-build-test")
+    TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-test"))
 }
 
 #[test]
@@ -55,7 +55,7 @@ fn test_markup_domain_into_reports_a_proto_protoc_cannot_find() {
 
 #[test]
 fn test_every_error_has_a_catalog_message_with_its_args() {
-    let ftl = include_str!("../locales/en-US/angzarr-build.ftl");
+    let ftl = angzarr_build::EN_US.1;
     let samples = angzarr_build::diagnostic_samples();
     let problems = angzarr_fmt::check(ftl, &samples);
     assert!(problems.is_empty(), "{problems:#?}");
@@ -110,11 +110,9 @@ fn test_a_failing_build_script_prints_the_errors_english() {
 /// 14.37), and core's catalog check agrees with the catalog.
 #[test]
 fn test_every_error_displays_as_its_code_and_args() {
-    let problems = angzarr_diagnostic::catalog::check(
-        "angzarr-build",
-        angzarr_build::EN_US,
-        &angzarr_build::diagnostic_samples(),
-    );
+    let (krate, ftl) = angzarr_build::EN_US;
+    let problems =
+        angzarr_diagnostic::catalog::check(krate, ftl, &angzarr_build::diagnostic_samples());
     assert_eq!(problems, Vec::new());
 }
 

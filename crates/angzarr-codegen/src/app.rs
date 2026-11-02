@@ -29,7 +29,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report};
+use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use angzarr_embedded_host_config::angzarr_yaml::{self, Value};
 use angzarr_embedded_host_config::{
     ComponentConfig, ComponentKindConfig as Kind, Expose, FILE_NAME, HostConfig, KEY,
@@ -302,14 +302,14 @@ impl fmt::Display for AppLint {
 impl Diagnostic for AppLint {
     fn code(&self) -> &'static str {
         match self {
-            AppLint::UnknownComponent { .. } => "angzarr-codegen-app-unknown-component",
-            AppLint::DuplicateComponent { .. } => "angzarr-codegen-app-duplicate-component",
-            AppLint::UnlistedDomain { .. } => "angzarr-codegen-app-unlisted-domain",
-            AppLint::PolicySourceAbsent { .. } => "angzarr-codegen-app-policy-source-absent",
-            AppLint::PolicyTargetAbsent { .. } => "angzarr-codegen-app-policy-target-absent",
-            AppLint::NotExposable { .. } => "angzarr-codegen-app-not-exposable",
-            AppLint::UnknownLanguage { .. } => "angzarr-codegen-app-unknown-language",
-            AppLint::EmptyLaunch { .. } => "angzarr-codegen-app-empty-launch",
+            AppLint::UnknownComponent { .. } => code!("app-unknown-component"),
+            AppLint::DuplicateComponent { .. } => code!("app-duplicate-component"),
+            AppLint::UnlistedDomain { .. } => code!("app-unlisted-domain"),
+            AppLint::PolicySourceAbsent { .. } => code!("app-policy-source-absent"),
+            AppLint::PolicyTargetAbsent { .. } => code!("app-policy-target-absent"),
+            AppLint::NotExposable { .. } => code!("app-not-exposable"),
+            AppLint::UnknownLanguage { .. } => code!("app-unknown-language"),
+            AppLint::EmptyLaunch { .. } => code!("app-empty-launch"),
         }
     }
 
@@ -388,7 +388,7 @@ pub fn lint_app(
 
 /// `text` read as angzarr-embedded-host reads its config: through the
 /// schema's loader, strictly, the reader's error kept as the cause.
-fn read(text: &str) -> Result<HostConfig, AppError> {
+pub(crate) fn read(text: &str) -> Result<HostConfig, AppError> {
     HostConfig::from_yaml(text, FILE_NAME).map_err(|e| AppError::Config {
         cause: Report::of(&e),
     })

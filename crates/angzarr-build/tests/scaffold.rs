@@ -41,7 +41,7 @@ fn fixtures() -> String {
 
 /// A fresh, empty directory.
 fn empty_dir() -> TestDir {
-    TestDir::new("angzarr-build-scaffold-test")
+    TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-scaffold-test"))
 }
 
 fn scaffold(src: &Path, existing: Existing) -> Vec<Scaffolded> {

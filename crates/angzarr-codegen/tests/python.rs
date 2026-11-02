@@ -719,7 +719,7 @@ fn test_an_event_several_commands_emit_gets_a_helper_named_for_each() {
 /// Runs `script` with python3 beside the player's `domain.py`, an
 /// `angzarr_client.router` stub standing in for the client.
 fn run_player_domain(script: &str) -> std::process::Output {
-    let dir = TestDir::new("angzarr-codegen-from-command");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-from-command"));
     let client = dir.join("angzarr_client");
     std::fs::create_dir_all(&client).unwrap();
     std::fs::write(client.join("__init__.py"), "").unwrap();

@@ -14,7 +14,7 @@ fn the_keep_variable_keeps_a_panicking_tests_directory() {
     unsafe { std::env::set_var(KEEP, "1") };
     let mut seen = None;
     let unwound = catch_unwind(AssertUnwindSafe(|| {
-        let dir = TestDir::new("angzarr-build-test-dir-keep");
+        let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-test-dir-keep"));
         seen = Some(dir.to_path_buf());
         panic!("the test fails while its directory is held");
     }));

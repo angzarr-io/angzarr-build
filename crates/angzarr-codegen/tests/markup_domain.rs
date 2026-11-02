@@ -605,18 +605,19 @@ fn test_markup_domain_refuses_bytes_that_are_not_a_descriptor_set() {
 
 #[test]
 fn test_every_error_has_a_catalog_message_with_its_args() {
-    let ftl = include_str!("../locales/en-US/angzarr-codegen.ftl");
-    let problems = angzarr_fmt::check(ftl, &angzarr_codegen::diagnostic_samples());
+    let problems = angzarr_fmt::check(
+        angzarr_codegen::EN_US.1,
+        &angzarr_codegen::diagnostic_samples(),
+    );
     assert!(problems.is_empty(), "{problems:#?}");
 }
 
 #[test]
 fn test_every_catalog_message_is_the_code_of_a_sample() {
-    let ftl = include_str!("../locales/en-US/angzarr-codegen.ftl");
-    let mut messages: Vec<&str> = ftl
+    let mut messages: Vec<&str> = angzarr_codegen::EN_US
+        .1
         .lines()
         .filter_map(|line| line.split_once(" = ").map(|(id, _)| id))
-        .filter(|id| id.starts_with("angzarr-codegen-"))
         .collect();
     messages.sort_unstable();
     let samples = angzarr_codegen::diagnostic_samples();
@@ -630,10 +631,8 @@ fn test_every_catalog_message_is_the_code_of_a_sample() {
 /// rendered where it is shown (angzarr-build's build script, the CLI).
 #[test]
 fn test_every_error_displays_as_its_code_and_args() {
-    let problems = angzarr_diagnostic::catalog::check(
-        "angzarr-codegen",
-        angzarr_codegen::EN_US,
-        &angzarr_codegen::diagnostic_samples(),
-    );
+    let (krate, ftl) = angzarr_codegen::EN_US;
+    let problems =
+        angzarr_diagnostic::catalog::check(krate, ftl, &angzarr_codegen::diagnostic_samples());
     assert_eq!(problems, Vec::new());
 }

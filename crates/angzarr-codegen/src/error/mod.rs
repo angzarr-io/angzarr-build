@@ -135,7 +135,7 @@ pub(crate) fn text(field: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use angzarr_diagnostic::{Arg, Diagnostic};
+    use angzarr_diagnostic::{Arg, Diagnostic, code};
 
     use super::{CodegenError, MarkupError, diagnostic_samples, text};
 
@@ -183,11 +183,15 @@ mod tests {
             event: text("event"),
         };
         let error = CodegenError::from(concern.clone());
-        assert_eq!(error.code(), "angzarr-codegen-unknown-emit");
+        assert!(matches!(
+            error,
+            CodegenError::Markup(MarkupError::UnknownEmit { .. })
+        ));
+        assert_eq!(error.code(), concern.code());
         assert_eq!(error.to_string(), concern.to_string());
         assert_eq!(
             error.to_string(),
-            "angzarr-codegen-unknown-emit command=command event=event"
+            concat!(code!("unknown-emit"), " command=command event=event")
         );
     }
 }

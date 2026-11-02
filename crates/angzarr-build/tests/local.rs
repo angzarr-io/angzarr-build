@@ -55,7 +55,7 @@ fn translate() -> Vec<Translate> {
 /// not a hand-made one.)
 #[test]
 fn test_the_apps_components_are_the_complete_scaffold() {
-    let src = TestDir::new("angzarr-build-local-test");
+    let src = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-local-test"));
     for file in COMPONENTS {
         std::fs::copy(app().join("src").join(file), src.join(file)).unwrap();
     }

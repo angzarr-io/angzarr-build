@@ -67,8 +67,12 @@ pub(crate) fn headed_files(files: Vec<ScaffoldFile>) -> Vec<ScaffoldFile> {
         .collect()
 }
 
-/// This crate's en-US messages.
-pub const EN_US: &str = include_str!("../locales/en-US/angzarr-codegen.ftl");
+/// This crate's en-US messages: its package name, and its catalog, each id
+/// under that name (written by the build, `angzarr_diagnostic::build`).
+pub const EN_US: (&str, &str) = (
+    env!("CARGO_PKG_NAME"),
+    include_str!(concat!(env!("OUT_DIR"), "/en-US.ftl")),
+);
 pub use python::{
     CLIENT_PYTHON_GIT, CLIENT_PYTHON_REV, ProtoInput, PythonApp, python_reroots, reroot_python,
     scaffold_python,

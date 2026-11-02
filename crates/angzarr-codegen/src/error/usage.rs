@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic, code};
 
 use super::{text, texts};
 
@@ -53,19 +53,19 @@ impl std::error::Error for UseError {}
 impl Diagnostic for UseError {
     fn code(&self) -> &'static str {
         match self {
-            UseError::FileNotInSet { .. } => "angzarr-codegen-file-not-in-set",
-            UseError::NoWirePath { .. } => "angzarr-codegen-no-wire-path",
-            UseError::TranslateUnknownPolicy { .. } => "angzarr-codegen-translate-unknown-policy",
+            UseError::FileNotInSet { .. } => code!("file-not-in-set"),
+            UseError::NoWirePath { .. } => code!("no-wire-path"),
+            UseError::TranslateUnknownPolicy { .. } => code!("translate-unknown-policy"),
             UseError::TranslateNotATargetCommand { .. } => {
-                "angzarr-codegen-translate-not-a-target-command"
+                code!("translate-not-a-target-command")
             }
             UseError::TranslateNotASourceFact { .. } => {
-                "angzarr-codegen-translate-not-a-source-fact"
+                code!("translate-not-a-source-fact")
             }
-            UseError::TranslateNotAFact { .. } => "angzarr-codegen-translate-not-a-fact",
-            UseError::PythonNoDomain { .. } => "angzarr-codegen-python-no-domain",
-            UseError::ScaffoldImplNotFound { .. } => "angzarr-codegen-scaffold-impl-not-found",
-            UseError::InputMismatch { .. } => "angzarr-codegen-input-mismatch",
+            UseError::TranslateNotAFact { .. } => code!("translate-not-a-fact"),
+            UseError::PythonNoDomain { .. } => code!("python-no-domain"),
+            UseError::ScaffoldImplNotFound { .. } => code!("scaffold-impl-not-found"),
+            UseError::InputMismatch { .. } => code!("input-mismatch"),
         }
     }
 

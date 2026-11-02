@@ -6,7 +6,7 @@
 //! ([`coded`]). Generating runs every check generation makes: the
 //! descriptors, the domain layer, the scaffold and the adapters.
 
-use angzarr_codegen::CodegenError;
+use angzarr_codegen::{CodegenError, Warning};
 use angzarr_diagnostic::Diagnostic as _;
 use cucumber::{then, when};
 
@@ -65,14 +65,14 @@ fn warns_of(warning: &angzarr_codegen::Warning, name: &str) -> bool {
         .any(|a| names_in(&a, &full) || names_in(&a, name))
 }
 
-/// The cli's code for the condition the tier labels `label` (`ANZ100`):
-/// every code is the crate's (decision 14.37's code rule).
-fn coded(label: &str) -> &'static str {
+/// The cli's warning for the condition the tier labels `label` (`ANZ100`),
+/// by its variant.
+fn coded(label: &str) -> fn(&Warning) -> bool {
     match label {
-        "ANZ100" => "angzarr-codegen-unapplied-emit",
-        "ANZ101" => "angzarr-codegen-unowned-target",
-        "ANZ102" => "angzarr-codegen-unproduced-source",
-        "ANZ103" => "angzarr-codegen-idle-component",
+        "ANZ100" => |w| matches!(w, Warning::UnappliedEmit { .. }),
+        "ANZ101" => |w| matches!(w, Warning::UnownedTarget { .. }),
+        "ANZ102" => |w| matches!(w, Warning::UnproducedSource { .. }),
+        "ANZ103" => |w| matches!(w, Warning::Idle { .. }),
         other => panic!("no cli code for the tier's {other}"),
     }
 }
@@ -84,8 +84,7 @@ fn warning_naming(w: &mut Generator, label: String, name: String, _rest: String)
     let named = w.named(&name);
     let code = (!label.is_empty()).then(|| coded(&label));
     let found = w.warnings.iter().any(|warning| {
-        code.is_none_or(|code| warning.code() == code)
-            && (warns_of(warning, &named) || warns_of(warning, &name))
+        code.is_none_or(|is| is(warning)) && (warns_of(warning, &named) || warns_of(warning, &name))
     });
     assert!(found, "no warning {label} naming {name}: {:?}", w.warnings);
 }

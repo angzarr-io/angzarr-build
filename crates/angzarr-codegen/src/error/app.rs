@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic, code};
 
 use super::{text, texts};
 
@@ -34,10 +34,10 @@ impl std::error::Error for AppError {}
 impl Diagnostic for AppError {
     fn code(&self) -> &'static str {
         match self {
-            AppError::Config { .. } => "angzarr-codegen-app-config",
-            AppError::Refused { .. } => "angzarr-codegen-app-refused",
-            AppError::Manifest { .. } => "angzarr-codegen-app-manifest",
-            AppError::DomainPath { .. } => "angzarr-codegen-app-domain-path",
+            AppError::Config { .. } => code!("app-config"),
+            AppError::Refused { .. } => code!("app-refused"),
+            AppError::Manifest { .. } => code!("app-manifest"),
+            AppError::DomainPath { .. } => code!("app-domain-path"),
         }
     }
 
@@ -59,11 +59,8 @@ impl Diagnostic for AppError {
 /// One value of every [`AppError`].
 pub(super) fn samples() -> Vec<AppError> {
     vec![
-        AppError::Config {
-            cause: angzarr_diagnostic::Report::new("angzarr-yaml-load-failed-at")
-                .arg("kind", "angzarr-host-config")
-                .arg("source", "angzarr.yaml"),
-        },
+        // The reader's own error, so no other crate's code is spelled here.
+        crate::app::read("[]").expect_err("a sequence is no host config"),
         AppError::Refused { lints: Vec::new() },
         AppError::Manifest {
             detail: text("detail"),

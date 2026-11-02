@@ -6,7 +6,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic};
+use angzarr_diagnostic::{Arg, Diagnostic, code};
 
 use crate::error::{CodegenError, text, texts};
 use crate::model::{self, Component, ComponentKind};
@@ -40,11 +40,11 @@ impl fmt::Display for Warning {
 impl Diagnostic for Warning {
     fn code(&self) -> &'static str {
         match self {
-            Warning::UnappliedEmit { .. } => "angzarr-codegen-unapplied-emit",
-            Warning::UnownedTarget { .. } => "angzarr-codegen-unowned-target",
-            Warning::UnproducedSource { .. } => "angzarr-codegen-unproduced-source",
-            Warning::Idle { .. } => "angzarr-codegen-idle-component",
-            Warning::NoStartingInput { .. } => "angzarr-codegen-no-starting-input",
+            Warning::UnappliedEmit { .. } => code!("unapplied-emit"),
+            Warning::UnownedTarget { .. } => code!("unowned-target"),
+            Warning::UnproducedSource { .. } => code!("unproduced-source"),
+            Warning::Idle { .. } => code!("idle-component"),
+            Warning::NoStartingInput { .. } => code!("no-starting-input"),
         }
     }
 

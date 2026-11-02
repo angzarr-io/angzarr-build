@@ -7,6 +7,7 @@
 mod common;
 
 use angzarr_codegen::markup_domain;
+use angzarr_diagnostic::code;
 use common::*;
 use quote::ToTokens;
 
@@ -40,7 +41,7 @@ fn checks() -> String {
 /// if it refused it.
 fn rustc(source: &str) -> Result<(), String> {
     use std::process::Command;
-    let dir = TestDir::new("angzarr-codegen-wire-settings");
+    let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-wire-settings"));
     std::fs::write(dir.join("lib.rs"), source).unwrap();
     let out = Command::new(std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string()))
         .current_dir(&dir)
@@ -83,14 +84,8 @@ fn test_bytes_built_otherwise_fail_with_the_named_error() {
         checks()
     );
     let diagnostics = rustc(&source).expect_err("refused");
-    assert!(
-        diagnostics.contains("angzarr-codegen-wire-bytes"),
-        "{diagnostics}"
-    );
-    assert!(
-        !diagnostics.contains("angzarr-codegen-wire-map"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains(code!("wire-bytes")), "{diagnostics}");
+    assert!(!diagnostics.contains(code!("wire-map")), "{diagnostics}");
 }
 
 #[test]
@@ -101,14 +96,8 @@ fn test_maps_built_otherwise_fail_with_the_named_error() {
         checks()
     );
     let diagnostics = rustc(&source).expect_err("refused");
-    assert!(
-        diagnostics.contains("angzarr-codegen-wire-map"),
-        "{diagnostics}"
-    );
-    assert!(
-        !diagnostics.contains("angzarr-codegen-wire-bytes"),
-        "{diagnostics}"
-    );
+    assert!(diagnostics.contains(code!("wire-map")), "{diagnostics}");
+    assert!(!diagnostics.contains(code!("wire-bytes")), "{diagnostics}");
 }
 
 #[test]
