@@ -23,7 +23,7 @@ pub use app::{
 };
 pub use common::refusal_key;
 pub use descriptor::{Descriptor, descriptors, descriptors_rs};
-pub use error::{CodegenError, diagnostic_samples};
+pub use error::{AppError, CodegenError, MarkupError, ProtoError, UseError, diagnostic_samples};
 pub use names::{ComponentName, NameKind, NameOf, component_name, component_names, kebab};
 
 /// The one comment line every file the generator writes opens with, in
@@ -97,7 +97,7 @@ fn generate(
             .iter()
             .find(|(p, _)| *p == package)
             .and_then(|(_, rust)| syn::parse_str::<syn::Path>(rust).ok())
-            .ok_or_else(|| CodegenError::NoWirePath {
+            .ok_or_else(|| UseError::NoWirePath {
                 package: package.clone(),
             })?;
         generated.push(Generated {

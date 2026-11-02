@@ -13,8 +13,8 @@
 mod common;
 
 use angzarr_codegen::{
-    AppLint, AppSeed, CodegenError, DomainCrate, Exposure, Owner, RetrySeed, ScaffoldFile, app,
-    child_components, lint_app, remote_domains,
+    AppError, AppLint, AppSeed, CodegenError, DomainCrate, Exposure, Owner, RetrySeed,
+    ScaffoldFile, app, child_components, lint_app, remote_domains,
 };
 use common::*;
 
@@ -224,7 +224,7 @@ fn a_domain_crate_that_is_no_rust_path_or_a_manifest_that_does_not_read_is_refus
         let bad = wire.unwrap_or(path).to_string();
         assert_eq!(
             app(&set, BLACKJACK, &seeded, None, None),
-            Err(CodegenError::AppDomainPath { path: bad })
+            Err(CodegenError::App(AppError::DomainPath { path: bad }))
         );
     }
     for manifest in [
@@ -235,7 +235,7 @@ fn a_domain_crate_that_is_no_rust_path_or_a_manifest_that_does_not_read_is_refus
         assert!(
             matches!(
                 app(&set, BLACKJACK, &blackjack(), None, Some(manifest)),
-                Err(CodegenError::AppManifest { .. })
+                Err(CodegenError::App(AppError::Manifest { .. }))
             ),
             "{manifest}"
         );
@@ -407,12 +407,12 @@ fn a_seed_naming_a_component_the_protos_lack_is_refused() {
     };
     assert_eq!(
         app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None),
-        Err(CodegenError::AppRefused {
+        Err(CodegenError::App(AppError::Refused {
             lints: vec![AppLint::UnknownComponent {
                 name: "dealer".to_string(),
                 kind: "domain".to_string(),
             }]
-        })
+        }))
     );
 }
 
@@ -425,12 +425,12 @@ fn a_seed_exposing_a_process_manager_is_refused() {
     };
     assert_eq!(
         app(&descriptors(BUYIN), BUYIN, &buyin, None, None),
-        Err(CodegenError::AppRefused {
+        Err(CodegenError::App(AppError::Refused {
             lints: vec![AppLint::NotExposable {
                 name: "pmg-buyin".to_string(),
                 kind: "process_manager".to_string(),
             }]
-        })
+        }))
     );
 }
 
@@ -450,7 +450,7 @@ fn an_existing_config_with_lints_is_refused() {
         None,
     );
     assert!(
-        matches!(&refused, Err(CodegenError::AppRefused { lints }) if !lints.is_empty()),
+        matches!(&refused, Err(CodegenError::App(AppError::Refused { lints })) if !lints.is_empty()),
         "{refused:?}"
     );
 }
@@ -779,7 +779,7 @@ fn lint_app_refuses_what_is_not_the_hosts_config() {
     ] {
         let refused = lint_app(config, &descriptors(BLACKJACK), BLACKJACK);
         assert!(
-            matches!(&refused, Err(e @ CodegenError::AppConfig { .. })
+            matches!(&refused, Err(e @ CodegenError::App(AppError::Config { .. }))
                 if e.to_string().contains(&format!("problem.key_path={key_path} "))),
             "{config}: {refused:?}"
         );
@@ -793,7 +793,7 @@ fn lint_app_refuses_what_is_not_the_hosts_config() {
         assert!(
             matches!(
                 lint_app(config, &descriptors(BLACKJACK), BLACKJACK),
-                Err(CodegenError::AppConfig { .. })
+                Err(CodegenError::App(AppError::Config { .. }))
             ),
             "{config}"
         );
@@ -928,12 +928,12 @@ fn an_exposure_lands_on_its_component_alone_and_one_naming_none_is_a_lint() {
     };
     assert_eq!(
         app(&descriptors(BLACKJACK), BLACKJACK, &nowhere, None, None),
-        Err(CodegenError::AppRefused {
+        Err(CodegenError::App(AppError::Refused {
             lints: vec![AppLint::UnknownComponent {
                 name: "nowhere".to_string(),
                 kind: "domain".to_string(),
             }]
-        })
+        }))
     );
 }
 
@@ -1058,11 +1058,11 @@ fn a_seed_in_a_language_with_no_launch_is_refused() {
     };
     assert_eq!(
         app(&descriptors(BLACKJACK), BLACKJACK, &seeded, None, None),
-        Err(CodegenError::AppRefused {
+        Err(CodegenError::App(AppError::Refused {
             lints: vec![AppLint::UnknownLanguage {
                 name: "policy-table-player".to_string(),
                 language: "go".to_string(),
             }]
-        })
+        }))
     );
 }

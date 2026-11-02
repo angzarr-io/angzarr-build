@@ -7,7 +7,9 @@
 
 mod common;
 
-use angzarr_codegen::{CodegenError, adapters, descriptors, markup_domain, register, scaffold};
+use angzarr_codegen::{
+    CodegenError, MarkupError, adapters, descriptors, markup_domain, register, scaffold,
+};
 use angzarr_proto::v1::ComponentDescriptor;
 use prost::Message;
 
@@ -68,9 +70,9 @@ fn test_one_input_domain_is_the_one_entry_list() {
 fn test_input_domains_are_refused_off_a_projector() {
     assert_eq!(
         refusal("bad/v1/input_domains_on_policy.proto"),
-        CodegenError::InputDomainsOnNonProjector {
+        CodegenError::Markup(MarkupError::InputDomainsOnNonProjector {
             component: "bad.v1.ThingView".to_string(),
-        }
+        })
     );
 }
 
@@ -78,9 +80,9 @@ fn test_input_domains_are_refused_off_a_projector() {
 fn test_input_domains_and_input_domain_together_are_refused() {
     assert_eq!(
         refusal("bad/v1/input_domains_and_input_domain.proto"),
-        CodegenError::InputDomainsWithInputDomain {
+        CodegenError::Markup(MarkupError::InputDomainsWithInputDomain {
             component: "bad.v1.ThingView".to_string(),
-        }
+        })
     );
 }
 
@@ -88,10 +90,10 @@ fn test_input_domains_and_input_domain_together_are_refused() {
 fn test_a_source_listed_twice_is_refused() {
     assert_eq!(
         refusal("bad/v1/duplicate_source.proto"),
-        CodegenError::DuplicateSource {
+        CodegenError::Markup(MarkupError::DuplicateSource {
             component: "bad.v1.ThingView".to_string(),
             domain: "things".to_string(),
-        }
+        })
     );
 }
 
@@ -99,19 +101,21 @@ fn test_a_source_listed_twice_is_refused() {
 fn test_a_listed_source_no_entry_names_is_refused() {
     assert_eq!(
         refusal("bad/v1/unprojected_source.proto"),
-        CodegenError::UnprojectedSource {
+        CodegenError::Markup(MarkupError::UnprojectedSource {
             component: "bad.v1.ThingView".to_string(),
             domain: "others".to_string(),
-        }
+        })
     );
 }
 
 #[test]
 fn test_an_entry_naming_an_unlisted_or_no_source_is_refused() {
-    let unlisted = |event: &str, domain: &str| CodegenError::UnlistedSource {
-        component: "bad.v1.ThingView".to_string(),
-        event: format!("bad.v1.{event}"),
-        domain: domain.to_string(),
+    let unlisted = |event: &str, domain: &str| {
+        CodegenError::Markup(MarkupError::UnlistedSource {
+            component: "bad.v1.ThingView".to_string(),
+            event: format!("bad.v1.{event}"),
+            domain: domain.to_string(),
+        })
     };
     assert_eq!(
         refusal("bad/v1/unlisted_source.proto"),

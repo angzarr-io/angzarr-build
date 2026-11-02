@@ -6,7 +6,7 @@
 
 mod common;
 
-use angzarr_codegen::{CodegenError, adapters, markup_domain, scaffold};
+use angzarr_codegen::{CodegenError, MarkupError, adapters, markup_domain, scaffold};
 use common::*;
 
 const KINDS: &str = "kinds/v1/kinds.proto";
@@ -70,17 +70,17 @@ fn refusal(file: &str) -> CodegenError {
 fn test_one_or_optional_without_emits_is_refused() {
     assert_eq!(
         refusal("bad/v1/one_without_emits.proto"),
-        CodegenError::CardinalityWithoutEmits {
+        CodegenError::Markup(MarkupError::CardinalityWithoutEmits {
             message: "bad.v1.Poke".to_string(),
             optional: false,
-        }
+        })
     );
     assert_eq!(
         refusal("bad/v1/optional_without_emits.proto"),
-        CodegenError::CardinalityWithoutEmits {
+        CodegenError::Markup(MarkupError::CardinalityWithoutEmits {
             message: "bad.v1.Poke".to_string(),
             optional: true,
-        }
+        })
     );
 }
 
@@ -88,9 +88,9 @@ fn test_one_or_optional_without_emits_is_refused() {
 fn test_a_tuple_wider_than_the_markups_is_refused() {
     assert_eq!(
         refusal("bad/v1/wide_tuple.proto"),
-        CodegenError::EmitsTuple {
+        CodegenError::Markup(MarkupError::EmitsTuple {
             message: "bad.v1.Poke".to_string(),
             count: 5,
-        }
+        })
     );
 }

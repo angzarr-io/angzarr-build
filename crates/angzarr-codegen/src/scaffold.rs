@@ -24,7 +24,7 @@ use prost_reflect::MessageDescriptor;
 use quote::{format_ident, quote};
 
 use crate::common::{has_code_status, refusal_choice_name, snake};
-use crate::error::CodegenError;
+use crate::error::{CodegenError, UseError};
 use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Decided, Input, owner};
 use crate::rust::{RUNTIME, ident, root, runtime_macros};
 use crate::{Generated, generate};
@@ -129,28 +129,28 @@ pub(crate) fn selected<'a>(
 
 /// `selection`'s policy is a policy, its command one its target decides,
 /// and its fact a fact its source ingests.
-fn check_translate(components: &[Component], selection: &Translate) -> Result<(), CodegenError> {
+fn check_translate(components: &[Component], selection: &Translate) -> Result<(), UseError> {
     let policy = components
         .iter()
         .find(|c| c.kind == ComponentKind::Policy && c.anchor.full_name() == selection.policy)
-        .ok_or_else(|| CodegenError::TranslateUnknownPolicy {
+        .ok_or_else(|| UseError::TranslateUnknownPolicy {
             policy: selection.policy.clone(),
         })?;
     let takes = owner(components, &policy.output_domain)
         .and_then(|target| target.input(&selection.command))
         .is_some_and(|input| !input.fact);
     if !takes {
-        return Err(CodegenError::TranslateNotATargetCommand {
+        return Err(UseError::TranslateNotATargetCommand {
             policy: selection.policy.clone(),
             command: selection.command.clone(),
         });
     }
     match owner(components, &policy.input_domain).and_then(|source| source.input(&selection.fact)) {
-        None => Err(CodegenError::TranslateNotASourceFact {
+        None => Err(UseError::TranslateNotASourceFact {
             policy: selection.policy.clone(),
             fact: selection.fact.clone(),
         }),
-        Some(input) if !input.fact => Err(CodegenError::TranslateNotAFact {
+        Some(input) if !input.fact => Err(UseError::TranslateNotAFact {
             policy: selection.policy.clone(),
             fact: selection.fact.clone(),
         }),
@@ -458,9 +458,9 @@ pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, 
     // A Python project's files (and its pyproject.toml, which has no stubs
     // to complete).
     if !fresh.path.ends_with(".rs") {
-        return crate::python::complete(fresh, existing);
+        return Ok(crate::python::complete(fresh, existing)?);
     }
-    let not_found = || CodegenError::ScaffoldImplNotFound {
+    let not_found = || UseError::ScaffoldImplNotFound {
         path: fresh.path.clone(),
         component: fresh.component.clone(),
     };
@@ -484,12 +484,13 @@ pub fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, 
                     && is_input(&method.param)
                     && found.param != method.param =>
             {
-                return Err(CodegenError::InputMismatch {
+                return Err(UseError::InputMismatch {
                     path: fresh.path.clone(),
                     message: format!("{package}.{}", method.ty),
                     expected: method.param.clone(),
                     found: found.param.clone(),
-                });
+                }
+                .into());
             }
             Some(_) => {}
             None => missing.push(method),

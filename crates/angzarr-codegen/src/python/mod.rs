@@ -43,7 +43,7 @@ use std::collections::BTreeSet;
 use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 
 use crate::common::{local_name, snake, wire_name};
-use crate::error::CodegenError;
+use crate::error::{CodegenError, ProtoError, UseError};
 use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input};
 use crate::scaffold::{Owner, ScaffoldFile, Translate, selected};
 use dispatch::dispatch;
@@ -184,9 +184,10 @@ pub fn scaffold_python(
         .filter(|c| c.domain == app.domain || c.component_name == app.domain)
         .collect();
     if components.is_empty() {
-        return Err(CodegenError::PythonNoDomain {
+        return Err(UseError::PythonNoDomain {
             domain: app.domain.clone(),
-        });
+        }
+        .into());
     }
     let units = components
         .into_iter()
@@ -203,7 +204,7 @@ pub fn scaffold_python(
 
 /// Refuses a type the units reach whose local name the generated domain
 /// layer, or Python, reserves.
-fn refuse_python_names(units: &[Unit]) -> Result<(), CodegenError> {
+fn refuse_python_names(units: &[Unit]) -> Result<(), ProtoError> {
     for unit in units {
         let (messages, enums) = reached(unit);
         let names: Vec<(&str, String)> = messages
@@ -220,7 +221,7 @@ fn refuse_python_names(units: &[Unit]) -> Result<(), CodegenError> {
             .into_iter()
             .find(|(_, local)| PYTHON_RESERVED.contains(&local.as_str()))
         {
-            return Err(CodegenError::ReservedName {
+            return Err(ProtoError::ReservedName {
                 message: full.to_string(),
                 name: local,
             });

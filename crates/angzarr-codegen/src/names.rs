@@ -11,10 +11,10 @@
 //! | projector       | `projector-` + [`kebab`] of its anchor   | `projector-ledger-projection` |
 //!
 //! A name is lower-case ASCII letters, digits and `-`, starting with a
-//! letter; any other fails generation ([`CodegenError::ComponentName`]).
+//! letter; any other fails generation ([`MarkupError::ComponentName`]).
 //! `ComponentOptions.name` is not this: it is the code's base name.
 
-use crate::error::CodegenError;
+use crate::error::{CodegenError, MarkupError};
 use crate::model;
 
 /// A component's kind, as its name's default reads it.
@@ -46,10 +46,11 @@ pub struct NameOf<'a> {
 pub fn component_name(of: &NameOf<'_>) -> Result<String, CodegenError> {
     let name = unchecked(of);
     if !well_formed(&name) {
-        return Err(CodegenError::ComponentName {
+        return Err(MarkupError::ComponentName {
             component: of.anchor.to_string(),
             name,
-        });
+        }
+        .into());
     }
     Ok(name)
 }

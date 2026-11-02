@@ -17,7 +17,7 @@ use prost_reflect::prost::Message;
 use prost_reflect::{DescriptorPool, DynamicMessage, ReflectMessage, Value};
 use quote::quote;
 
-use crate::error::CodegenError;
+use crate::error::{CodegenError, ProtoError};
 use crate::model::{self, ALL_KINDS, Component};
 
 const COMPONENT_DESCRIPTOR: &str = "io.angzarr.v1.ComponentDescriptor";
@@ -151,20 +151,20 @@ fn subscriptions(component: &Component) -> Vec<String> {
 }
 
 /// An empty message of the set's `name`.
-fn new(pool: &DescriptorPool, name: &str) -> Result<DynamicMessage, CodegenError> {
+fn new(pool: &DescriptorPool, name: &str) -> Result<DynamicMessage, ProtoError> {
     pool.get_message_by_name(name)
         .map(DynamicMessage::new)
-        .ok_or_else(|| CodegenError::Descriptors {
+        .ok_or_else(|| ProtoError::Descriptors {
             detail: format!("the set declares no {name}"),
         })
 }
 
 /// `message.field = value`, refused when the set's message has no such
 /// field: angzarr's protos in the set are older than this generator.
-fn set(message: &mut DynamicMessage, field: &str, value: Value) -> Result<(), CodegenError> {
+fn set(message: &mut DynamicMessage, field: &str, value: Value) -> Result<(), ProtoError> {
     message
         .try_set_field_by_name(field, value)
-        .map_err(|e| CodegenError::Descriptors {
+        .map_err(|e| ProtoError::Descriptors {
             detail: format!("{}: {e}", message.descriptor().full_name()),
         })
 }

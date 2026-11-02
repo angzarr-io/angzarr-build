@@ -846,7 +846,7 @@ fn error_samples() -> Vec<BuildError> {
         BuildError::Prost { detail: s() },
         BuildError::Buf { detail: s() },
         BuildError::Uv { detail: s() },
-        BuildError::Codegen(angzarr_codegen::CodegenError::NoWirePath { package: s() }),
+        BuildError::Codegen(angzarr_codegen::UseError::NoWirePath { package: s() }.into()),
     ]
 }
 
@@ -918,9 +918,12 @@ mod tests {
 
     #[test]
     fn an_error_displays_as_its_code_and_args() {
-        let error = BuildError::Codegen(angzarr_codegen::CodegenError::NoWirePath {
-            package: "shop.v1".to_string(),
-        });
+        let error = BuildError::Codegen(
+            angzarr_codegen::UseError::NoWirePath {
+                package: "shop.v1".to_string(),
+            }
+            .into(),
+        );
         assert_eq!(
             error.to_string(),
             "angzarr-build-codegen error=angzarr-codegen-no-wire-path error.package=shop.v1"

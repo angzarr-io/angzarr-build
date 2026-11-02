@@ -7,7 +7,7 @@
 
 mod common;
 
-use angzarr_codegen::{CodegenError, Generated, markup_domain};
+use angzarr_codegen::{CodegenError, Generated, MarkupError, ProtoError, UseError, markup_domain};
 use common::*;
 
 const SHOP: &str = "shop/v1/shop.proto";
@@ -191,9 +191,9 @@ fn test_markup_domain_refuses_refuses_on_a_fact() {
             &[FILE],
             &[("bad.v1", "::bad_proto::v1")]
         ),
-        Err(angzarr_codegen::CodegenError::RefusesOnFact {
+        Err(CodegenError::Markup(MarkupError::RefusesOnFact {
             message: "bad.v1.Happened".to_string(),
-        })
+        }))
     );
 }
 
@@ -211,10 +211,10 @@ fn test_markup_domain_refuses_a_message_named_as_a_reserved_name() {
             &[FILE],
             &[("bad.v1", "::bad_proto::v1")]
         ),
-        Err(angzarr_codegen::CodegenError::ReservedName {
+        Err(CodegenError::Proto(ProtoError::ReservedName {
             message: "bad.v1.Context".to_string(),
             name: "Context".to_string(),
-        })
+        }))
     );
 }
 
@@ -229,10 +229,10 @@ fn test_markup_domain_refuses_a_message_named_retryable_status() {
             &[FILE],
             &[("bad.v1", "::bad_proto::v1")]
         ),
-        Err(angzarr_codegen::CodegenError::ReservedName {
+        Err(CodegenError::Proto(ProtoError::ReservedName {
             message: "bad.v1.RetryableStatus".to_string(),
             name: "RetryableStatus".to_string(),
-        })
+        }))
     );
 }
 
@@ -247,10 +247,10 @@ fn test_markup_domain_refuses_a_message_named_bug() {
             &[FILE],
             &[("bad.v1", "::bad_proto::v1")]
         ),
-        Err(angzarr_codegen::CodegenError::ReservedName {
+        Err(CodegenError::Proto(ProtoError::ReservedName {
             message: "bad.v1.Bug".to_string(),
             name: "Bug".to_string(),
-        })
+        }))
     );
 }
 
@@ -480,10 +480,10 @@ fn test_markup_domain_without_a_component_generates_nothing() {
 fn test_markup_domain_refuses_a_command_naming_an_unknown_component() {
     assert_eq!(
         refusal("bad/v1/unknown_component.proto"),
-        CodegenError::UnknownComponent {
+        CodegenError::Markup(MarkupError::UnknownComponent {
             message: "bad.v1.Poke".to_string(),
             component: "bad.v1.Nowhere".to_string(),
-        }
+        })
     );
 }
 
@@ -491,10 +491,10 @@ fn test_markup_domain_refuses_a_command_naming_an_unknown_component() {
 fn test_markup_domain_refuses_a_command_naming_a_message_that_is_no_component() {
     assert_eq!(
         refusal("bad/v1/not_a_component.proto"),
-        CodegenError::UnknownComponent {
+        CodegenError::Markup(MarkupError::UnknownComponent {
             message: "bad.v1.Poke".to_string(),
             component: "bad.v1.Plain".to_string(),
-        }
+        })
     );
 }
 
@@ -502,10 +502,10 @@ fn test_markup_domain_refuses_a_command_naming_a_message_that_is_no_component() 
 fn test_markup_domain_refuses_a_command_emitting_a_non_event() {
     assert_eq!(
         refusal("bad/v1/unknown_emit.proto"),
-        CodegenError::UnknownEmit {
+        CodegenError::Markup(MarkupError::UnknownEmit {
             command: "bad.v1.Poke".to_string(),
             event: "bad.v1.Poke".to_string(),
-        }
+        })
     );
 }
 
@@ -513,10 +513,10 @@ fn test_markup_domain_refuses_a_command_emitting_a_non_event() {
 fn test_markup_domain_refuses_an_enum_whose_zero_is_a_value() {
     assert_eq!(
         refusal("bad/v1/enum_zero.proto"),
-        CodegenError::EnumZero {
+        CodegenError::Proto(ProtoError::EnumZero {
             enum_name: "bad.v1.Mood".to_string(),
             value: "MOOD_CALM".to_string(),
-        }
+        })
     );
 }
 
@@ -524,10 +524,10 @@ fn test_markup_domain_refuses_an_enum_whose_zero_is_a_value() {
 fn test_markup_domain_refuses_a_oneof() {
     assert_eq!(
         refusal("bad/v1/oneof.proto"),
-        CodegenError::Oneof {
+        CodegenError::Proto(ProtoError::Oneof {
             message: "bad.v1.Poke".to_string(),
             oneof: "shape".to_string(),
-        }
+        })
     );
 }
 
@@ -535,10 +535,10 @@ fn test_markup_domain_refuses_a_oneof() {
 fn test_markup_domain_refuses_a_nested_type() {
     assert_eq!(
         refusal("bad/v1/nested.proto"),
-        CodegenError::NestedType {
+        CodegenError::Proto(ProtoError::NestedType {
             message: "bad.v1.Poke".to_string(),
             nested: "bad.v1.Poke.Inner".to_string(),
-        }
+        })
     );
 }
 
@@ -546,9 +546,9 @@ fn test_markup_domain_refuses_a_nested_type() {
 fn test_markup_domain_refuses_a_commutative_state() {
     assert_eq!(
         refusal("bad/v1/commutative.proto"),
-        CodegenError::Commutative {
+        CodegenError::Markup(MarkupError::Commutative {
             component: "bad.v1.ThingState".to_string(),
-        }
+        })
     );
 }
 
@@ -556,10 +556,10 @@ fn test_markup_domain_refuses_a_commutative_state() {
 fn test_markup_domain_refuses_a_component_of_no_kind() {
     assert_eq!(
         refusal("bad/v1/unspecified_kind.proto"),
-        CodegenError::UnsupportedKind {
+        CodegenError::Markup(MarkupError::UnsupportedKind {
             component: "bad.v1.ThingState".to_string(),
             kind: 0,
-        }
+        })
     );
 }
 
@@ -567,11 +567,11 @@ fn test_markup_domain_refuses_a_component_of_no_kind() {
 fn test_markup_domain_refuses_a_well_known_type_other_than_timestamp() {
     assert_eq!(
         refusal("bad/v1/well_known.proto"),
-        CodegenError::WellKnownType {
+        CodegenError::Proto(ProtoError::WellKnownType {
             message: "bad.v1.Poke".to_string(),
             field: "timeout".to_string(),
             type_name: "google.protobuf.Duration".to_string(),
-        }
+        })
     );
 }
 
@@ -579,9 +579,9 @@ fn test_markup_domain_refuses_a_well_known_type_other_than_timestamp() {
 fn test_markup_domain_refuses_a_package_without_a_wire_path() {
     assert_eq!(
         markup_domain(&descriptors(&[SHOP]), &[SHOP], &[]),
-        Err(CodegenError::NoWirePath {
+        Err(CodegenError::Use(UseError::NoWirePath {
             package: "shop.v1".to_string(),
-        })
+        }))
     );
 }
 
@@ -589,9 +589,9 @@ fn test_markup_domain_refuses_a_package_without_a_wire_path() {
 fn test_markup_domain_refuses_a_file_not_in_the_set() {
     assert_eq!(
         markup_domain(&descriptors(&[SHOP]), &["shop/v1/absent.proto"], SHOP_WIRE),
-        Err(CodegenError::FileNotInSet {
+        Err(CodegenError::Use(UseError::FileNotInSet {
             file: "shop/v1/absent.proto".to_string(),
-        })
+        }))
     );
 }
 
@@ -599,7 +599,7 @@ fn test_markup_domain_refuses_a_file_not_in_the_set() {
 fn test_markup_domain_refuses_bytes_that_are_not_a_descriptor_set() {
     assert!(matches!(
         markup_domain(&[0xff, 0xff], &[SHOP], SHOP_WIRE),
-        Err(CodegenError::Descriptors { .. })
+        Err(CodegenError::Proto(ProtoError::Descriptors { .. }))
     ));
 }
 

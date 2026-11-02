@@ -7,7 +7,9 @@
 
 mod common;
 
-use angzarr_codegen::{CodegenError, adapters, markup_domain, refusal_key, scaffold};
+use angzarr_codegen::{
+    CodegenError, MarkupError, ProtoError, adapters, markup_domain, refusal_key, scaffold,
+};
 use common::*;
 
 const KINDS: &str = "kinds/v1/kinds.proto";
@@ -94,11 +96,11 @@ fn test_markup_domain_refuses_a_type_named_as_a_refusal_choice() {
     assert_eq!(
         markup_domain(&descriptors(&[FILE]), &[FILE], &[("bad.v1", "crate::wire")])
             .expect_err("refused"),
-        CodegenError::RefusalChoiceName {
+        CodegenError::Proto(ProtoError::RefusalChoiceName {
             message: "bad.v1.BookRefuses".to_string(),
             name: "BookRefuses".to_string(),
             command: "bad.v1.Book".to_string(),
-        }
+        })
     );
 }
 
@@ -187,9 +189,9 @@ fn test_a_refusal_status_anywhere_but_a_refusals_code_is_refused() {
         assert_eq!(
             markup_domain(&descriptors(&[file]), &[file], &[("bad.v1", "crate::wire")])
                 .expect_err(file),
-            CodegenError::RefusalStatusMisplaced {
+            CodegenError::Markup(MarkupError::RefusalStatusMisplaced {
                 value: value.to_string()
-            },
+            }),
             "{file}"
         );
     }

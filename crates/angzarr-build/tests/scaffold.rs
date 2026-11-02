@@ -10,7 +10,7 @@ use angzarr_build::{
     BuildError, BuildWarning, Existing, Scaffolded, Translate, adapters_from, adapters_into,
     markup_domain_into, register_into, scaffold_into,
 };
-use angzarr_codegen::CodegenError;
+use angzarr_codegen::{CodegenError, UseError};
 
 #[path = "../../../test-support/test_dir.rs"]
 mod test_dir;
@@ -126,7 +126,7 @@ fn test_scaffold_into_with_complete_refuses_an_input_the_proto_contradicts() {
     assert!(
         matches!(
             &error,
-            BuildError::Codegen(CodegenError::InputMismatch { message, .. })
+            BuildError::Codegen(CodegenError::Use(UseError::InputMismatch { message, .. }))
                 if message == "buyin.v1.HoldLost"
         ),
         "{error:?}"

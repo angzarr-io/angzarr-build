@@ -22,7 +22,7 @@
 //! through angzarr-embedded-host-config, the schema angzarr-embedded-host
 //! runs: stamped `schema_version`, read strictly, so an unknown key or
 //! value, or a missing `kind`, is refused with the reader's error naming
-//! its key path ([`CodegenError::AppConfig`]).
+//! its key path ([`AppError::Config`]).
 //! [`lint_app`] checks it against the protos, and [`app`] refuses to
 //! generate from one that has lints. Pure, as the rest of the crate:
 //! descriptors and the config's text in, files out.
@@ -37,7 +37,7 @@ use angzarr_embedded_host_config::{
 use serde::Deserialize;
 
 use crate::common::snake;
-use crate::error::{CodegenError, text, texts};
+use crate::error::{AppError, CodegenError, text, texts};
 use crate::model::{self, Component, ComponentKind};
 use crate::scaffold::{Owner, ScaffoldFile};
 
@@ -131,11 +131,11 @@ pub struct DomainCrate {
 /// `manifest` are the host config and the manifest on disk, when there are
 /// ones: the generated files are derived from them (the manifest's
 /// [`DomainCrate`]), and the seed's are unused. Refused
-/// ([`CodegenError::AppRefused`]) when the config, the seed's or the
+/// ([`AppError::Refused`]) when the config, the seed's or the
 /// user's, has lints ([`lint_app`]); a manifest that does not read, or
-/// whose domain crate is malformed, is [`CodegenError::AppManifest`], and a
+/// whose domain crate is malformed, is [`AppError::Manifest`], and a
 /// domain crate's path that is no Rust path
-/// [`CodegenError::AppDomainPath`].
+/// [`AppError::DomainPath`].
 pub fn app(
     descriptor_set: &[u8],
     files: &[&str],
@@ -150,7 +150,7 @@ pub fn app(
     };
     let lints = lint(&read(&config_text)?, &components);
     if !lints.is_empty() {
-        return Err(CodegenError::AppRefused { lints });
+        return Err(AppError::Refused { lints }.into());
     }
     let host = read(&config_text)?;
     let (manifest_text, domain) = match manifest {
@@ -163,7 +163,7 @@ pub fn app(
     if let Some(domain) = &domain {
         for path in std::iter::once(&domain.path).chain(&domain.wire) {
             if syn::parse_str::<syn::Path>(path).is_err() {
-                return Err(CodegenError::AppDomainPath { path: path.clone() });
+                return Err(AppError::DomainPath { path: path.clone() }.into());
             }
         }
     }
@@ -200,7 +200,7 @@ pub fn app(
 }
 
 /// The manifest's `[package.metadata.angzarr.domain]`, if it has one.
-fn manifest_domain(text: &str) -> Result<Option<DomainCrate>, CodegenError> {
+fn manifest_domain(text: &str) -> Result<Option<DomainCrate>, AppError> {
     #[derive(Deserialize)]
     struct Manifest {
         package: Option<Package>,
@@ -217,7 +217,7 @@ fn manifest_domain(text: &str) -> Result<Option<DomainCrate>, CodegenError> {
     struct Angzarr {
         domain: Option<DomainCrate>,
     }
-    let manifest: Manifest = toml::from_str(text).map_err(|e| CodegenError::AppManifest {
+    let manifest: Manifest = toml::from_str(text).map_err(|e| AppError::Manifest {
         detail: e.message().to_string(),
     })?;
     Ok(manifest
@@ -360,7 +360,7 @@ pub fn app_lint_samples() -> Vec<Box<dyn Diagnostic>> {
 /// The lints of `config`, a host config's YAML, against the components the
 /// protos declare in `files`, in the config's order and then the protos'.
 /// A config that does not read as a host config is refused
-/// ([`CodegenError::AppConfig`]).
+/// ([`AppError::Config`]).
 pub fn lint_app(
     config: &str,
     descriptor_set: &[u8],
@@ -374,8 +374,8 @@ pub fn lint_app(
 
 /// `text` read as angzarr-embedded-host reads its config: through the
 /// schema's loader, strictly, the reader's error kept as the cause.
-fn read(text: &str) -> Result<HostConfig, CodegenError> {
-    HostConfig::from_yaml(text, FILE_NAME).map_err(|e| CodegenError::AppConfig {
+fn read(text: &str) -> Result<HostConfig, AppError> {
+    HostConfig::from_yaml(text, FILE_NAME).map_err(|e| AppError::Config {
         cause: Report::of(&e),
     })
 }

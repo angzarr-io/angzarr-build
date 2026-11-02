@@ -1,7 +1,7 @@
 //! `--missing` for a Python file: a hand-written line-based reader of the
 //! user's class, finding the methods it has.
 
-use crate::error::CodegenError;
+use crate::error::UseError;
 use crate::scaffold::ScaffoldFile;
 
 /// `--missing` for a Python file: `existing`, the user's interface or
@@ -10,11 +10,8 @@ use crate::scaffold::ScaffoldFile;
 /// present when the class has a method taking its message first; one
 /// taking an input as `cmd` where the proto declares a fact, or the
 /// reverse, is refused.
-pub(crate) fn complete(
-    fresh: &ScaffoldFile,
-    existing: &str,
-) -> Result<Option<String>, CodegenError> {
-    let not_found = || CodegenError::ScaffoldImplNotFound {
+pub(crate) fn complete(fresh: &ScaffoldFile, existing: &str) -> Result<Option<String>, UseError> {
+    let not_found = || UseError::ScaffoldImplNotFound {
         path: fresh.path.clone(),
         component: fresh.component.clone(),
     };
@@ -34,7 +31,7 @@ pub(crate) fn complete(
                     && is_input(&method.param)
                     && found.param != method.param =>
             {
-                return Err(CodegenError::InputMismatch {
+                return Err(UseError::InputMismatch {
                     path: fresh.path.clone(),
                     message: format!("{package}.{}", method.ty),
                     expected: method.param.clone(),

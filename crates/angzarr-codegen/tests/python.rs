@@ -6,8 +6,8 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, Owner, ProtoInput, PythonApp, ScaffoldFile, complete, python_reroots,
-    reroot_python, scaffold_python,
+    CodegenError, Owner, ProtoError, ProtoInput, PythonApp, ScaffoldFile, UseError, complete,
+    python_reroots, reroot_python, scaffold_python,
 };
 use common::*;
 
@@ -212,7 +212,7 @@ fn test_scaffold_python_refuses_a_message_named_as_a_reserved_name() {
     };
     let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[]);
     assert!(
-        matches!(&refused, Err(CodegenError::ReservedName { message, name })
+        matches!(&refused, Err(CodegenError::Proto(ProtoError::ReservedName { message, name }))
             if message == "bad.v1.Context" && name == "Context"),
         "{refused:?}"
     );
@@ -228,7 +228,7 @@ fn test_scaffold_python_refuses_a_message_named_bug() {
     };
     let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[]);
     assert!(
-        matches!(&refused, Err(CodegenError::ReservedName { message, name })
+        matches!(&refused, Err(CodegenError::Proto(ProtoError::ReservedName { message, name }))
             if message == "bad.v1.Bug" && name == "Bug"),
         "{refused:?}"
     );
@@ -259,9 +259,9 @@ fn test_scaffold_python_refuses_a_domain_the_protos_do_not_declare() {
     };
     assert_eq!(
         scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[]),
-        Err(CodegenError::PythonNoDomain {
+        Err(CodegenError::Use(UseError::PythonNoDomain {
             domain: "nowhere".to_string()
-        })
+        }))
     );
 }
 
@@ -333,12 +333,12 @@ fn test_complete_refuses_a_command_taken_as_a_fact() {
     assert_ne!(as_fact, fresh.source);
     assert_eq!(
         complete(&fresh, &as_fact),
-        Err(CodegenError::InputMismatch {
+        Err(CodegenError::Use(UseError::InputMismatch {
             path: INTERFACE.to_string(),
             message: "io.angzarr.examples.v1.DecideMove".to_string(),
             expected: "cmd".to_string(),
             found: "fact".to_string(),
-        })
+        }))
     );
 }
 
@@ -347,10 +347,10 @@ fn test_complete_refuses_a_python_file_without_the_class() {
     let fresh = file(&player(), IMPL).clone();
     assert_eq!(
         complete(&fresh, "\"\"\"Not the player any more.\"\"\"\n"),
-        Err(CodegenError::ScaffoldImplNotFound {
+        Err(CodegenError::Use(UseError::ScaffoldImplNotFound {
             path: IMPL.to_string(),
             component: "io.angzarr.examples.v1.PlayerState".to_string(),
-        })
+        }))
     );
 }
 
@@ -486,12 +486,12 @@ fn test_complete_refuses_a_command_taken_as_a_fact_behind_a_default() {
     assert_ne!(user, fresh.source);
     assert_eq!(
         complete(&fresh, &user),
-        Err(CodegenError::InputMismatch {
+        Err(CodegenError::Use(UseError::InputMismatch {
             path: INTERFACE.to_string(),
             message: "io.angzarr.examples.v1.DecideMove".to_string(),
             expected: "cmd".to_string(),
             found: "fact".to_string(),
-        })
+        }))
     );
 }
 

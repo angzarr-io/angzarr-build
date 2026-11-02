@@ -9,7 +9,7 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate, refusal_key,
+    CodegenError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate, UseError, refusal_key,
     scaffold_python,
 };
 use common::*;
@@ -978,9 +978,9 @@ fn test_scaffold_python_refuses_translate_for_an_unknown_policy() {
     };
     assert_eq!(
         scaffold_python(&descriptors(BUYIN), BUYIN, &app("buyin"), &[selection]),
-        Err(CodegenError::TranslateUnknownPolicy {
+        Err(CodegenError::Use(UseError::TranslateUnknownPolicy {
             policy: "buyin.v1.Nowhere".to_string()
-        })
+        }))
     );
 }
 

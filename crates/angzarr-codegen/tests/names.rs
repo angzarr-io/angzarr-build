@@ -5,8 +5,8 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, ComponentName, NameKind, NameOf, component_name, component_names, kebab,
-    markup_domain,
+    CodegenError, ComponentName, MarkupError, NameKind, NameOf, component_name, component_names,
+    kebab, markup_domain,
 };
 use common::*;
 
@@ -54,10 +54,10 @@ fn test_a_name_is_lower_case_letters_digits_and_dashes_from_a_letter() {
     for bad in ["Table", "table_1", "1table", "-table", "table!"] {
         assert_eq!(
             component_name(&of(NameKind::Aggregate, bad)),
-            Err(CodegenError::ComponentName {
+            Err(CodegenError::Markup(MarkupError::ComponentName {
                 component: "LedgerProjection".to_string(),
                 name: bad.to_string(),
-            }),
+            })),
             "{bad}"
         );
     }
@@ -115,9 +115,9 @@ fn test_generation_refuses_a_malformed_component_name() {
     assert_eq!(
         markup_domain(&descriptors(&[FILE]), &[FILE], &[("bad.v1", "crate::wire")])
             .expect_err("refused"),
-        CodegenError::ComponentName {
+        CodegenError::Markup(MarkupError::ComponentName {
             component: "bad.v1.ThingState".to_string(),
             name: "Things_1".to_string(),
-        }
+        })
     );
 }

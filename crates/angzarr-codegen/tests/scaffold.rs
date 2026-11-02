@@ -10,7 +10,10 @@
 
 mod common;
 
-use angzarr_codegen::{CodegenError, Owner, ScaffoldFile, Translate, adapters, complete, scaffold};
+use angzarr_codegen::{
+    CodegenError, MarkupError, Owner, ScaffoldFile, Translate, UseError, adapters, complete,
+    scaffold,
+};
 use common::*;
 
 const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden");
@@ -175,9 +178,9 @@ fn test_scaffold_refuses_translate_for_an_unknown_policy() {
     };
     assert_eq!(
         scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::TranslateUnknownPolicy {
+        Err(CodegenError::Use(UseError::TranslateUnknownPolicy {
             policy: "buyin.v1.Nowhere".to_string(),
-        })
+        }))
     );
 }
 
@@ -189,10 +192,10 @@ fn test_scaffold_refuses_translate_for_a_command_its_target_does_not_take() {
     };
     assert_eq!(
         scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::TranslateNotATargetCommand {
+        Err(CodegenError::Use(UseError::TranslateNotATargetCommand {
             policy: "buyin.v1.BuyInWalletPolicy".to_string(),
             command: "buyin.v1.StartBuyIn".to_string(),
-        })
+        }))
     );
 }
 
@@ -204,10 +207,10 @@ fn test_scaffold_refuses_translate_to_a_fact_its_source_does_not_take() {
     };
     assert_eq!(
         scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::TranslateNotASourceFact {
+        Err(CodegenError::Use(UseError::TranslateNotASourceFact {
             policy: "buyin.v1.BuyInWalletPolicy".to_string(),
             fact: "buyin.v1.Deposit".to_string(),
-        })
+        }))
     );
 }
 
@@ -219,10 +222,10 @@ fn test_scaffold_refuses_translate_to_a_command_of_its_source() {
     };
     assert_eq!(
         scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::TranslateNotAFact {
+        Err(CodegenError::Use(UseError::TranslateNotAFact {
             policy: "buyin.v1.BuyInWalletPolicy".to_string(),
             fact: "buyin.v1.RecordHeld".to_string(),
-        })
+        }))
     );
 }
 
@@ -231,9 +234,9 @@ fn test_scaffold_refuses_refuses_on_a_fact() {
     const FILE: &str = "bad/v1/refusing_fact.proto";
     assert_eq!(
         scaffold(&descriptors(&[FILE]), &[FILE], &[]),
-        Err(CodegenError::RefusesOnFact {
+        Err(CodegenError::Markup(MarkupError::RefusesOnFact {
             message: "bad.v1.Happened".to_string(),
-        })
+        }))
     );
 }
 
@@ -728,12 +731,12 @@ fn test_complete_refuses_a_fact_taken_as_a_command() {
     assert_ne!(as_command, fresh.source);
     assert_eq!(
         complete(fresh, &as_command),
-        Err(CodegenError::InputMismatch {
+        Err(CodegenError::Use(UseError::InputMismatch {
             path: "buy_in.rs".to_string(),
             message: "buyin.v1.HoldLost".to_string(),
             expected: "fact".to_string(),
             found: "cmd".to_string(),
-        })
+        }))
     );
 }
 
@@ -747,12 +750,12 @@ fn test_complete_refuses_a_command_taken_as_a_fact() {
     assert_ne!(as_fact, fresh.source);
     assert_eq!(
         complete(fresh, &as_fact),
-        Err(CodegenError::InputMismatch {
+        Err(CodegenError::Use(UseError::InputMismatch {
             path: "buy_in_impl.rs".to_string(),
             message: "buyin.v1.RecordHeld".to_string(),
             expected: "cmd".to_string(),
             found: "fact".to_string(),
-        })
+        }))
     );
 }
 
@@ -764,10 +767,10 @@ fn test_complete_refuses_a_file_without_the_components_trait() {
             file_at(&files, "wallet.rs"),
             "//! Not the wallet any more.\n"
         ),
-        Err(CodegenError::ScaffoldImplNotFound {
+        Err(CodegenError::Use(UseError::ScaffoldImplNotFound {
             path: "wallet.rs".to_string(),
             component: "buyin.v1.WalletState".to_string(),
-        })
+        }))
     );
 }
 

@@ -93,9 +93,11 @@ fn test_a_failing_build_script_prints_the_errors_english() {
         (BuildError::Buf { detail: s() }, "buf generate failed: x y"),
         (BuildError::Uv { detail: s() }, "uv failed: x y"),
         (
-            BuildError::Codegen(angzarr_codegen::CodegenError::NoWirePath {
-                package: "shop.v1".to_string(),
-            }),
+            BuildError::Codegen(angzarr_codegen::CodegenError::Use(
+                angzarr_codegen::UseError::NoWirePath {
+                    package: "shop.v1".to_string(),
+                },
+            )),
             "no Rust path is given for the prost types of package shop.v1",
         ),
     ];

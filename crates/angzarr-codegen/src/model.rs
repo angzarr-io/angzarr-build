@@ -11,7 +11,7 @@ use prost_reflect::{
     MessageDescriptor, Value,
 };
 
-use crate::error::CodegenError;
+use crate::error::{CodegenError, MarkupError, ProtoError, UseError};
 
 const COMPONENT: &str = "io.angzarr.v1.component";
 const COMMAND: &str = "io.angzarr.v1.command";
@@ -187,8 +187,8 @@ pub(crate) struct Component {
 impl Component {
     /// A policy's target: the aggregate or process manager of `components`
     /// owning its output domain, refused when none does.
-    pub fn target<'a>(&self, components: &'a [Component]) -> Result<&'a Component, CodegenError> {
-        owner(components, &self.output_domain).ok_or_else(|| CodegenError::UnownedDomain {
+    pub fn target<'a>(&self, components: &'a [Component]) -> Result<&'a Component, MarkupError> {
+        owner(components, &self.output_domain).ok_or_else(|| MarkupError::UnownedDomain {
             policy: self.anchor.full_name().to_string(),
             domain: self.output_domain.clone(),
         })
@@ -263,11 +263,12 @@ pub(crate) fn build_markup(
             for input in component.inputs.iter().filter(|i| i.refuses.len() > 1) {
                 let choice = crate::common::refusal_choice_name(&input.message);
                 if let Some((full, _)) = names.clone().find(|(_, local)| *local == choice) {
-                    return Err(CodegenError::RefusalChoiceName {
+                    return Err(ProtoError::RefusalChoiceName {
                         message: full.to_string(),
                         name: choice,
                         command: input.message.full_name().to_string(),
-                    });
+                    }
+                    .into());
                 }
             }
         }
@@ -299,10 +300,10 @@ pub(crate) const RESERVED: &[&str] = &[
 /// collide, and nothing is renamed silently.
 pub(crate) fn refuse_reserved<'a>(
     names: impl IntoIterator<Item = (&'a str, String)>,
-) -> Result<(), CodegenError> {
+) -> Result<(), ProtoError> {
     for (full, local) in names {
         if RESERVED.contains(&local.as_str()) {
-            return Err(CodegenError::ReservedName {
+            return Err(ProtoError::ReservedName {
                 message: full.to_string(),
                 name: local,
             });
@@ -312,8 +313,8 @@ pub(crate) fn refuse_reserved<'a>(
 }
 
 /// `descriptor_set` decoded, refused when it is not a descriptor set.
-pub(crate) fn decode(descriptor_set: &[u8]) -> Result<DescriptorPool, CodegenError> {
-    DescriptorPool::decode(descriptor_set).map_err(|e| CodegenError::Descriptors {
+pub(crate) fn decode(descriptor_set: &[u8]) -> Result<DescriptorPool, ProtoError> {
+    DescriptorPool::decode(descriptor_set).map_err(|e| ProtoError::Descriptors {
         detail: e.to_string(),
     })
 }
@@ -370,7 +371,7 @@ pub(crate) fn components(
     for file in files {
         let found = pool
             .get_file_by_name(file)
-            .ok_or_else(|| CodegenError::FileNotInSet {
+            .ok_or_else(|| UseError::FileNotInSet {
                 file: file.to_string(),
             })?;
         messages.extend(found.messages());
@@ -472,10 +473,11 @@ impl<'a> Markup<'a> {
             return Ok(None);
         }
         let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
-            return Err(CodegenError::UnsupportedKind {
+            return Err(MarkupError::UnsupportedKind {
                 component: message.full_name().to_string(),
                 kind: number,
-            });
+            }
+            .into());
         };
         let resolutions = self.resolutions(message)?;
         let name = match string_field(&declared, "name") {
@@ -497,10 +499,11 @@ impl<'a> Markup<'a> {
             anchor: message.name(),
         });
         if !crate::names::well_formed(&component_name) {
-            return Err(CodegenError::ComponentName {
+            return Err(MarkupError::ComponentName {
                 component: message.full_name().to_string(),
                 name: component_name,
-            });
+            }
+            .into());
         }
         Ok(Some(Declared {
             listed: listed.is_some(),
@@ -523,7 +526,7 @@ impl<'a> Markup<'a> {
 
     /// A component's state's conflict resolutions (its `(state)` option's),
     /// refusing COMMUTATIVE, which is not generated yet.
-    fn resolutions(&self, message: &MessageDescriptor) -> Result<Vec<i32>, CodegenError> {
+    fn resolutions(&self, message: &MessageDescriptor) -> Result<Vec<i32>, MarkupError> {
         let commutative = self
             .pool
             .get_enum_by_name(RESOLUTION)
@@ -536,7 +539,7 @@ impl<'a> Markup<'a> {
             .filter_map(|v| v.as_enum_number())
             .collect();
         if commutative.is_some_and(|c| resolutions.contains(&c)) {
-            return Err(CodegenError::Commutative {
+            return Err(MarkupError::Commutative {
                 component: message.full_name().to_string(),
             });
         }
@@ -561,10 +564,11 @@ impl<'a> Markup<'a> {
         // Declared, but outside the files: generated elsewhere.
         match self.pool.get_message_by_name(&named) {
             Some(m) if m.options().has_extension(&self.component) => Ok(()),
-            _ => Err(CodegenError::UnknownComponent {
+            _ => Err(MarkupError::UnknownComponent {
                 message: message.full_name().to_string(),
                 component: named,
-            }),
+            }
+            .into()),
         }
     }
 }
@@ -613,7 +617,7 @@ impl Declared {
     /// (empty: unset), added to its events, and `source` to its sources or
     /// held to its listed ones (an entry of one input_domain may leave it
     /// unset).
-    fn attach(&mut self, event: &MessageDescriptor, source: String) -> Result<(), CodegenError> {
+    fn attach(&mut self, event: &MessageDescriptor, source: String) -> Result<(), MarkupError> {
         let component = &mut self.component;
         if !component.events.contains(event) {
             component.events.push(event.clone());
@@ -626,7 +630,7 @@ impl Declared {
         }
         let unset_of_one = source.is_empty() && component.input_domain == component.sources[0];
         if !unset_of_one && !component.sources.contains(&source) {
-            return Err(CodegenError::UnlistedSource {
+            return Err(MarkupError::UnlistedSource {
                 component: component.anchor.full_name().to_string(),
                 event: event.full_name().to_string(),
                 domain: source,
@@ -638,13 +642,13 @@ impl Declared {
 
     /// Refuses a projector listing its sources in input_domains one of
     /// which no `(event)` entry for it names.
-    fn check_projected(&self) -> Result<(), CodegenError> {
+    fn check_projected(&self) -> Result<(), MarkupError> {
         let component = &self.component;
         if !self.listed || !component.input_domain.is_empty() {
             return Ok(());
         }
         match component.sources.iter().find(|d| !self.named.contains(d)) {
-            Some(unnamed) => Err(CodegenError::UnprojectedSource {
+            Some(unnamed) => Err(MarkupError::UnprojectedSource {
                 component: component.anchor.full_name().to_string(),
                 domain: unnamed.clone(),
             }),
@@ -660,7 +664,7 @@ fn attach_event(
     components: &mut [Declared],
     event: &MessageDescriptor,
     consumer: &DynamicMessage,
-) -> Result<(), CodegenError> {
+) -> Result<(), MarkupError> {
     match Declared::named(components, &string_field(consumer, "component")) {
         Some(component) => component.attach(event, string_field(consumer, "domain")),
         None => Ok(()),
@@ -675,13 +679,13 @@ fn command_input(
     component: &Component,
     message: &MessageDescriptor,
     declared: &DynamicMessage,
-) -> Result<Input, CodegenError> {
+) -> Result<Input, MarkupError> {
     let command = || message.full_name().to_string();
     let emits = strings_field(declared, "emits")
         .into_iter()
         .map(|event| {
             let found = component.events.iter().find(|e| e.full_name() == event);
-            found.cloned().ok_or_else(|| CodegenError::UnknownEmit {
+            found.cloned().ok_or_else(|| MarkupError::UnknownEmit {
                 command: command(),
                 event,
             })
@@ -691,13 +695,13 @@ fn command_input(
     let fact = bool_field(declared, "fact");
     let refused = strings_field(declared, "refuses");
     if fact && !refused.is_empty() {
-        return Err(CodegenError::RefusesOnFact { message: command() });
+        return Err(MarkupError::RefusesOnFact { message: command() });
     }
     let refuses = refused
         .into_iter()
         .map(|refusal| {
             pool.get_message_by_name(&refusal)
-                .ok_or_else(|| CodegenError::UnknownRefusal {
+                .ok_or_else(|| MarkupError::UnknownRefusal {
                     command: command(),
                     refusal,
                 })
@@ -719,13 +723,13 @@ fn cardinality(
     message: &MessageDescriptor,
     declared: &DynamicMessage,
     emits: usize,
-) -> Result<Cardinality, CodegenError> {
+) -> Result<Cardinality, MarkupError> {
     let cardinality = match enum_field(declared, "emits_cardinality") {
         CARDINALITY_MANY => Cardinality::Many,
         // With no emits, the raw form is a list: unset is MANY.
         0 if emits == 0 => Cardinality::Many,
         n @ (CARDINALITY_ONE | CARDINALITY_OPTIONAL) if emits == 0 => {
-            return Err(CodegenError::CardinalityWithoutEmits {
+            return Err(MarkupError::CardinalityWithoutEmits {
                 message: message.full_name().to_string(),
                 optional: n == CARDINALITY_OPTIONAL,
             });
@@ -734,7 +738,7 @@ fn cardinality(
         _ => Cardinality::One,
     };
     if cardinality != Cardinality::Many && emits > MAX_TUPLE {
-        return Err(CodegenError::EmitsTuple {
+        return Err(MarkupError::EmitsTuple {
             message: message.full_name().to_string(),
             count: emits,
         });
@@ -799,9 +803,10 @@ fn check_refusal_statuses(
         for value in e.values() {
             let marked = value.options().has_extension(&status_ext);
             if marked && (codes.is_none() || value.number() == 0) {
-                return Err(CodegenError::RefusalStatusMisplaced {
+                return Err(MarkupError::RefusalStatusMisplaced {
                     value: format!("{}.{}", e.full_name(), value.name()),
-                });
+                }
+                .into());
             }
         }
     }
@@ -817,22 +822,22 @@ fn projector_sources(
     kind: ComponentKind,
     declared: &DynamicMessage,
     input_domain: &str,
-) -> Result<Option<Vec<String>>, CodegenError> {
+) -> Result<Option<Vec<String>>, MarkupError> {
     let component = || message.full_name().to_string();
     let domains = strings_field(declared, "input_domains");
     if !domains.is_empty() && kind != ComponentKind::Projector {
-        return Err(CodegenError::InputDomainsOnNonProjector {
+        return Err(MarkupError::InputDomainsOnNonProjector {
             component: component(),
         });
     }
     if !domains.is_empty() && !input_domain.is_empty() {
-        return Err(CodegenError::InputDomainsWithInputDomain {
+        return Err(MarkupError::InputDomainsWithInputDomain {
             component: component(),
         });
     }
     for (i, domain) in domains.iter().enumerate() {
         if domains[..i].contains(domain) {
-            return Err(CodegenError::DuplicateSource {
+            return Err(MarkupError::DuplicateSource {
                 component: component(),
                 domain: domain.clone(),
             });
@@ -854,7 +859,7 @@ struct Reach {
 }
 
 impl Reach {
-    fn message(&mut self, message: &MessageDescriptor) -> Result<(), CodegenError> {
+    fn message(&mut self, message: &MessageDescriptor) -> Result<(), ProtoError> {
         if !self.seen.insert(message.full_name().to_string()) {
             return Ok(());
         }
@@ -866,13 +871,13 @@ impl Reach {
             .map(|m| m.full_name().to_string())
             .next();
         if let Some(nested) = nested {
-            return Err(CodegenError::NestedType {
+            return Err(ProtoError::NestedType {
                 message: message.full_name().to_string(),
                 nested,
             });
         }
         if let Some(oneof) = message.oneofs().find(|o| !o.is_synthetic()) {
-            return Err(CodegenError::Oneof {
+            return Err(ProtoError::Oneof {
                 message: message.full_name().to_string(),
                 oneof: oneof.name().to_string(),
             });
@@ -888,7 +893,7 @@ impl Reach {
             match kind {
                 Kind::Message(m) if m.full_name() == TIMESTAMP => {}
                 Kind::Message(m) if m.package_name() == WELL_KNOWN => {
-                    return Err(CodegenError::WellKnownType {
+                    return Err(ProtoError::WellKnownType {
                         message: message.full_name().to_string(),
                         field: field.name().to_string(),
                         type_name: m.full_name().to_string(),
@@ -902,14 +907,14 @@ impl Reach {
         Ok(())
     }
 
-    fn enumeration(&mut self, e: &EnumDescriptor) -> Result<(), CodegenError> {
+    fn enumeration(&mut self, e: &EnumDescriptor) -> Result<(), ProtoError> {
         if !self.seen.insert(e.full_name().to_string()) {
             return Ok(());
         }
         if let Some(zero) = e.values().find(|v| v.number() == 0)
             && !zero.name().ends_with("_UNSPECIFIED")
         {
-            return Err(CodegenError::EnumZero {
+            return Err(ProtoError::EnumZero {
                 enum_name: e.full_name().to_string(),
                 value: zero.name().to_string(),
             });

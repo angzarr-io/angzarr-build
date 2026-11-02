@@ -9,7 +9,7 @@ use angzarr_build::{
     AppSeed, BuildError, DomainCrate, RetrySeed, Scaffolded, app_into, app_scaffold_into,
     app_without_domain_into,
 };
-use angzarr_codegen::CodegenError;
+use angzarr_codegen::{AppError, CodegenError};
 
 #[path = "../../../test-support/test_dir.rs"]
 mod test_dir;
@@ -179,7 +179,7 @@ fn a_config_with_lints_is_refused_and_nothing_is_written() {
     assert!(
         matches!(
             &refused,
-            Err(BuildError::Codegen(CodegenError::AppRefused { lints })) if lints.len() == 1
+            Err(BuildError::Codegen(CodegenError::App(AppError::Refused { lints }))) if lints.len() == 1
         ),
         "{refused:?}"
     );
