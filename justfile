@@ -169,7 +169,8 @@ push-check remote *lefthook:
 # timeout is generous), mutants.out under OUT; then each crate's kill rate
 # against `mutation_thresholds`. Killed = caught or timed out; unviable
 # mutants count neither way. Prints the rate per crate; exits 1 when one is
-# below its threshold or a mutant's crate has none, listing the survivors.
+# below its threshold or a mutant's crate has none, listing the survivors,
+# and when the run found mutants and tested fewer.
 [positional-arguments]
 _mutants-judge out patch="":
     #!/usr/bin/env bash
@@ -191,11 +192,22 @@ _mutants-judge out patch="":
         0|2|3) ;;
         *) echo "FAIL mutants: cargo mutants failed before a verdict (exit $rc; log: $out/cargo-mutants.log)" >&2; exit 1 ;;
     esac
-    outcomes="$out/mutants.out/outcomes.json"
-    judged='[.outcomes[] | select(.scenario | type == "object") | {file: .scenario.Mutant.file, summary}]'
-    if [ ! -f "$outcomes" ] || [ "$(jq "$judged | length" "$outcomes")" -eq 0 ]; then
+    # Every mutant found must have been tested: a run that found some and
+    # judged fewer has not shown the tests catch them, so it fails rather
+    # than passing on the ones it never ran.
+    found=0
+    [ -f "$out/mutants.out/mutants.json" ] && found=$(jq length "$out/mutants.out/mutants.json")
+    if [ "$found" -eq 0 ]; then
         echo "ok   mutants (no mutants: nothing mutable in scope)"
         exit 0
+    fi
+    outcomes="$out/mutants.out/outcomes.json"
+    judged='[.outcomes[] | select(.scenario | type == "object") | {file: .scenario.Mutant.file, summary}]'
+    tested=0
+    [ -f "$outcomes" ] && tested=$(jq "$judged | length" "$outcomes")
+    if [ "$tested" -ne "$found" ]; then
+        echo "FAIL mutants: $found mutants found but $tested tested (cargo mutants exit $rc; log: $out/cargo-mutants.log); nothing is judged until every one is" >&2
+        exit 1
     fi
     tiered=$(jq --arg tiers '{{mutation_thresholds}}' "$judged"' | ($tiers | split(" ") | map(split("=") | {prefix: .[0], min: (.[1] | tonumber)})) as $t
         | map(. as $m | . + {tier: ([$t[] | . as $tier | select($m.file | startswith($tier.prefix + "/"))] | max_by(.prefix | length))})' "$outcomes")
