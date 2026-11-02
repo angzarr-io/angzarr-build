@@ -77,6 +77,14 @@ mutation_thresholds := "crates/angzarr-codegen=100 crates/angzarr-build=90 crate
 mutants-all:
     @just --justfile '{{justfile_directory()}}/justfile' _mutants-judge target/mutants-all
 
+# The branches red tests never reach, besides the remote's default branch
+# (<remote>/HEAD, else main): the lines that integrate here (bash globs).
+# This repository's integration line is poc/local-wiring, not its default
+# branch, and nothing in it names that line (origin/HEAD is main), so it is
+# listed: add a line here when one starts integrating, drop it when it stops.
+# test-commit (pre-commit) and push-check (pre-push) both read it.
+PROTECTED_BRANCHES := "poc/local-wiring"
+
 # lefthook's pre-push step, given the remote's name and git's pushed refs on
 # stdin. For each ref pushed, in that commit's tree checked out alone
 # (target/push-tree, so an unpushed edit cannot pass or fail it): every test
@@ -88,10 +96,14 @@ mutants-all:
 # angzarr-project is the pushed commit's submodule commit, exported from this
 # checkout's submodule (fetched if it is missing there).
 #
-# Red tests are allowed on a branch and kept out of the default branch: pushed
-# to another branch, failing tests pass with a warning; pushed to the default
-# branch they are refused. `lefthook` is what lefthook.yml passes to stop
-# lefthook skipping it, and is ignored.
+# Red tests are allowed on a branch and kept out of the protected ones (the
+# remote's default branch and PROTECTED_BRANCHES): pushed to another branch,
+# failing tests pass with a warning; pushed to a protected branch they are
+# refused. `lefthook` is what lefthook.yml passes to stop lefthook skipping
+# it, and is ignored. To check a push to the integration line by hand
+# without pushing:
+#
+#     echo "refs/heads/B $(git rev-parse HEAD) refs/heads/poc/local-wiring 0" | just push-check origin
 [positional-arguments]
 push-check remote *lefthook:
     #!/usr/bin/env bash
@@ -99,6 +111,7 @@ push-check remote *lefthook:
     top='{{justfile_directory()}}'
     remote=$1
     default=$(git -C "$top" symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null) && default=${default#"$remote"/} || default=main
+    read -ra protected <<< "$default {{PROTECTED_BRANCHES}}"
     tree="$top/target/push-tree"
     mkdir -p "$top/target/logs"
     exec 9> "$top/target/.push-tree.lock"
@@ -113,6 +126,10 @@ push-check remote *lefthook:
         [ "${local_sha//0/}" = "" ] && continue  # a deletion
         pushed=1
         target=${remote_ref#refs/heads/}
+        guarded=
+        for pattern in "${protected[@]}"; do
+            [[ $remote_ref == refs/heads/$pattern ]] && guarded=1
+        done
         base=
         if [ -n "${remote_sha//0/}" ] && git -C "$top" cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
             base=$(git -C "$top" merge-base "$remote_sha" "$local_sha") || base=
@@ -151,11 +168,11 @@ push-check remote *lefthook:
         rc=0
         (cd "$tree" && CARGO_TARGET_DIR="$top/target/push" cargo test --workspace) > "$log" 2>&1 9>&- || rc=$?
         if [ "$rc" -ne 0 ]; then
-            if [ "$remote_ref" != "refs/heads/$default" ]; then
-                echo "RED  push-check: $range: the tests fail (target/logs/push-tests.log); allowed off $default, which $target cannot merge into until they pass."
+            if [ -z "$guarded" ]; then
+                echo "RED  push-check: $range: the tests fail (target/logs/push-tests.log); allowed off ${protected[*]}, which $target cannot merge into until they pass."
                 continue
             fi
-            echo "FAIL push-check: $range: the tests fail, and $default takes no red tests (full log: target/logs/push-tests.log)" >&2
+            echo "FAIL push-check: $range: the tests fail, and $target takes no red tests (full log: target/logs/push-tests.log)" >&2
             grep -E '^(test .* FAILED|failures:|error(\[|:))' "$log" | head -20 >&2 || true
             exit 1
         fi
@@ -236,17 +253,24 @@ hooks-install:
     lefthook install
 
 # lefthook's pre-commit tests: every test of the workspace. Red tests (the
-# tests build and some fail) are committed on a branch other than main, with
-# a warning that it cannot merge until they pass, and refused on main or a
-# detached HEAD; a build failure is refused everywhere.
+# tests build and some fail) are committed on a branch other than the
+# protected ones (origin's default branch and PROTECTED_BRANCHES), with a
+# warning that it cannot merge until they pass, and refused on a protected
+# branch or a detached HEAD; a build failure is refused everywhere.
 test-commit:
     #!/usr/bin/env bash
     set -euo pipefail
     cargo test --workspace --no-run --quiet
     cargo test --workspace && exit 0
+    default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) && default=${default#origin/} || default=main
+    read -ra protected <<< "$default {{PROTECTED_BRANCHES}}"
     branch=$(git symbolic-ref --quiet --short HEAD) || branch=
-    if [ -n "$branch" ] && [ "$branch" != main ]; then
-        echo "RED  tests: red tests committed on $branch, which is allowed off main; $branch cannot merge into main (or be pushed to it) until they pass"
+    guarded=
+    for pattern in "${protected[@]}"; do
+        [[ $branch == $pattern ]] && guarded=1
+    done
+    if [ -n "$branch" ] && [ -z "$guarded" ]; then
+        echo "RED  tests: red tests committed on $branch, which is allowed off ${protected[*]}; $branch cannot merge into them (or be pushed to them) until they pass"
         exit 0
     fi
     echo "FAIL tests: red tests cannot be committed on ${branch:-a detached HEAD}. Commit them on a branch." >&2
