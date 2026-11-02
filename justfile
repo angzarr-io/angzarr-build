@@ -91,8 +91,13 @@ PROTECTED_BRANCHES := "poc/local-wiring"
 # of the workspace. No mutation: no git hook runs it. The range reported runs
 # from the merge base of the commit pushed and the remote's current tip of
 # that ref (a fast-forward's base is that tip); for a new ref, or a tip not
-# fetched here, the merge base with the remote's default branch
-# (<remote>/HEAD, else main). A deleted ref passes at once. The push tree's
+# fetched here, the merge base with the first of the protected branches (the
+# remote's default branch, <remote>/HEAD else main, then each of
+# PROTECTED_BRANCHES; each the remote's ref, else the local one) it shares
+# history with, so a branch cut from poc/local-wiring, which shares none with
+# main, has a base. A commit sharing history with none of them is refused.
+# The base only bounds the range reported: the tests always run on the
+# pushed commit's whole tree. A deleted ref passes at once. The push tree's
 # angzarr-project is the pushed commit's submodule commit, exported from this
 # checkout's submodule (fetched if it is missing there).
 #
@@ -135,14 +140,16 @@ push-check remote *lefthook:
             base=$(git -C "$top" merge-base "$remote_sha" "$local_sha") || base=
         fi
         if [ -z "$base" ]; then
-            for ref in "refs/remotes/$remote/$default" "refs/heads/$default"; do
-                if git -C "$top" rev-parse --verify --quiet "$ref^{commit}" > /dev/null; then
-                    base=$(git -C "$top" merge-base "$ref" "$local_sha") && break
-                fi
+            for branch in "${protected[@]}"; do
+                for ref in "refs/remotes/$remote/$branch" "refs/heads/$branch"; do
+                    if git -C "$top" rev-parse --verify --quiet "$ref^{commit}" > /dev/null; then
+                        base=$(git -C "$top" merge-base "$ref" "$local_sha") && break 2
+                    fi
+                done
             done
         fi
         if [ -z "$base" ]; then
-            echo "FAIL push-check: $local_ref shares no history with $remote's tip or with $default" >&2
+            echo "FAIL push-check: $local_ref shares no history with $remote's tip or with any of ${protected[*]}" >&2
             exit 1
         fi
         range="$(git -C "$top" rev-parse --short "$base")..$(git -C "$top" rev-parse --short "$local_sha") to $remote/$target"
