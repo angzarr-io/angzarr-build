@@ -755,18 +755,11 @@ pub enum LedgerStateOutput {
 impl ::angzarr_embedded::markup::CommandTarget for LedgerStateOutput {
     const DOMAIN: &'static str = "ledger";
     fn command_types() -> Vec<String> {
-        [
-            "kinds.v1.Post",
-            "kinds.v1.Open",
-            "kinds.v1.Four",
-            "kinds.v1.Maybe",
-            "kinds.v1.MaybeBoth",
-            "kinds.v1.Batch",
-            "kinds.v1.Raw",
+        vec![
+            "kinds.v1.Post".to_string(), "kinds.v1.Open".to_string(), "kinds.v1.Four"
+            .to_string(), "kinds.v1.Maybe".to_string(), "kinds.v1.MaybeBoth".to_string(),
+            "kinds.v1.Batch".to_string(), "kinds.v1.Raw".to_string()
         ]
-            .iter()
-            .map(|c| c.to_string())
-            .collect()
     }
 }
 impl From<Post> for LedgerStateOutput {
@@ -964,7 +957,7 @@ pub enum AuditStateOutput {
 impl ::angzarr_embedded::markup::CommandTarget for AuditStateOutput {
     const DOMAIN: &'static str = "audit";
     fn command_types() -> Vec<String> {
-        ["kinds.v1.Audit"].iter().map(|c| c.to_string()).collect()
+        vec!["kinds.v1.Audit".to_string()]
     }
 }
 impl From<Audit> for AuditStateOutput {

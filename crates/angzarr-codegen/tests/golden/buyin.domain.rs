@@ -459,7 +459,7 @@ pub enum WalletOutput {
 impl ::angzarr_embedded::markup::CommandTarget for WalletOutput {
     const DOMAIN: &'static str = "wallet";
     fn command_types() -> Vec<String> {
-        ["buyin.v1.Deposit", "buyin.v1.Hold"].iter().map(|c| c.to_string()).collect()
+        vec!["buyin.v1.Deposit".to_string(), "buyin.v1.Hold".to_string()]
     }
 }
 impl From<Deposit> for WalletOutput {
@@ -626,10 +626,7 @@ pub enum BuyInOutput {
 impl ::angzarr_embedded::markup::CommandTarget for BuyInOutput {
     const DOMAIN: &'static str = "buyin";
     fn command_types() -> Vec<String> {
-        ["buyin.v1.StartBuyIn", "buyin.v1.RecordHeld"]
-            .iter()
-            .map(|c| c.to_string())
-            .collect()
+        vec!["buyin.v1.StartBuyIn".to_string(), "buyin.v1.RecordHeld".to_string()]
     }
 }
 impl From<StartBuyIn> for BuyInOutput {

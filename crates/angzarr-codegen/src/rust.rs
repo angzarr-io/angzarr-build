@@ -710,7 +710,7 @@ fn output_enum(component: &crate::model::Component) -> TokenStream {
             const DOMAIN: &'static str = #domain;
 
             fn command_types() -> Vec<String> {
-                [#(#commands),*].iter().map(|c| c.to_string()).collect()
+                vec![#(#commands.to_string()),*]
             }
         }
 
