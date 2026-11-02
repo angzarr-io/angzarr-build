@@ -9,8 +9,8 @@
 pub mod adapters {
     #[allow(unused_imports)]
     use ::angzarr_embedded::markup::{
-        CommandContext, Commands, Context, Emit, PolicyContext, Record, Refusal, Refuses,
-        Report,
+        CommandContext, Commands, Context, Emit, Fails, PolicyContext, Record, Refusal,
+        Refuses, Report,
     };
     use ::angzarr_embedded::v1::Uuid;
     #[allow(unused_imports)]
@@ -45,39 +45,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Post>>> {
             crate::domain::LedgerState::post(&self.0, &cmd, ctx)
-                .map(|events: Vec<LedgerStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Posted>),
-                            |emit, event| match event {
-                                LedgerStateEvent::Posted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Post>>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Noted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Post>>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Cleared(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Post>>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Closed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Post>>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Refuses<Self, Post>>>)
                 .map_err(PostRefuses::with_code_status)
                 .map_err(PostRefuses::widen)
         }
@@ -88,39 +56,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Rejection>> {
             crate::domain::LedgerState::open(&self.0, &cmd, ctx)
-                .map(|events: Vec<LedgerStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Posted>),
-                            |emit, event| match event {
-                                LedgerStateEvent::Posted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Noted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Cleared(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Closed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Rejection>>)
         }
         #[handles_cmd(Four)]
         fn four(
@@ -129,39 +65,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Rejection>> {
             crate::domain::LedgerState::four(&self.0, &cmd, ctx)
-                .map(|events: Vec<LedgerStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Posted>),
-                            |emit, event| match event {
-                                LedgerStateEvent::Posted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Noted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Cleared(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Closed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Rejection>>)
         }
         #[handles_cmd(Maybe)]
         fn maybe(
@@ -170,39 +74,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Rejection>> {
             crate::domain::LedgerState::maybe(&self.0, &cmd, ctx)
-                .map(|events: Vec<LedgerStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Posted>),
-                            |emit, event| match event {
-                                LedgerStateEvent::Posted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Noted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Cleared(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Closed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Rejection>>)
         }
         #[handles_cmd(MaybeBoth)]
         fn maybe_both(
@@ -211,39 +83,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Rejection>> {
             crate::domain::LedgerState::maybe_both(&self.0, &cmd, ctx)
-                .map(|events: Vec<LedgerStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Posted>),
-                            |emit, event| match event {
-                                LedgerStateEvent::Posted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Noted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Cleared(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Closed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Rejection>>)
         }
         #[handles_cmd(Batch, refuses(PostRefused))]
         fn batch(
@@ -252,128 +92,22 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Batch>>> {
             crate::domain::LedgerState::batch(&self.0, &cmd, ctx)
-                .map(|events: Vec<LedgerStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Posted>),
-                            |emit, event| match event {
-                                LedgerStateEvent::Posted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Batch>>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Noted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Batch>>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Cleared(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Batch>>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Closed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Batch>>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Refuses<Self, Batch>>>)
                 .map_err(PostRefused::with_code_status)
                 .map_err(Failed::widen)
         }
         #[handles_cmd(Raw)]
         fn raw(&self, cmd: Raw, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
             crate::domain::LedgerState::raw(&self.0, &cmd, ctx)
-                .map(|events: Vec<LedgerStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Posted>),
-                            |emit, event| match event {
-                                LedgerStateEvent::Posted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Noted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Cleared(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                                LedgerStateEvent::Closed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Rejection>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Rejection>>)
         }
         #[handles_fact(Arrived)]
         fn arrived(&self, fact: Arrived, ctx: &Context) -> Record<Self> {
-            let record = |events: Vec<LedgerStateEvent>| {
-                events
-                    .into_iter()
-                    .fold(
-                        Record::of(None::<Posted>),
-                        |emit, event| match event {
-                            LedgerStateEvent::Posted(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            LedgerStateEvent::Noted(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            LedgerStateEvent::Cleared(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            LedgerStateEvent::Closed(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                        },
-                    )
-            };
-            record(crate::domain::LedgerState::arrived(&self.0, &fact, ctx))
+            Self::recorded(crate::domain::LedgerState::arrived(&self.0, &fact, ctx))
         }
         #[handles_fact(Swept)]
         fn swept(&self, fact: Swept, ctx: &Context) -> Record<Self> {
-            let record = |events: Vec<LedgerStateEvent>| {
-                events
-                    .into_iter()
-                    .fold(
-                        Record::of(None::<Posted>),
-                        |emit, event| match event {
-                            LedgerStateEvent::Posted(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            LedgerStateEvent::Noted(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            LedgerStateEvent::Cleared(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            LedgerStateEvent::Closed(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                        },
-                    )
-            };
-            record(crate::domain::LedgerState::swept(&self.0, &fact, ctx))
+            Self::recorded(crate::domain::LedgerState::swept(&self.0, &fact, ctx))
         }
         #[applies(Posted)]
         fn posted(&mut self, event: Posted) {
@@ -390,6 +124,55 @@ pub mod adapters {
         #[applies(Closed)]
         fn closed(&mut self, event: Closed) {
             crate::domain::LedgerState::apply_closed(&mut self.0, &event);
+        }
+    }
+    impl LedgerState {
+        /// A decision's events, each a step of the markup's `Emit`,
+        /// failing as its handler does (`E`).
+        fn emitted<E: Fails<Self> + 'static>(
+            events: Vec<LedgerStateEvent>,
+        ) -> Emit<Self> {
+            events
+                .into_iter()
+                .fold(
+                    Emit::of(None::<Posted>),
+                    |emit, event| match event {
+                        LedgerStateEvent::Posted(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                        LedgerStateEvent::Noted(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                        LedgerStateEvent::Cleared(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                        LedgerStateEvent::Closed(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                    },
+                )
+        }
+        /// A fact's events, each a step of the markup's `Record`.
+        fn recorded(events: Vec<LedgerStateEvent>) -> Record<Self> {
+            events
+                .into_iter()
+                .fold(
+                    Record::of(None::<Posted>),
+                    |emit, event| match event {
+                        LedgerStateEvent::Posted(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        LedgerStateEvent::Noted(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        LedgerStateEvent::Cleared(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        LedgerStateEvent::Closed(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                    },
+                )
         }
     }
     /// `kinds.v1.AuditState`, delegating to `crate::domain::AuditState`.
@@ -411,27 +194,31 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Audit>>> {
             crate::domain::AuditState::audit(&self.0, &cmd, ctx)
-                .map(|events: Vec<AuditStateEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<Audited>),
-                            |emit, event| match event {
-                                AuditStateEvent::Audited(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Audit>>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Refuses<Self, Audit>>>)
                 .map_err(AuditRefuses::with_code_status)
                 .map_err(AuditRefuses::widen)
         }
         #[applies(Audited)]
         fn audited(&mut self, event: Audited) {
             crate::domain::AuditState::apply_audited(&mut self.0, &event);
+        }
+    }
+    impl AuditState {
+        /// A decision's events, each a step of the markup's `Emit`,
+        /// failing as its handler does (`E`).
+        fn emitted<E: Fails<Self> + 'static>(
+            events: Vec<AuditStateEvent>,
+        ) -> Emit<Self> {
+            events
+                .into_iter()
+                .fold(
+                    Emit::of(None::<Audited>),
+                    |emit, event| match event {
+                        AuditStateEvent::Audited(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                    },
+                )
         }
     }
     /// `kinds.v1.LedgerView`, delegating to `crate::domain::LedgerView`.

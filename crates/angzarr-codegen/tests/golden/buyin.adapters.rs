@@ -9,7 +9,8 @@
 pub mod adapters {
     #[allow(unused_imports)]
     use ::angzarr_embedded::markup::{
-        CommandContext, Commands, Context, Emit, PolicyContext, Record, Refusal, Refuses,
+        CommandContext, Commands, Context, Emit, Fails, PolicyContext, Record, Refusal,
+        Refuses,
     };
     use ::angzarr_embedded::v1::Uuid;
     #[allow(unused_imports)]
@@ -37,33 +38,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Deposit>>> {
             crate::domain::Wallet::deposit(&self.0, &cmd, ctx)
-                .map(|events: Vec<WalletEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<BuyInRefusalRecorded>),
-                            |emit, event| match event {
-                                WalletEvent::BuyInRefusalRecorded(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Deposit>>,
-                                    >(event))
-                                }
-                                WalletEvent::Deposited(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Deposit>>,
-                                    >(event))
-                                }
-                                WalletEvent::Held(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Deposit>>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Refuses<Self, Deposit>>>)
                 .map_err(Failed::widen)
         }
         #[handles_cmd(Hold, refuses(InsufficientFunds))]
@@ -73,33 +48,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Hold>>> {
             crate::domain::Wallet::hold(&self.0, &cmd, ctx)
-                .map(|events: Vec<WalletEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<BuyInRefusalRecorded>),
-                            |emit, event| match event {
-                                WalletEvent::BuyInRefusalRecorded(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Hold>>,
-                                    >(event))
-                                }
-                                WalletEvent::Deposited(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Hold>>,
-                                    >(event))
-                                }
-                                WalletEvent::Held(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, Hold>>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Refuses<Self, Hold>>>)
                 .map_err(Failed::widen)
         }
         #[handles_fact(RecordBuyInRefused)]
@@ -108,25 +57,9 @@ pub mod adapters {
             fact: RecordBuyInRefused,
             ctx: &Context,
         ) -> Record<Self> {
-            let record = |events: Vec<WalletEvent>| {
-                events
-                    .into_iter()
-                    .fold(
-                        Record::of(None::<BuyInRefusalRecorded>),
-                        |emit, event| match event {
-                            WalletEvent::BuyInRefusalRecorded(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            WalletEvent::Deposited(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            WalletEvent::Held(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                        },
-                    )
-            };
-            record(crate::domain::Wallet::record_buy_in_refused(&self.0, &fact, ctx))
+            Self::recorded(
+                crate::domain::Wallet::record_buy_in_refused(&self.0, &fact, ctx),
+            )
         }
         #[applies(BuyInRefusalRecorded)]
         fn buy_in_refusal_recorded(&mut self, event: BuyInRefusalRecorded) {
@@ -139,6 +72,47 @@ pub mod adapters {
         #[applies(Held)]
         fn held(&mut self, event: Held) {
             crate::domain::Wallet::apply_held(&mut self.0, &event);
+        }
+    }
+    impl Wallet {
+        /// A decision's events, each a step of the markup's `Emit`,
+        /// failing as its handler does (`E`).
+        fn emitted<E: Fails<Self> + 'static>(events: Vec<WalletEvent>) -> Emit<Self> {
+            events
+                .into_iter()
+                .fold(
+                    Emit::of(None::<BuyInRefusalRecorded>),
+                    |emit, event| match event {
+                        WalletEvent::BuyInRefusalRecorded(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                        WalletEvent::Deposited(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                        WalletEvent::Held(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                    },
+                )
+        }
+        /// A fact's events, each a step of the markup's `Record`.
+        fn recorded(events: Vec<WalletEvent>) -> Record<Self> {
+            events
+                .into_iter()
+                .fold(
+                    Record::of(None::<BuyInRefusalRecorded>),
+                    |emit, event| match event {
+                        WalletEvent::BuyInRefusalRecorded(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        WalletEvent::Deposited(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        WalletEvent::Held(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                    },
+                )
         }
     }
     /// `buyin.v1.BuyInState`, delegating to `crate::domain::BuyIn`.
@@ -160,33 +134,7 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Refuses<Self, StartBuyIn>>> {
             crate::domain::BuyIn::start_buy_in(&self.0, &cmd, ctx)
-                .map(|events: Vec<BuyInEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<BuyInStarted>),
-                            |emit, event| match event {
-                                BuyInEvent::BuyInStarted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, StartBuyIn>>,
-                                    >(event))
-                                }
-                                BuyInEvent::BuyInHeld(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, StartBuyIn>>,
-                                    >(event))
-                                }
-                                BuyInEvent::BuyInFailed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, StartBuyIn>>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Refuses<Self, StartBuyIn>>>)
                 .map_err(Failed::widen)
         }
         #[handles_cmd(RecordHeld, refuses(BuyInRefused))]
@@ -196,56 +144,12 @@ pub mod adapters {
             ctx: &Context,
         ) -> Result<Emit<Self>, Failed<Refuses<Self, RecordHeld>>> {
             crate::domain::BuyIn::record_held(&self.0, &cmd, ctx)
-                .map(|events: Vec<BuyInEvent>| {
-                    events
-                        .into_iter()
-                        .fold(
-                            Emit::of(None::<BuyInStarted>),
-                            |emit, event| match event {
-                                BuyInEvent::BuyInStarted(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, RecordHeld>>,
-                                    >(event))
-                                }
-                                BuyInEvent::BuyInHeld(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, RecordHeld>>,
-                                    >(event))
-                                }
-                                BuyInEvent::BuyInFailed(event) => {
-                                    emit.then(move |_: &Self, _: &Context| Ok::<
-                                        _,
-                                        Failed<Refuses<Self, RecordHeld>>,
-                                    >(event))
-                                }
-                            },
-                        )
-                })
+                .map(Self::emitted::<Failed<Refuses<Self, RecordHeld>>>)
                 .map_err(Failed::widen)
         }
         #[handles_fact(HoldLost)]
         fn hold_lost(&self, fact: HoldLost, ctx: &Context) -> Record<Self> {
-            let record = |events: Vec<BuyInEvent>| {
-                events
-                    .into_iter()
-                    .fold(
-                        Record::of(None::<BuyInStarted>),
-                        |emit, event| match event {
-                            BuyInEvent::BuyInStarted(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            BuyInEvent::BuyInHeld(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                            BuyInEvent::BuyInFailed(event) => {
-                                emit.then(move |_: &Self, _: &Context| event)
-                            }
-                        },
-                    )
-            };
-            record(crate::domain::BuyIn::hold_lost(&self.0, &fact, ctx))
+            Self::recorded(crate::domain::BuyIn::hold_lost(&self.0, &fact, ctx))
         }
         #[applies(BuyInStarted)]
         fn buy_in_started(&mut self, event: BuyInStarted) {
@@ -258,6 +162,47 @@ pub mod adapters {
         #[applies(BuyInFailed)]
         fn buy_in_failed(&mut self, event: BuyInFailed) {
             crate::domain::BuyIn::apply_buy_in_failed(&mut self.0, &event);
+        }
+    }
+    impl BuyIn {
+        /// A decision's events, each a step of the markup's `Emit`,
+        /// failing as its handler does (`E`).
+        fn emitted<E: Fails<Self> + 'static>(events: Vec<BuyInEvent>) -> Emit<Self> {
+            events
+                .into_iter()
+                .fold(
+                    Emit::of(None::<BuyInStarted>),
+                    |emit, event| match event {
+                        BuyInEvent::BuyInStarted(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                        BuyInEvent::BuyInHeld(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                        BuyInEvent::BuyInFailed(event) => {
+                            emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event))
+                        }
+                    },
+                )
+        }
+        /// A fact's events, each a step of the markup's `Record`.
+        fn recorded(events: Vec<BuyInEvent>) -> Record<Self> {
+            events
+                .into_iter()
+                .fold(
+                    Record::of(None::<BuyInStarted>),
+                    |emit, event| match event {
+                        BuyInEvent::BuyInStarted(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        BuyInEvent::BuyInHeld(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                        BuyInEvent::BuyInFailed(event) => {
+                            emit.then(move |_: &Self, _: &Context| event)
+                        }
+                    },
+                )
         }
     }
     /// `buyin.v1.BuyInWalletPolicy`, delegating to `crate::domain::BuyInWallet`.
