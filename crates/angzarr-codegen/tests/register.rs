@@ -34,9 +34,15 @@ fn registrations(source: &str) -> Vec<String> {
     assert_eq!(
         // syn keeps `pub` in `vis`, apart from the signature.
         format!("{}{}", text(&body.vis), text(&body.sig)),
-        "pubfnregister(registry:&mut::angzarr_embedded::Registry)"
+        "pubfnregister(registry:&mut::angzarr_embedded::Registry,)->::core::result::Result<(),::angzarr_embedded::Misconfigured>"
     );
-    body.block.stmts.iter().map(text).collect()
+    let mut stmts: Vec<String> = body.block.stmts.iter().map(text).collect();
+    assert_eq!(
+        stmts.pop().as_deref(),
+        Some("::core::result::Result::Ok(())"),
+        "every registration refused is the caller's: it ends Ok"
+    );
+    stmts
 }
 
 #[test]
@@ -44,10 +50,10 @@ fn test_register_registers_every_component_once_by_its_kind() {
     assert_eq!(
         registrations(&buyin_register()),
         [
-            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default);",
-            "registry.process_manager::<crate::adapters::BuyIn>(crate::adapters::BuyIn::default);",
-            "registry.policy(crate::adapters::BuyInWallet::default());",
-            "registry.policy(crate::adapters::WalletBuyIn::default());",
+            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default)?;",
+            "registry.process_manager::<crate::adapters::BuyIn>(crate::adapters::BuyIn::default)?;",
+            "registry.policy(crate::adapters::BuyInWallet::default())?;",
+            "registry.policy(crate::adapters::WalletBuyIn::default())?;",
         ]
     );
 }
@@ -58,7 +64,7 @@ fn test_register_of_one_aggregate_registers_it_alone() {
     let source = register(&descriptors(&[SHOP]), &[SHOP], &[]).unwrap();
     assert_eq!(
         registrations(&source),
-        ["registry.aggregate::<crate::adapters::Cart>(crate::adapters::Cart::default);"]
+        ["registry.aggregate::<crate::adapters::Cart>(crate::adapters::Cart::default)?;"]
     );
 }
 
@@ -68,9 +74,9 @@ fn test_register_leaves_a_remote_domain_to_the_host_and_keeps_its_policies() {
     assert_eq!(
         registrations(&source),
         [
-            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default);",
-            "registry.policy(crate::adapters::BuyInWallet::default());",
-            "registry.policy(crate::adapters::WalletBuyIn::default());",
+            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default)?;",
+            "registry.policy(crate::adapters::BuyInWallet::default())?;",
+            "registry.policy(crate::adapters::WalletBuyIn::default())?;",
         ]
     );
 }
@@ -89,15 +95,16 @@ fn test_register_leaves_out_a_policy_whose_domain_is_not_in_the_files() {
     assert_eq!(
         registrations(&source),
         [
-            "registry.aggregate::<crate::adapters::TableAggregate,>(crate::adapters::TableAggregate::default);",
-            "registry.policy(crate::adapters::TablePlayerPolicy::default());",
-            "registry.policy(crate::adapters::PlayerTablePolicy::default());",
+            "registry.aggregate::<crate::adapters::TableAggregate,>(crate::adapters::TableAggregate::default)?;",
+            "registry.policy(crate::adapters::TablePlayerPolicy::default())?;",
+            "registry.policy(crate::adapters::PlayerTablePolicy::default())?;",
         ]
     );
 }
 
 /// rustc with warnings denied on `source` as a library, `::angzarr_embedded`
-/// a stub holding only the `Registry` the signature names: the
+/// a stub holding only the `Registry` and `Misconfigured` the signature
+/// names: the
 /// diagnostics, if rustc refused it.
 fn compile_denying_warnings(source: &str) -> Result<(), String> {
     use std::process::Command;
@@ -118,7 +125,11 @@ fn compile_denying_warnings(source: &str) -> Result<(), String> {
             .output()
             .expect("rustc on PATH")
     };
-    std::fs::write(dir.join("stub.rs"), "pub struct Registry;").unwrap();
+    std::fs::write(
+        dir.join("stub.rs"),
+        "pub struct Registry; pub struct Misconfigured;",
+    )
+    .unwrap();
     let stub = rustc(&["--crate-name=angzarr_embedded", "stub.rs"]);
     assert!(
         stub.status.success(),

@@ -18,6 +18,7 @@ use proc_macro2::{TokenStream, TokenTree};
 /// diagnostics.
 const ALLOWED: &[&str] = &[
     "angzarr_embedded::Any",
+    "angzarr_embedded::Misconfigured",
     "angzarr_embedded::Payload",
     "angzarr_embedded::PayloadError",
     "angzarr_embedded::PayloadError::UnknownType",

@@ -47,7 +47,7 @@ fn test_the_projector_adapter_projects_every_source_under_its_name() {
     assert!(source.contains("#[projects(Audited)]"), "{source}");
     let register = register(&common::descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
     assert!(
-        register.contains("registry.projector(crate::adapters::LedgerView::default());"),
+        register.contains("registry.projector(crate::adapters::LedgerView::default())?;"),
         "{register}"
     );
 }

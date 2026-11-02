@@ -246,14 +246,18 @@ fn test_generated_register_composes_with_a_hand_written_component() {
          pub struct HandWrittenLedger;\n\
          impl ::angzarr_embedded::router::ProjectorHandler for HandWrittenLedger {{}}\n\
          /// The application's registration: the generated, then its own.\n\
-         pub fn register_all(registry: &mut ::angzarr_embedded::Registry) {{\n\
-             register(registry);\n\
-             registry.projector_handler(&[\"carts\"], HandWrittenLedger);\n\
+         pub fn register_all(\n\
+             registry: &mut ::angzarr_embedded::Registry,\n\
+         ) -> Result<(), ::angzarr_embedded::Misconfigured> {{\n\
+             register(registry)?;\n\
+             registry.projector_handler(&[\"carts\"], HandWrittenLedger)?;\n\
+             Ok(())\n\
          }}\n"
     );
     let stub = "pub mod router { pub trait ProjectorHandler {} }\n\
+                pub struct Misconfigured;\n\
                 pub struct Registry; impl Registry {\n\
-                    pub fn projector_handler(&mut self, _sources: &[&str], _p: impl crate::router::ProjectorHandler + 'static) -> &mut Self { self }\n\
+                    pub fn projector_handler(&mut self, _sources: &[&str], _p: impl crate::router::ProjectorHandler + 'static) -> Result<&mut Self, Misconfigured> { Ok(self) }\n\
                 }";
     if let Err(diagnostics) = compile_with_stub(stub, &app) {
         panic!("{app}\n{diagnostics}");

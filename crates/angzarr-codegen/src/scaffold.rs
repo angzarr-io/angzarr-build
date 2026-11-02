@@ -1380,12 +1380,12 @@ fn registration(
             let name = ident(&component.name);
             let ty = quote!(crate::adapters::#name);
             match component.kind {
-                ComponentKind::Aggregate => quote!(registry.aggregate::<#ty>(#ty::default);),
+                ComponentKind::Aggregate => quote!(registry.aggregate::<#ty>(#ty::default)?;),
                 ComponentKind::ProcessManager => {
-                    quote!(registry.process_manager::<#ty>(#ty::default);)
+                    quote!(registry.process_manager::<#ty>(#ty::default)?;)
                 }
-                ComponentKind::Policy => quote!(registry.policy(#ty::default());),
-                ComponentKind::Projector => quote!(registry.projector(#ty::default());),
+                ComponentKind::Policy => quote!(registry.policy(#ty::default())?;),
+                ComponentKind::Projector => quote!(registry.projector(#ty::default())?;),
             }
         })
         .collect::<Vec<_>>();
@@ -1396,12 +1396,14 @@ fn registration(
     let doc = [
         format!(" Registers every component of the project with {RUNTIME}, which dispatches"),
         " each through angzarr-router: an application calls this once, at startup.".to_string(),
+        " Refused as the registry refuses a component: one registered twice, say.".to_string(),
     ];
     let source = file(quote! {
         #(#[doc = #doc])*
-        pub fn register(registry: &mut #root::Registry) {
+        pub fn register(registry: &mut #root::Registry) -> ::core::result::Result<(), #root::Misconfigured> {
             #unused
             #(#registrations)*
+            ::core::result::Result::Ok(())
         }
     });
     Ok(crate::headed(

@@ -31,18 +31,25 @@ pub mod ledger_view_impl;
 
 /// The application's registration: the generated components, then the
 /// projector written by hand, through angzarr-embedded's public API only.
-pub fn register_all(registry: &mut angzarr_embedded::Registry) {
-    register(registry);
-    registry.projector_handler(&["ledger"], hand_written::Tally);
+pub fn register_all(
+    registry: &mut angzarr_embedded::Registry,
+) -> Result<(), angzarr_embedded::Misconfigured> {
+    register(registry)?;
+    registry.projector_handler(&["ledger"], hand_written::Tally)?;
+    Ok(())
 }
 
 /// The same application with the generated policy swapped for the one
 /// written by hand under the generated one's name: the generated
 /// components registered one by one, then the hand-written ones.
-pub fn register_swapped(registry: &mut angzarr_embedded::Registry) {
-    registry.aggregate::<adapters::LedgerState>(adapters::LedgerState::default);
-    registry.aggregate::<adapters::AuditState>(adapters::AuditState::default);
-    registry.projector(adapters::LedgerView::default());
-    registry.policy(hand_written::LedgerAudit);
-    registry.projector_handler(&["ledger"], hand_written::Tally);
+pub fn register_swapped(
+    registry: &mut angzarr_embedded::Registry,
+) -> Result<(), angzarr_embedded::Misconfigured> {
+    registry
+        .aggregate::<adapters::LedgerState>(adapters::LedgerState::default)?
+        .aggregate::<adapters::AuditState>(adapters::AuditState::default)?
+        .projector(adapters::LedgerView::default())?
+        .policy(hand_written::LedgerAudit)?
+        .projector_handler(&["ledger"], hand_written::Tally)?;
+    Ok(())
 }
