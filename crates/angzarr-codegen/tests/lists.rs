@@ -56,7 +56,7 @@ fn test_the_adapter_hands_the_markup_a_step_per_event() {
     for expected in [
         // One helper per domain, not a fold per handler: each event a step
         // of the markup, a command's returning the handler's own failure.
-        "fnemitted<E:Fails<Self>+'static>(events:Vec<LedgerStateEvent>)->Emit<Self>{",
+        "fnemitted<E:Fails<Self>+'static>(events:Vec<LedgerStateEvent>",
         "fnrecorded(events:Vec<LedgerStateEvent>)->Record<Self>{",
         "Ok::<_,E>(event)",
         "LedgerStateEvent::Noted(event)=>{emit.then(move|_:&Self,_:&Context|event)}",

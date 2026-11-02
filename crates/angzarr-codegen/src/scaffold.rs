@@ -946,7 +946,7 @@ pub fn adapters(
             }
             _ => {
                 macros.extend(["applies", "handles_cmd", "handles_fact"]);
-                markup.extend(["Record", "Refuses"]);
+                markup.extend(["Fails", "Record", "Refuses"]);
                 macros.push(domain_markup(component.kind));
                 domain_adapter(component)
             }
@@ -1046,38 +1046,58 @@ impl Adapter {
     }
 }
 
-/// What a decision's `Ok` becomes for the markup, `Emit` for a command and
-/// `Record` for a fact: its list of the component's events (decision
-/// 14.75), one continuation step per event of the event enum, each
-/// returning it (a command's step as `Ok` of the handler's own failure,
-/// `failed`).
-fn emitted(component: &Component, input: &Input, failed: &TokenStream) -> TokenStream {
-    let open = if input.fact {
-        format_ident!("Record")
-    } else {
-        format_ident!("Emit")
-    };
+/// A domain adapter's helpers turning a handling's list of the domain's
+/// events (decision 14.75) into what the markup takes: `emitted`, a
+/// command's `Emit`, generic over the handler's failure `E`, and
+/// `recorded`, a fact's `Record`, each event one continuation step (the
+/// markup takes no event enum as is). One of each per domain, generated
+/// only where an input takes it, so no handler repeats the fold.
+fn steps(component: &Component) -> TokenStream {
     let first = component
         .events
         .first()
         .map(|e| ident(e.name()))
         .unwrap_or_else(|| format_ident!("Rejection"));
     let enum_name = format_ident!("{}Event", component.name);
-    let arms = component.events.iter().map(|e| {
-        let v = ident(e.name());
-        if input.fact {
-            quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| event))
-        } else {
-            quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, #failed>(event)))
-        }
-    });
-    quote! {
-        |events: Vec<#enum_name>| {
-            events.into_iter().fold(#open::of(None::<#first>), |emit, event| match event {
-                #(#arms,)*
+    let arms = |fallible: bool| -> Vec<TokenStream> {
+        component
+            .events
+            .iter()
+            .map(|e| {
+                let v = ident(e.name());
+                if fallible {
+                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event)))
+                } else {
+                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| event))
+                }
             })
-        }
+            .collect()
+    };
+    let mut out = TokenStream::new();
+    if component.inputs.iter().any(|i| !i.fact) {
+        let arms = arms(true);
+        out.extend(quote! {
+            /// A decision's events, each a step of the markup's `Emit`,
+            /// failing as its handler does (`E`).
+            fn emitted<E: Fails<Self> + 'static>(events: Vec<#enum_name>) -> Emit<Self> {
+                events.into_iter().fold(Emit::of(None::<#first>), |emit, event| match event {
+                    #(#arms,)*
+                })
+            }
+        });
     }
+    if component.inputs.iter().any(|i| i.fact) {
+        let arms = arms(false);
+        out.extend(quote! {
+            /// A fact's events, each a step of the markup's `Record`.
+            fn recorded(events: Vec<#enum_name>) -> Record<Self> {
+                events.into_iter().fold(Record::of(None::<#first>), |emit, event| match event {
+                    #(#arms,)*
+                })
+            }
+        });
+    }
+    out
 }
 
 /// The markup macro of a domain of `kind`: `process_manager` or
@@ -1108,9 +1128,9 @@ fn domain_adapter(component: &Component) -> TokenStream {
     let events = format_ident!("{}Event", component.name);
     let handlers = component.inputs.iter().map(|input| {
         if input.fact {
-            fact_method(component, input, interface)
+            fact_method(input, interface)
         } else {
-            command_method(component, input, interface)
+            command_method(input, interface)
         }
     });
     let folds = component
@@ -1118,6 +1138,7 @@ fn domain_adapter(component: &Component) -> TokenStream {
         .iter()
         .map(|event| fold_method(event, interface));
     let methods: Vec<TokenStream> = handlers.chain(folds).collect();
+    let steps = steps(component);
     quote! {
         #declaration
 
@@ -1133,6 +1154,10 @@ fn domain_adapter(component: &Component) -> TokenStream {
         #[allow(clippy::result_large_err)]
         impl #name {
             #(#methods)*
+        }
+
+        impl #name {
+            #steps
         }
     }
 }
@@ -1161,32 +1186,27 @@ fn starts(input: &Input) -> TokenStream {
 
 /// A domain adapter's recorder of the fact `input`, delegating to
 /// `interface`.
-fn fact_method(component: &Component, input: &Input, interface: &TokenStream) -> TokenStream {
+fn fact_method(input: &Input, interface: &TokenStream) -> TokenStream {
     let ty = ident(input.message.name());
     let starts = starts(input);
     let m = format_ident!("{}", method(input.message.name()));
-    let emit = emitted(component, input, &quote!());
-    let call = quote!(#interface::#m(&self.0, &fact, ctx));
-    // Bound first: a closure called where it is declared is clippy's
-    // `redundant_closure_call`.
     quote! {
         #[handles_fact(#ty #starts)]
         fn #m(&self, fact: #ty, ctx: &Context) -> Record<Self> {
-            let record = #emit;
-            record(#call)
+            Self::recorded(#interface::#m(&self.0, &fact, ctx))
         }
     }
 }
 
 /// A domain adapter's handler of the command `input`, delegating to
 /// `interface`, its refusals widened to the adapter's.
-fn command_method(component: &Component, input: &Input, interface: &TokenStream) -> TokenStream {
+fn command_method(input: &Input, interface: &TokenStream) -> TokenStream {
     let ty = ident(input.message.name());
     let m = format_ident!("{}", method(input.message.name()));
     let starts = starts(input);
     match input.refuses.as_slice() {
         [] => {
-            let emit = emitted(component, input, &quote!(Failed<Rejection>));
+            let emit = quote!(Self::emitted::<Failed<Rejection>>);
             quote! {
                 #[handles_cmd(#ty #starts)]
                 fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
@@ -1195,7 +1215,7 @@ fn command_method(component: &Component, input: &Input, interface: &TokenStream)
             }
         }
         refusals => {
-            let emit = emitted(component, input, &quote!(Failed<Refuses<Self, #ty>>));
+            let emit = quote!(Self::emitted::<Failed<Refuses<Self, #ty>>>);
             // One type widens by its own `Into`; several, by their
             // domain-layer choice's `widen`. A refusal with a Reason is
             // refused under its code's status first (decision 14.52).

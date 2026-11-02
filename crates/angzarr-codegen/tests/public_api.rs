@@ -40,6 +40,7 @@ const ALLOWED: &[&str] = &[
     "angzarr_embedded::markup::Emit",
     "angzarr_embedded::markup::EventSource",
     "angzarr_embedded::markup::Failed",
+    "angzarr_embedded::markup::Fails",
     "angzarr_embedded::markup::Ingests",
     "angzarr_embedded::markup::pack_message",
     "angzarr_embedded::markup::PolicyContext",
