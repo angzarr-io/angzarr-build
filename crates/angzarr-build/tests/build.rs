@@ -2,10 +2,13 @@
 //! domain layer, and the descriptors, each written into the output
 //! directory, and the failures it reports.
 
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::Path;
 
 use angzarr_build::{BuildError, markup_domain_into, wire_into};
+
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
+use test_dir::TestDir;
 
 const SHOP: &str = "shop/v1/shop.proto";
 
@@ -17,15 +20,8 @@ fn fixtures() -> String {
 }
 
 /// A fresh, empty output directory.
-fn out_dir() -> PathBuf {
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-build-test-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn out_dir() -> TestDir {
+    TestDir::new("angzarr-build-test")
 }
 
 #[test]
@@ -40,7 +36,6 @@ fn test_wire_into_writes_prost_types_by_package() {
             .any(|i| matches!(i, syn::Item::Struct(s) if s.ident == "CartState")),
         "prost's CartState"
     );
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -48,7 +43,6 @@ fn test_markup_domain_into_reports_the_generators_refusal() {
     let out = out_dir();
     let error = markup_domain_into(&out, &[SHOP], &[&fixtures()], &[]).expect_err("no wire path");
     assert!(matches!(error, BuildError::Codegen(_)), "{error:?}");
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -57,7 +51,6 @@ fn test_markup_domain_into_reports_a_proto_protoc_cannot_find() {
     let error = markup_domain_into(&out, &["shop/v1/absent.proto"], &[&fixtures()], &[])
         .expect_err("no such proto");
     assert!(matches!(error, BuildError::Protoc { .. }), "{error:?}");
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -171,7 +164,6 @@ fn test_descriptors_into_writes_each_components_descriptor_with_the_version() {
     );
     // The version is in the encoded descriptors.
     assert!(source.contains("2.0.0"), "{source}");
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 /// A child-served domain's stand-in, generated from its proto into the
@@ -183,5 +175,4 @@ fn test_stand_ins_into_writes_the_remote_domains_stand_in() {
     let source = std::fs::read_to_string(out.join("angzarr-stand-ins.rs")).unwrap();
     assert!(source.contains("impl CommandTarget for Wallet"), "{source}");
     assert!(source.contains("impl Decides<Hold> for Wallet"), "{source}");
-    std::fs::remove_dir_all(&out).unwrap();
 }

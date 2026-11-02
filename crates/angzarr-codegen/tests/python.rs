@@ -11,6 +11,8 @@ use angzarr_codegen::{
 };
 use common::*;
 
+use common::test_dir::TestDir;
+
 const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/python/player");
 
 fn player_app() -> PythonApp {
@@ -717,12 +719,7 @@ fn test_an_event_several_commands_emit_gets_a_helper_named_for_each() {
 /// Runs `script` with python3 beside the player's `domain.py`, an
 /// `angzarr_client.router` stub standing in for the client.
 fn run_player_domain(script: &str) -> std::process::Output {
-    static RUN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-codegen-from-command-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
+    let dir = TestDir::new("angzarr-codegen-from-command");
     let client = dir.join("angzarr_client");
     std::fs::create_dir_all(&client).unwrap();
     std::fs::write(client.join("__init__.py"), "").unwrap();
@@ -745,13 +742,11 @@ fn run_player_domain(script: &str) -> std::process::Output {
         ),
     )
     .unwrap();
-    let out = std::process::Command::new("python3")
+    std::process::Command::new("python3")
         .arg("-I")
         .arg(&main)
         .output()
-        .expect("python3 on PATH");
-    std::fs::remove_dir_all(&dir).unwrap();
-    out
+        .expect("python3 on PATH")
 }
 
 #[test]

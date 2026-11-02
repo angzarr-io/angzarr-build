@@ -4,14 +4,17 @@
 //! adds only absent methods, and the adapters and `register` go into the
 //! output directory, regenerated every build.
 
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::Path;
 
 use angzarr_build::{
     BuildError, BuildWarning, Existing, Scaffolded, Translate, adapters_from, adapters_into,
     markup_domain_into, register_into, scaffold_into,
 };
 use angzarr_codegen::CodegenError;
+
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
+use test_dir::TestDir;
 
 const BUYIN: &[&str] = &[
     "buyin/v1/wallet.proto",
@@ -37,15 +40,8 @@ fn fixtures() -> String {
 }
 
 /// A fresh, empty directory.
-fn empty_dir() -> PathBuf {
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-build-scaffold-test-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn empty_dir() -> TestDir {
+    TestDir::new("angzarr-build-scaffold-test")
 }
 
 fn scaffold(src: &Path, existing: Existing) -> Vec<Scaffolded> {
@@ -66,7 +62,6 @@ fn test_scaffold_into_writes_each_absent_file() {
         let source = std::fs::read_to_string(src.join(file)).expect(file);
         syn::parse_file(&source).expect("the scaffold parses");
     }
-    std::fs::remove_dir_all(&src).unwrap();
 }
 
 #[test]
@@ -84,7 +79,6 @@ fn test_scaffold_into_never_overwrites_a_users_file() {
         std::fs::read_to_string(src.join("wallet.rs")).unwrap(),
         mine
     );
-    std::fs::remove_dir_all(&src).unwrap();
 }
 
 #[test]
@@ -115,7 +109,6 @@ fn test_scaffold_into_with_complete_adds_only_absent_stubs() {
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("fn hold_refused("), "{after}");
     assert!(after.len() > before.len());
-    std::fs::remove_dir_all(&src).unwrap();
 }
 
 #[test]
@@ -139,7 +132,6 @@ fn test_scaffold_into_with_complete_refuses_an_input_the_proto_contradicts() {
         "{error:?}"
     );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), mine);
-    std::fs::remove_dir_all(&src).unwrap();
 }
 
 #[test]
@@ -151,7 +143,6 @@ fn test_register_into_writes_the_generated_register() {
         source,
         include_str!("../../angzarr-codegen/tests/golden/buyin.register.rs")
     );
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -169,7 +160,6 @@ fn test_markup_domain_into_writes_the_markup_domain_layer_by_package() {
         source.contains("::angzarr_embedded::markup::DomainMessage"),
         "{source}"
     );
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -191,7 +181,6 @@ fn test_adapters_into_writes_the_generated_adapters() {
         source.contains("pub struct Wallet(pub crate::wallet_impl::WalletImpl);"),
         "{source}"
     );
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -221,7 +210,6 @@ fn test_scaffold_into_rescaffolded_leaves_every_users_file_byte_identical() {
         .map(|f| std::fs::read_to_string(src.join(f)).unwrap())
         .collect();
     assert_eq!(before, after);
-    std::fs::remove_dir_all(&src).unwrap();
 }
 
 /// A policy's interface the adapters read is not there: a warning naming
@@ -244,6 +232,4 @@ fn test_adapters_from_warns_of_a_policys_interface_that_is_not_there() {
         adapters_from(&out, &src, BUYIN, &[&fixtures()], &[]).unwrap(),
         []
     );
-    std::fs::remove_dir_all(&out).unwrap();
-    std::fs::remove_dir_all(&src).unwrap();
 }

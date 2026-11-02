@@ -10,6 +10,8 @@ use angzarr_codegen::markup_domain;
 use common::*;
 use quote::ToTokens;
 
+use common::test_dir::TestDir;
+
 const WIRE: &str = "wire/v1/wire.proto";
 
 /// The generated layer's settings checks alone: its `wire_settings` module
@@ -38,21 +40,13 @@ fn checks() -> String {
 /// if it refused it.
 fn rustc(source: &str) -> Result<(), String> {
     use std::process::Command;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-codegen-wire-settings-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = TestDir::new("angzarr-codegen-wire-settings");
     std::fs::write(dir.join("lib.rs"), source).unwrap();
     let out = Command::new(std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string()))
         .current_dir(&dir)
         .args(["--edition=2021", "--crate-type=lib", "-Dwarnings", "lib.rs"])
         .output()
         .expect("rustc on PATH");
-    std::fs::remove_dir_all(&dir).unwrap();
     if out.status.success() {
         Ok(())
     } else {

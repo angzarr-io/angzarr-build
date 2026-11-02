@@ -9,6 +9,8 @@ mod common;
 use angzarr_codegen::register;
 use common::*;
 
+use common::test_dir::TestDir;
+
 const GOLDEN: &str = include_str!("golden/buyin.register.rs");
 
 fn buyin_register() -> String {
@@ -108,14 +110,7 @@ fn test_register_leaves_out_a_policy_whose_domain_is_not_in_the_files() {
 /// diagnostics, if rustc refused it.
 fn compile_denying_warnings(source: &str) -> Result<(), String> {
     use std::process::Command;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-codegen-register-test-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = TestDir::new("angzarr-codegen-register-test");
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let rustc = |args: &[&str]| {
         Command::new(&rustc)
@@ -142,7 +137,6 @@ fn compile_denying_warnings(source: &str) -> Result<(), String> {
         "--extern=angzarr_embedded=libangzarr_embedded.rlib",
         "register.rs",
     ]);
-    std::fs::remove_dir_all(&dir).unwrap();
     if out.status.success() {
         Ok(())
     } else {

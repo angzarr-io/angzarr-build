@@ -7,6 +7,7 @@
 mod common;
 
 use angzarr_codegen::stand_ins;
+use common::test_dir::TestDir;
 use common::*;
 
 const PLAYER: &str = "io/angzarr/examples/v1/player.proto";
@@ -84,9 +85,7 @@ fn test_every_domain_of_the_files_gets_a_stand_in_and_nothing_else_does() {
 fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
     use std::process::Command;
     let source = stand_ins(&descriptors(BLACKJACK), &[PLAYER]).unwrap();
-    let dir =
-        std::env::temp_dir().join(format!("angzarr-codegen-stand-ins-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = TestDir::new("angzarr-codegen-stand-ins");
     std::fs::write(
         dir.join("stub.rs"),
         "pub mod markup {\n\
@@ -134,7 +133,6 @@ fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
         "--extern=angzarr_embedded=libangzarr_embedded.rlib",
         "app.rs",
     ]);
-    std::fs::remove_dir_all(&dir).unwrap();
     assert!(
         app.status.success(),
         "{source}\n{}",

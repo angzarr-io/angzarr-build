@@ -3,14 +3,17 @@
 //! run from the protos and the host config on disk, a refused config
 //! writing nothing; and `app`, the one call the generated build.rs makes.
 
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::path::Path;
 
 use angzarr_build::{
     AppSeed, BuildError, DomainCrate, RetrySeed, Scaffolded, app_into, app_scaffold_into,
     app_without_domain_into,
 };
 use angzarr_codegen::CodegenError;
+
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
+use test_dir::TestDir;
 
 const BUYIN: &[&str] = &[
     "buyin/v1/wallet.proto",
@@ -34,15 +37,8 @@ fn fixtures() -> String {
 }
 
 /// A fresh, empty directory.
-fn empty_dir() -> PathBuf {
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-build-app-test-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn empty_dir() -> TestDir {
+    TestDir::new("angzarr-build-app-test")
 }
 
 fn seed() -> AppSeed {
@@ -99,7 +95,6 @@ fn scaffolding_an_app_writes_its_config_build_script_main_and_driver() {
     for path in APP_FILES {
         assert!(root.join(path).exists(), "{path}");
     }
-    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
@@ -110,7 +105,6 @@ fn rescaffolding_an_app_unchanged_keeps_every_file_byte_for_byte() {
     assert_eq!(actions(&root, &scaffold(&root, SHOP, &seed())), all("kept"));
     let after: Vec<String> = APP_FILES.iter().map(|p| read(&root, p)).collect();
     assert_eq!(before, after);
-    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
@@ -152,7 +146,6 @@ fn rescaffolding_never_overwrites_the_users_config_or_driver_and_rewrites_the_cl
     assert_eq!(read(&root, "src/driver.rs"), driver);
     assert_eq!(read(&root, "src/main.rs"), main);
     assert_eq!(read(&root, "build.rs"), build);
-    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
@@ -173,7 +166,6 @@ fn an_edit_to_the_config_is_followed_by_the_next_main() {
     let main = read(&root, "src/main.rs");
     assert!(!main.contains("pub mod buy_in;"), "{main}");
     assert!(main.contains("pub mod wallet;"), "{main}");
-    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
@@ -192,7 +184,6 @@ fn a_config_with_lints_is_refused_and_nothing_is_written() {
         "{refused:?}"
     );
     assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
-    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
@@ -239,7 +230,6 @@ fn app_into_writes_the_whole_layer_the_configs_remote_domains_as_command_and_eve
         !register.contains("adapters::BuyIn>"),
         "the buy-in is the Python child's: {register}"
     );
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -270,7 +260,6 @@ fn app_without_domain_into_writes_the_layer_but_the_wire_types_and_domain_layer(
     for file in ["buyin.v1.rs", "buyin.v1.domain.rs"] {
         assert!(!out.join(file).exists(), "{file} is the domain crate's");
     }
-    std::fs::remove_dir_all(&out).unwrap();
 }
 
 #[test]
@@ -306,7 +295,6 @@ fn rescaffolding_follows_the_domain_crate_the_manifest_on_disk_names() {
     };
     scaffold(&root, SHOP, &over);
     assert!(read(&root, "src/main.rs").contains("\npub use shop_proto::domain;\n"));
-    std::fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
@@ -315,5 +303,4 @@ fn a_config_that_cannot_be_read_is_an_error_not_a_new_config() {
     std::fs::create_dir_all(root.join("angzarr.yaml")).unwrap();
     let refused = app_scaffold_into(&root, SHOP, &[&fixtures()], &seed());
     assert!(matches!(refused, Err(BuildError::Io { .. })), "{refused:?}");
-    std::fs::remove_dir_all(&root).unwrap();
 }
