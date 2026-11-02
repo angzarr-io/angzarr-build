@@ -6,7 +6,7 @@
 # registering the in-process components it lists, and `angzarr lint
 # app` checks it against the protos. Its shape is versioned by
 # `schema_version`.
-schema_version: 2
+schema_version: 3
 component:
   - name: carts
     kind: domain

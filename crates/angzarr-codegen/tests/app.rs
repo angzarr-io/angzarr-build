@@ -257,7 +257,7 @@ fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
     // its kind (the owner's config rulings): the table, the player a
     // Python child, the two policies between them in process; the wallet
     // policy's target is not in the application, so it is not listed.
-    let hand = "schema_version: 2\
+    let hand = "schema_version: 3\
                 \ncomponent:\
                 \n  - name: table\
                 \n    kind: domain\
@@ -792,7 +792,7 @@ fn lint_app_refuses_what_is_not_the_hosts_config() {
     // newer version.
     for config in [
         "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n",
-        "schema_version: 3\n",
+        "schema_version: 4\n",
     ] {
         assert!(
             matches!(
@@ -806,14 +806,19 @@ fn lint_app_refuses_what_is_not_the_hosts_config() {
 
 /// A config with no stamp is the oldest generation, version 0, which has
 /// version 1's shape: it reads through every step, and lints as the
-/// stamped one does; so does the same file stamped version 1.
+/// stamped one does; so does the same file stamped any older version.
 #[test]
-fn an_unstamped_or_version_1_config_lints_as_the_current_one() {
+fn an_unstamped_or_older_config_lints_as_the_current_one() {
     let stamped = golden("blackjack", "angzarr.yaml");
-    assert!(stamped.contains("\nschema_version: 2\n"), "{stamped}");
-    let version_1 = stamped.replace("\nschema_version: 2\n", "\nschema_version: 1\n");
-    assert_eq!(lints(&version_1, BLACKJACK), []);
-    let unstamped = stamped.replace("\nschema_version: 2\n", "\n");
+    assert!(stamped.contains("\nschema_version: 3\n"), "{stamped}");
+    for older in ["1", "2"] {
+        let config = stamped.replace(
+            "\nschema_version: 3\n",
+            &format!("\nschema_version: {older}\n"),
+        );
+        assert_eq!(lints(&config, BLACKJACK), [], "version {older}");
+    }
+    let unstamped = stamped.replace("\nschema_version: 3\n", "\n");
     assert_eq!(lints(&unstamped, BLACKJACK), []);
 }
 
