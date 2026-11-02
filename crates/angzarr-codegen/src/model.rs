@@ -12,6 +12,7 @@ use prost_reflect::{
 };
 
 use crate::error::{CodegenError, MarkupError, ProtoError, UseError};
+use crate::warnings::Warning;
 
 const COMPONENT: &str = "io.angzarr.v1.component";
 const COMMAND: &str = "io.angzarr.v1.command";
@@ -366,6 +367,31 @@ pub(crate) fn components(
     files: &[&str],
     kinds: &[ComponentKind],
 ) -> Result<Vec<Component>, CodegenError> {
+    declare(descriptor_set, files, kinds, None)
+}
+
+/// [`components`] as a lint reads them: every rule of the declarations
+/// held as generation holds it, but a command's `emits` naming an event its
+/// component folds none of, which generation refuses
+/// ([`MarkupError::UnknownEmit`]) and a lint warns of
+/// ([`Warning::UnappliedEmit`]), that emit left out.
+pub(crate) fn declarations(
+    descriptor_set: &[u8],
+    files: &[&str],
+) -> Result<(Vec<Component>, Vec<Warning>), CodegenError> {
+    let mut unapplied = Vec::new();
+    let components = declare(descriptor_set, files, ALL_KINDS, Some(&mut unapplied))?;
+    Ok((components, unapplied))
+}
+
+/// The components declared in `files`, an unapplied emit refused, or kept
+/// in `unapplied` when it is given.
+fn declare(
+    descriptor_set: &[u8],
+    files: &[&str],
+    kinds: &[ComponentKind],
+    mut unapplied: Option<&mut Vec<Warning>>,
+) -> Result<Vec<Component>, CodegenError> {
     let pool = decode(descriptor_set)?;
     let mut messages = Vec::new();
     for file in files {
@@ -405,7 +431,7 @@ pub(crate) fn components(
     }
     for message in &declaring {
         if let Some(command) = markup.command(message) {
-            markup.attach_input(&mut declared, message, &command)?;
+            markup.attach_input(&mut declared, message, &command, unapplied.as_deref_mut())?;
         }
     }
     check_refusal_statuses(&markup, files, &declaring)?;
@@ -489,6 +515,22 @@ impl<'a> Markup<'a> {
             string_field(&declared, "input_domain"),
             string_field(&declared, "output_domain"),
         );
+        match kind {
+            ComponentKind::ProcessManager if !output_domain.is_empty() => {
+                return Err(MarkupError::ProcessManagerOutputDomain {
+                    component: message.full_name().to_string(),
+                    domain: output_domain,
+                }
+                .into());
+            }
+            ComponentKind::Policy if output_domain.is_empty() => {
+                return Err(MarkupError::NoOutputDomain {
+                    component: message.full_name().to_string(),
+                }
+                .into());
+            }
+            _ => {}
+        }
         let listed = projector_sources(message, kind, &declared, &input_domain)?;
         let component_name = crate::names::unchecked(&crate::names::NameOf {
             kind: kind.name_kind(),
@@ -554,10 +596,11 @@ impl<'a> Markup<'a> {
         components: &mut [Declared],
         message: &MessageDescriptor,
         declared: &DynamicMessage,
+        unapplied: Option<&mut Vec<Warning>>,
     ) -> Result<(), CodegenError> {
         let named = string_field(declared, "component");
         if let Some(owner) = Declared::named(components, &named) {
-            let input = command_input(self.pool, &owner.component, message, declared)?;
+            let input = command_input(self.pool, &owner.component, message, declared, unapplied)?;
             owner.component.inputs.push(input);
             return Ok(());
         }
@@ -619,6 +662,16 @@ impl Declared {
     /// unset).
     fn attach(&mut self, event: &MessageDescriptor, source: String) -> Result<(), MarkupError> {
         let component = &mut self.component;
+        if component.kind == ComponentKind::ProcessManager
+            && !source.is_empty()
+            && source != component.domain
+        {
+            return Err(MarkupError::ProcessManagerSubscribes {
+                component: component.anchor.full_name().to_string(),
+                event: event.full_name().to_string(),
+                domain: source,
+            });
+        }
         if !component.events.contains(event) {
             component.events.push(event.clone());
         }
@@ -672,25 +725,36 @@ fn attach_event(
 }
 
 /// The input the `(command)` `message` declares (`declared`) of
-/// `component`: its emits, held to the component's events, their
-/// cardinality, and its refusals, each a message of `pool`.
+/// `component`: its emits, held to the component's events (one it folds
+/// none of refused, or kept in `unapplied` and left out when that is
+/// given), their cardinality, and its refusals, each a message of `pool`
+/// in the command's own package.
 fn command_input(
     pool: &DescriptorPool,
     component: &Component,
     message: &MessageDescriptor,
     declared: &DynamicMessage,
+    mut unapplied: Option<&mut Vec<Warning>>,
 ) -> Result<Input, MarkupError> {
     let command = || message.full_name().to_string();
-    let emits = strings_field(declared, "emits")
-        .into_iter()
-        .map(|event| {
-            let found = component.events.iter().find(|e| e.full_name() == event);
-            found.cloned().ok_or_else(|| MarkupError::UnknownEmit {
-                command: command(),
-                event,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut emits = Vec::new();
+    for event in strings_field(declared, "emits") {
+        match component.events.iter().find(|e| e.full_name() == event) {
+            Some(found) => emits.push(found.clone()),
+            None => match unapplied.as_deref_mut() {
+                Some(warnings) => warnings.push(Warning::UnappliedEmit {
+                    command: command(),
+                    event,
+                }),
+                None => {
+                    return Err(MarkupError::UnknownEmit {
+                        command: command(),
+                        event,
+                    });
+                }
+            },
+        }
+    }
     let cardinality = cardinality(message, declared, emits.len())?;
     let fact = bool_field(declared, "fact");
     let refused = strings_field(declared, "refuses");
@@ -700,19 +764,34 @@ fn command_input(
     let refuses = refused
         .into_iter()
         .map(|refusal| {
-            pool.get_message_by_name(&refusal)
-                .ok_or_else(|| MarkupError::UnknownRefusal {
+            let found =
+                pool.get_message_by_name(&refusal)
+                    .ok_or_else(|| MarkupError::UnknownRefusal {
+                        command: command(),
+                        refusal: refusal.clone(),
+                    })?;
+            if found.package_name() != message.package_name() {
+                return Err(MarkupError::ForeignRefusal {
                     command: command(),
                     refusal,
-                })
+                });
+            }
+            Ok(found)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let starts = bool_field(declared, "starts");
+    if starts && component.kind != ComponentKind::ProcessManager {
+        return Err(MarkupError::StartsOnNonProcessManager {
+            message: command(),
+            component: component.anchor.full_name().to_string(),
+        });
+    }
     Ok(Input {
         message: message.clone(),
         emits,
         cardinality,
         refuses,
-        starts: bool_field(declared, "starts"),
+        starts,
         fact,
     })
 }

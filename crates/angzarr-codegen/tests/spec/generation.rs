@@ -1,8 +1,10 @@
 //! Whens running the generator, and thens on what it made or why it
-//! refused. angzarr-cli has no lint of the protos of its own: a lint
-//! error is the generator refusing them (every check generation makes:
-//! the descriptors, the domain layer, the scaffold and the adapters), its
-//! exit status non-zero; it reports no warnings.
+//! refused. "The protos are linted" is `angzarr lint app`'s reading of
+//! them (`angzarr_codegen::warnings`): a declaration the contract forbids
+//! refused, its exit status non-zero, and its warnings, which leave the
+//! status 0; the tier's warning labels (`ANZ100`) are the crate's codes
+//! ([`coded`]). Generating runs every check generation makes: the
+//! descriptors, the domain layer, the scaffold and the adapters.
 
 use angzarr_codegen::CodegenError;
 use angzarr_diagnostic::Diagnostic as _;

@@ -9,6 +9,7 @@ use std::fmt;
 use angzarr_diagnostic::{Arg, Diagnostic};
 
 use crate::error::{CodegenError, text, texts};
+use crate::model::{self, Component, ComponentKind};
 
 /// One declaration lint warning, naming the declaration to look at.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -63,8 +64,44 @@ impl Diagnostic for Warning {
 /// `descriptor_set`, in declaration order; refused as generation refuses a
 /// declaration the contract forbids.
 pub fn warnings(descriptor_set: &[u8], files: &[&str]) -> Result<Vec<Warning>, CodegenError> {
-    let _ = (descriptor_set, files);
-    Ok(Vec::new())
+    let (components, mut warnings) = model::declarations(descriptor_set, files)?;
+    warnings.extend(of_all(&components));
+    Ok(warnings)
+}
+
+/// The warnings of each of `components`, in their order ([`of`]).
+pub(crate) fn of_all(components: &[Component]) -> Vec<Warning> {
+    components.iter().flat_map(|c| of(c, components)).collect()
+}
+
+/// `component`'s warnings among `components`: a policy whose domains none
+/// of them owns, a component naming nothing it handles, a process manager
+/// nothing starts.
+fn of(component: &Component, components: &[Component]) -> Vec<Warning> {
+    let name = || component.anchor.full_name().to_string();
+    let mut found = Vec::new();
+    if component.kind == ComponentKind::Policy {
+        if model::owner(components, &component.output_domain).is_none() {
+            found.push(Warning::UnownedTarget {
+                policy: name(),
+                domain: component.output_domain.clone(),
+            });
+        }
+        if model::owner(components, &component.input_domain).is_none() {
+            found.push(Warning::UnproducedSource {
+                policy: name(),
+                domain: component.input_domain.clone(),
+            });
+        }
+    }
+    if component.inputs.is_empty() && component.events.is_empty() {
+        found.push(Warning::Idle { component: name() });
+    }
+    if component.kind == ComponentKind::ProcessManager && !component.inputs.iter().any(|i| i.starts)
+    {
+        found.push(Warning::NoStartingInput { component: name() });
+    }
+    found
 }
 
 /// One value of every [`Warning`].

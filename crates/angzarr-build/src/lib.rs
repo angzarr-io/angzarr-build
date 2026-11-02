@@ -22,8 +22,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use angzarr_diagnostic::{Arg, Diagnostic, catalog};
 
 pub use angzarr_codegen::{
-    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Exposure, ProtoInput,
-    PythonApp, RetrySeed, Translate,
+    ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Exposure, Linted,
+    ProtoInput, PythonApp, RetrySeed, Translate, Warning,
 };
 
 /// This crate's en-US messages.
@@ -392,12 +392,9 @@ pub fn app_scaffold_into(
 }
 
 /// The lints of the host config at `config` against the components
-/// `protos` declare (see `angzarr_codegen::lint_app`).
-pub fn lint_app(
-    config: &Path,
-    protos: &[&str],
-    includes: &[&str],
-) -> Result<Vec<AppLint>, BuildError> {
+/// `protos` declare, and the protos' warnings (see
+/// `angzarr_codegen::lint_app`).
+pub fn lint_app(config: &Path, protos: &[&str], includes: &[&str]) -> Result<Linted, BuildError> {
     let text = std::fs::read_to_string(config).map_err(|e| io(config, &e))?;
     let bytes = scaffold_descriptors(protos, includes)?;
     angzarr_codegen::lint_app(&text, &bytes, protos).map_err(BuildError::Codegen)

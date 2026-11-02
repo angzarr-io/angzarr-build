@@ -456,13 +456,17 @@ fn an_existing_config_with_lints_is_refused() {
 }
 
 fn lints(config: &str, files: &[&str]) -> Vec<AppLint> {
-    lint_app(config, &descriptors(BLACKJACK), files).unwrap()
+    lint_app(config, &descriptors(BLACKJACK), files)
+        .unwrap()
+        .lints
 }
 
 #[test]
 fn the_generated_configs_have_no_lints() {
     assert_eq!(
-        lint_app(&golden("shop", "angzarr.yaml"), &descriptors(SHOP), SHOP).unwrap(),
+        lint_app(&golden("shop", "angzarr.yaml"), &descriptors(SHOP), SHOP)
+            .unwrap()
+            .lints,
         []
     );
     assert_eq!(lints(&golden("blackjack", "angzarr.yaml"), BLACKJACK), []);
@@ -595,7 +599,7 @@ fn lint_app_flags_a_policy_whose_target_is_not_in_the_app_unless_declared_remote
                 \n    language: rust\
                 \n";
     assert_eq!(
-        lint_app(base, &set, &files).unwrap(),
+        lint_app(base, &set, &files).unwrap().lints,
         [
             AppLint::PolicyTargetAbsent {
                 policy: "policy-table-wallet".to_string(),
@@ -610,7 +614,7 @@ fn lint_app_flags_a_policy_whose_target_is_not_in_the_app_unless_declared_remote
     let remote = format!(
         "{base}  - name: wallet\n    kind: domain\n    language: go\n    launch: [./bin/wallet]\n"
     );
-    assert_eq!(lint_app(&remote, &set, &files).unwrap(), []);
+    assert_eq!(lint_app(&remote, &set, &files).unwrap().lints, []);
 }
 
 #[test]
@@ -658,7 +662,7 @@ fn lint_app_flags_exposing_anything_but_an_aggregate() {
                  \n    expose: loopback\
                  \n";
     assert_eq!(
-        lint_app(buyin, &descriptors(BUYIN), BUYIN).unwrap(),
+        lint_app(buyin, &descriptors(BUYIN), BUYIN).unwrap().lints,
         [AppLint::NotExposable {
             name: "pmg-buyin".to_string(),
             kind: "process_manager".to_string(),

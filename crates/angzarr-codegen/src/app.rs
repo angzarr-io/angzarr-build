@@ -40,6 +40,7 @@ use crate::common::snake;
 use crate::error::{AppError, CodegenError, text, texts};
 use crate::model::{self, Component, ComponentKind};
 use crate::scaffold::{Owner, ScaffoldFile};
+use crate::warnings::Warning;
 
 /// The angzarr-embedded commit a generated application's `Cargo.toml` pins
 /// (its kernel, which re-exports the diagnostics, its markup and its host): the one this generator's output is
@@ -357,17 +358,30 @@ pub fn app_lint_samples() -> Vec<Box<dyn Diagnostic>> {
     ]
 }
 
+/// What `angzarr lint app` found: the config's lints, each a failure, and
+/// the protos' declaration warnings, which leave its exit status as it is.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct Linted {
+    pub lints: Vec<AppLint>,
+    pub warnings: Vec<Warning>,
+}
+
 /// The lints of `config`, a host config's YAML, against the components the
-/// protos declare in `files`, in the config's order and then the protos'.
-/// A config that does not read as a host config is refused
-/// ([`AppError::Config`]).
+/// protos declare in `files`, in the config's order and then the protos',
+/// and the protos' own warnings ([`crate::warnings`]). A config that does
+/// not read as a host config is refused ([`AppError::Config`]), as are
+/// declarations the contract forbids.
 pub fn lint_app(
     config: &str,
     descriptor_set: &[u8],
     files: &[&str],
-) -> Result<Vec<AppLint>, CodegenError> {
-    let components = model::components(descriptor_set, files, model::ALL_KINDS)?;
-    Ok(lint(&read(config)?, &components))
+) -> Result<Linted, CodegenError> {
+    let (components, mut warnings) = model::declarations(descriptor_set, files)?;
+    warnings.extend(crate::warnings::of_all(&components));
+    Ok(Linted {
+        lints: lint(&read(config)?, &components),
+        warnings,
+    })
 }
 
 // ------------------------------------------------------------ the config

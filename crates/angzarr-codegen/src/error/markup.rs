@@ -58,6 +58,27 @@ pub enum MarkupError {
     /// (decision 14.52): a value of an enum other than the nested `Reason`
     /// of a message some command refuses with, or that Reason's zero.
     RefusalStatusMisplaced { value: String },
+    /// A process manager's `(event)` entry naming a domain other than its
+    /// own: a process manager subscribes to nothing; another domain's
+    /// events reach it as facts through policies (decision 14.31; C-0604).
+    ProcessManagerSubscribes {
+        component: String,
+        event: String,
+        domain: String,
+    },
+    /// A process manager declaring an `output_domain`: its decisions reach
+    /// other domains through policies from its domain (decision 14.31;
+    /// C-0605).
+    ProcessManagerOutputDomain { component: String, domain: String },
+    /// A policy declaring no `output_domain`: its one destination (C-0582).
+    NoOutputDomain { component: String },
+    /// An input of a component other than a process manager setting
+    /// `starts`: only a process manager's input starts an instance
+    /// (C-0606).
+    StartsOnNonProcessManager { message: String, component: String },
+    /// A command's `refuses` naming a message of another package, another
+    /// domain's: a command refuses with its own domain's types (C-0626).
+    ForeignRefusal { command: String, refusal: String },
 }
 
 impl fmt::Display for MarkupError {
@@ -95,6 +116,17 @@ impl Diagnostic for MarkupError {
             MarkupError::RefusalStatusMisplaced { .. } => {
                 "angzarr-codegen-refusal-status-misplaced"
             }
+            MarkupError::ProcessManagerSubscribes { .. } => {
+                "angzarr-codegen-process-manager-subscribes"
+            }
+            MarkupError::ProcessManagerOutputDomain { .. } => {
+                "angzarr-codegen-process-manager-output-domain"
+            }
+            MarkupError::NoOutputDomain { .. } => "angzarr-codegen-no-output-domain",
+            MarkupError::StartsOnNonProcessManager { .. } => {
+                "angzarr-codegen-starts-on-non-process-manager"
+            }
+            MarkupError::ForeignRefusal { .. } => "angzarr-codegen-foreign-refusal",
         }
     }
 
@@ -139,6 +171,15 @@ impl Diagnostic for MarkupError {
                 ]
             }
             E::RefusalStatusMisplaced { value } => texts![value],
+            E::ProcessManagerSubscribes {
+                component,
+                event,
+                domain,
+            } => texts![component, event, domain],
+            E::ProcessManagerOutputDomain { component, domain } => texts![component, domain],
+            E::NoOutputDomain { component } => texts![component],
+            E::StartsOnNonProcessManager { message, component } => texts![message, component],
+            E::ForeignRefusal { command, refusal } => texts![command, refusal],
         }
     }
 }
@@ -206,6 +247,26 @@ pub(super) fn samples() -> Vec<MarkupError> {
         },
         E::RefusalStatusMisplaced {
             value: text("value"),
+        },
+        E::ProcessManagerSubscribes {
+            component: text("component"),
+            event: text("event"),
+            domain: text("domain"),
+        },
+        E::ProcessManagerOutputDomain {
+            component: text("component"),
+            domain: text("domain"),
+        },
+        E::NoOutputDomain {
+            component: text("component"),
+        },
+        E::StartsOnNonProcessManager {
+            message: text("message"),
+            component: text("component"),
+        },
+        E::ForeignRefusal {
+            command: text("command"),
+            refusal: text("refusal"),
         },
     ]
 }

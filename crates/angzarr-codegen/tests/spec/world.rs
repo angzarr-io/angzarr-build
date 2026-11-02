@@ -107,19 +107,21 @@ impl Generator {
     }
 
     /// The protos compiled and linted as `angzarr lint app` lints them: the
-    /// declarations' rules, an error refusing them, and their warnings.
+    /// declarations' rules, an error refusing them, and their warnings
+    /// ([`warnings`]).
     pub fn lint_protos(&mut self) {
         let files = self.protos.files();
         let set = compile(&files);
         let names: Vec<&str> = files.keys().map(String::as_str).collect();
         let version = self.version.clone().unwrap_or_else(|| VERSION.to_string());
-        let outcome = warnings(&set, &names).and_then(|found| {
+        let outcome = warnings(&set, &names).map(|found| {
             self.warnings = found;
-            let descriptors = descriptors(&set, &names, &version)?;
-            Ok(Generated {
-                descriptors,
+            // The descriptors the build would make of them, none where
+            // generation refuses what a lint only warns of.
+            Generated {
+                descriptors: descriptors(&set, &names, &version).unwrap_or_default(),
                 adapters: String::new(),
-            })
+            }
         });
         self.outcome = Some(outcome);
     }
