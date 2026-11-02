@@ -54,19 +54,25 @@ fn test_the_adapter_hands_the_markup_a_step_per_event() {
     let source = adapters(&descriptors(&[KINDS]), &[KINDS], &[]).unwrap();
     let flat = source.replace([' ', '\n'], "");
     for expected in [
-        // A command's step returns its own failure.
-        "Ok::<_,Failed<Refuses<Self,Batch>>,>(event)",
-        "Ok::<_,Failed<Rejection>,>(event)",
+        // One helper per domain, not a fold per handler: each event a step
+        // of the markup, a command's returning the handler's own failure.
+        "fnemitted<E:Fails<Self>+'static>(events:Vec<LedgerStateEvent>)->Emit<Self>{",
+        "fnrecorded(events:Vec<LedgerStateEvent>)->Record<Self>{",
+        "Ok::<_,E>(event)",
         "LedgerStateEvent::Noted(event)=>{emit.then(move|_:&Self,_:&Context|event)}",
         // An empty list is no event.
         "events.into_iter().fold(Emit::of(None::<Posted>),",
         "events.into_iter().fold(Record::of(None::<Posted>),",
-        // A fact's closure is bound, then called: never called where it is
-        // declared (clippy's redundant_closure_call).
-        "letrecord=|events:Vec<LedgerStateEvent>|",
-        "record(crate::domain::LedgerState::arrived(&self.0,&fact,ctx))",
+        // Each handler names its failure, or records.
+        ".map(Self::emitted::<Failed<Refuses<Self,Batch>>>)",
+        ".map(Self::emitted::<Failed<Rejection>>)",
+        "Self::recorded(crate::domain::LedgerState::arrived(&self.0,&fact,ctx))",
     ] {
         assert!(flat.contains(expected), "{expected}:\n{source}");
     }
-    assert!(!flat.contains(".map(Emit::of)"), "{source}");
+    assert_eq!(
+        flat.matches(".fold(").count(),
+        4,
+        "one fold per helper:\n{source}"
+    );
 }

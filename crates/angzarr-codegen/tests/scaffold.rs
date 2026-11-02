@@ -526,12 +526,9 @@ fn test_adapters_forward_each_handlers_context() {
     let source = adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap();
     let file = parse_adapters(&source);
     let wallet = inherent_impl(&file, "Wallet");
-    assert!(
-        text(&methods(wallet)[0].block).starts_with(
-            "{crate::domain::Wallet::deposit(&self.0,&cmd,ctx).map(|events:Vec<WalletEvent>|"
-        ),
-        "{}",
-        text(&methods(wallet)[0].block)
+    assert_eq!(
+        text(&methods(wallet)[0].block),
+        "{crate::domain::Wallet::deposit(&self.0,&cmd,ctx).map(Self::emitted::<Failed<Refuses<Self,Deposit>>>).map_err(Failed::widen)}"
     );
     let policy = inherent_impl(&file, "BuyInWallet");
     let reaction = methods(policy)[0];
