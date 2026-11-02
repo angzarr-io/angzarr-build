@@ -656,3 +656,43 @@ fn test_a_policys_interface_is_its_targets_layers() {
         layers[0].source
     );
 }
+
+/// Each domain's `<Component>Output` is a `CommandTarget` (decision 14.74:
+/// the destination a process manager's compensation step names): its
+/// domain and its commands, never its facts; a domain taking facts alone
+/// has none, typed as the list it returns.
+#[test]
+fn test_each_output_is_a_command_target_of_its_commands() {
+    const VIEWS: &str = "pyshop/v1/views.proto";
+    let generated = markup_domain(
+        &descriptors(&[VIEWS]),
+        &[VIEWS],
+        &[("pyshop.v1", "crate::wire")],
+    )
+    .unwrap()
+    .remove(0)
+    .source;
+    let file = syn::parse_file(&generated).unwrap();
+    let target = impls(&file)
+        .into_iter()
+        .find(|(t, ty)| t.ends_with("CommandTarget") && ty == "TallyStateOutput")
+        .map(|(_, ty)| ty);
+    assert_eq!(target.as_deref(), Some("TallyStateOutput"), "{generated}");
+    let flat: String = generated.split_whitespace().collect();
+    assert!(
+        flat.contains("constDOMAIN:&'staticstr=\"tally\";fncommand_types()->Vec<String>{vec![]}"),
+        "{generated}"
+    );
+    let buyin: String = markup_domain(&descriptors(BUYIN), BUYIN, BUYIN_WIRE)
+        .unwrap()
+        .remove(0)
+        .source
+        .split_whitespace()
+        .collect();
+    assert!(
+        buyin.contains(
+            "fncommand_types()->Vec<String>{vec![\"buyin.v1.Deposit\".to_string(),\"buyin.v1.Hold\".to_string()]}"
+        ),
+        "{buyin}"
+    );
+}
