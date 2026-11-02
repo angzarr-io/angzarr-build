@@ -45,7 +45,7 @@ use crate::warnings::Warning;
 /// The angzarr-embedded commit a generated application's `Cargo.toml` pins
 /// (its kernel, which re-exports the diagnostics, its markup and its host): the one this generator's output is
 /// written against.
-pub const ANGZARR_EMBEDDED_REV: &str = "ffe2a0cdf71d45dc98a152be4b1a0190e1c36915";
+pub const ANGZARR_EMBEDDED_REV: &str = "5956832aceec5d65725756971c30882bf5bcdfb5";
 /// Where [`ANGZARR_EMBEDDED_REV`] is fetched from.
 pub const ANGZARR_EMBEDDED_GIT: &str = "https://github.com/angzarr-io/angzarr-embedded";
 /// Where angzarr-build is fetched from when a seed names no other source.

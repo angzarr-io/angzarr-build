@@ -56,7 +56,7 @@ pub use project::{python_reroots, reroot_python};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
 /// on, pinned by commit: every project this CLI scaffolds gets this one.
-pub const CLIENT_PYTHON_REV: &str = "424c24ae3095edcf0b644ae8c84948504840d171";
+pub const CLIENT_PYTHON_REV: &str = "e59b3775d27b15c23ec4f70606380e8394cef6de";
 /// Where [`CLIENT_PYTHON_REV`] is fetched from.
 pub const CLIENT_PYTHON_GIT: &str = "https://github.com/angzarr-io/angzarr-client-python";
 
