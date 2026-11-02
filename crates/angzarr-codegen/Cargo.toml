@@ -26,6 +26,9 @@ toml = "0.9"
 [dev-dependencies]
 angzarr-proto.workspace = true
 angzarr-fmt.workspace = true
+# Runs the spec's codegen tier (tests/spec.rs): angzarr-router's runner,
+# at the version its conformance crate runs its features with.
+cucumber = "0.21"
 prost = "0.14"
 
 [lints]
