@@ -72,7 +72,7 @@ source = "git+https://github.com/angzarr-io/angzarr?rev=b09fe13ad08979f0712fcfc6
 [[package]]
 name = "angzarr-embedded"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=234c2de15bffc063781a006663a49ee13a493079#234c2de15bffc063781a006663a49ee13a493079"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=ffe2a0cdf71d45dc98a152be4b1a0190e1c36915#ffe2a0cdf71d45dc98a152be4b1a0190e1c36915"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-ports",
@@ -85,7 +85,7 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-host"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=234c2de15bffc063781a006663a49ee13a493079#234c2de15bffc063781a006663a49ee13a493079"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=ffe2a0cdf71d45dc98a152be4b1a0190e1c36915#ffe2a0cdf71d45dc98a152be4b1a0190e1c36915"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-embedded",
@@ -110,7 +110,7 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-host-config"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=234c2de15bffc063781a006663a49ee13a493079#234c2de15bffc063781a006663a49ee13a493079"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=ffe2a0cdf71d45dc98a152be4b1a0190e1c36915#ffe2a0cdf71d45dc98a152be4b1a0190e1c36915"
 dependencies = [
  "angzarr-yaml",
  "serde",
@@ -192,7 +192,7 @@ dependencies = [
 [[package]]
 name = "angzarr-store-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=234c2de15bffc063781a006663a49ee13a493079#234c2de15bffc063781a006663a49ee13a493079"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=ffe2a0cdf71d45dc98a152be4b1a0190e1c36915#ffe2a0cdf71d45dc98a152be4b1a0190e1c36915"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-ports",
@@ -687,7 +687,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1978,7 +1978,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2546,7 +2546,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2556,7 +2556,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3073,7 +3073,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
