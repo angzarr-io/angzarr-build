@@ -1709,10 +1709,10 @@ impl ::angzarr_embedded::markup::DomainMessage for Audited {
     }
 }
 
-/// LedgerState: the interface of `kinds.v1.LedgerState`, generated from its protos: its
-/// implementation, `LedgerStateImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::LedgerState`) carries the markup
-/// and calls it.
+/// LedgerState: the interface of `kinds.v1.LedgerState`, generated from its
+/// protos: its implementation, `LedgerStateImpl`, is yours (`angzarr scaffold
+/// rust` writes it once), and the generated adapter (`adapters::LedgerState`)
+/// carries the markup and calls it.
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
 /// event.
@@ -1756,10 +1756,10 @@ pub trait LedgerState {
     fn apply_closed(&mut self, event: &Closed);
 }
 
-/// AuditState: the interface of `kinds.v1.AuditState`, generated from its protos: its
-/// implementation, `AuditStateImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::AuditState`) carries the markup
-/// and calls it.
+/// AuditState: the interface of `kinds.v1.AuditState`, generated from its
+/// protos: its implementation, `AuditStateImpl`, is yours (`angzarr scaffold
+/// rust` writes it once), and the generated adapter (`adapters::AuditState`)
+/// carries the markup and calls it.
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
 /// event.
@@ -1769,10 +1769,10 @@ pub trait AuditState {
     fn apply_audited(&mut self, event: &Audited);
 }
 
-/// LedgerView: the interface of `kinds.v1.LedgerView`, generated from its protos: its
-/// implementation, `LedgerViewImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::LedgerView`) carries the markup
-/// and calls it.
+/// LedgerView: the interface of `kinds.v1.LedgerView`, generated from its
+/// protos: its implementation, `LedgerViewImpl`, is yours (`angzarr scaffold
+/// rust` writes it once), and the generated adapter (`adapters::LedgerView`)
+/// carries the markup and calls it.
 ///
 /// One async method per projected event, of any of its source domains
 /// (`ctx.stream()` says which), returning its `Bug` when the projection fails.
@@ -1790,10 +1790,10 @@ pub trait LedgerView {
     ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;
 }
 
-/// LedgerAuditPolicy: the interface of `kinds.v1.LedgerAuditPolicy`, generated from its protos: its
-/// implementation, `LedgerAuditPolicyImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::LedgerAuditPolicy`) carries the markup
-/// and calls it.
+/// LedgerAuditPolicy: the interface of `kinds.v1.LedgerAuditPolicy`, generated
+/// from its protos: its implementation, `LedgerAuditPolicyImpl`, is yours
+/// (`angzarr scaffold rust` writes it once), and the generated adapter
+/// (`adapters::LedgerAuditPolicy`) carries the markup and calls it.
 ///
 /// Each reaction takes the source stream's root, the event and its context, and
 /// returns what it sends its target, each with its target root: a command, or a

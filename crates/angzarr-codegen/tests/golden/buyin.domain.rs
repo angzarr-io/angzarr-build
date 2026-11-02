@@ -771,9 +771,9 @@ impl ::angzarr_embedded::markup::DomainMessage for BuyInFailed {
     }
 }
 
-/// Wallet: the interface of `buyin.v1.WalletState`, generated from its protos: its
-/// implementation, `WalletImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::Wallet`) carries the markup
+/// Wallet: the interface of `buyin.v1.WalletState`, generated from its protos:
+/// its implementation, `WalletImpl`, is yours (`angzarr scaffold rust` writes
+/// it once), and the generated adapter (`adapters::Wallet`) carries the markup
 /// and calls it.
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
@@ -788,10 +788,10 @@ pub trait Wallet {
     fn apply_held(&mut self, event: &Held);
 }
 
-/// BuyIn: the interface of `buyin.v1.BuyInState`, generated from its protos: its
-/// implementation, `BuyInImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::BuyIn`) carries the markup
-/// and calls it.
+/// BuyIn: the interface of `buyin.v1.BuyInState`, generated from its protos:
+/// its implementation, `BuyInImpl`, is yours (`angzarr scaffold rust` writes it
+/// once), and the generated adapter (`adapters::BuyIn`) carries the markup and
+/// calls it.
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
 /// event.
@@ -813,10 +813,10 @@ pub trait BuyIn {
     fn apply_buy_in_failed(&mut self, event: &BuyInFailed);
 }
 
-/// BuyInWallet: the interface of `buyin.v1.BuyInWalletPolicy`, generated from its protos: its
-/// implementation, `BuyInWalletImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::BuyInWallet`) carries the markup
-/// and calls it.
+/// BuyInWallet: the interface of `buyin.v1.BuyInWalletPolicy`, generated from
+/// its protos: its implementation, `BuyInWalletImpl`, is yours (`angzarr
+/// scaffold rust` writes it once), and the generated adapter
+/// (`adapters::BuyInWallet`) carries the markup and calls it.
 ///
 /// Each reaction takes the source stream's root, the event and its context, and
 /// returns what it sends its target, each with its target root: a command, or a
@@ -853,10 +853,10 @@ pub trait BuyInWallet {
     }
 }
 
-/// WalletBuyIn: the interface of `buyin.v1.WalletBuyInPolicy`, generated from its protos: its
-/// implementation, `WalletBuyInImpl`, is yours (`angzarr scaffold rust` writes it
-/// once), and the generated adapter (`adapters::WalletBuyIn`) carries the markup
-/// and calls it.
+/// WalletBuyIn: the interface of `buyin.v1.WalletBuyInPolicy`, generated from
+/// its protos: its implementation, `WalletBuyInImpl`, is yours (`angzarr
+/// scaffold rust` writes it once), and the generated adapter
+/// (`adapters::WalletBuyIn`) carries the markup and calls it.
 ///
 /// Each reaction takes the source stream's root, the event and its context, and
 /// returns what it sends its target, each with its target root: a command, or a
