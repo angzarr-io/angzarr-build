@@ -56,13 +56,21 @@ pub use project::{python_reroots, reroot_python};
 
 /// The angzarr Python package (angzarr-client-python) the scaffold depends
 /// on, pinned by commit: every project this CLI scaffolds gets this one.
-pub const CLIENT_PYTHON_REV: &str = "7852fdfb914430110060b3e9c4f67a49cc3d808f";
+pub const CLIENT_PYTHON_REV: &str = "424c24ae3095edcf0b644ae8c84948504840d171";
 /// Where [`CLIENT_PYTHON_REV`] is fetched from.
 pub const CLIENT_PYTHON_GIT: &str = "https://github.com/angzarr-io/angzarr-client-python";
 
 /// The proto packages angzarr-client-python ships generated, imported from
-/// `angzarr_client.proto` and never generated into a project.
-const FRAMEWORK_PACKAGES: &[&str] = &["io.angzarr.v1", "io.angzarr.status", "sererr.v1"];
+/// `angzarr_client.proto` and never generated into a project: the four of
+/// decision 14.64 (core, the component contract and both transports) and
+/// sererr.
+const FRAMEWORK_PACKAGES: &[&str] = &[
+    "io.angzarr.v1",
+    "io.angzarr.component.v1",
+    "io.angzarr.transport.embedded.v1",
+    "io.angzarr.transport.distributed.v1",
+    "sererr.v1",
+];
 /// Black's line width, which the generated Python is laid out to.
 const WIDTH: usize = 88;
 /// The header of every generated file.
