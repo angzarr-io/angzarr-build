@@ -1222,10 +1222,20 @@ fn fold_method(event: &MessageDescriptor, interface: &TokenStream) -> TokenStrea
     }
 }
 
+/// A handler's `starts` marker: a process manager's starting input, a
+/// command or a fact.
+fn starts(input: &Input) -> TokenStream {
+    match input.starts {
+        true => quote!(, starts),
+        false => quote!(),
+    }
+}
+
 /// A domain adapter's recorder of the fact `input`, delegating to
 /// `interface`.
 fn fact_method(component: &Component, input: &Input, interface: &TokenStream) -> TokenStream {
     let ty = ident(input.message.name());
+    let starts = starts(input);
     let m = format_ident!("{}", method(input.message.name()));
     let emit = emitted(component, input, &quote!());
     let call = quote!(#interface::#m(&self.0, &fact, ctx));
@@ -1240,7 +1250,7 @@ fn fact_method(component: &Component, input: &Input, interface: &TokenStream) ->
         }
     };
     quote! {
-        #[handles_fact(#ty)]
+        #[handles_fact(#ty #starts)]
         fn #m(&self, fact: #ty, ctx: &Context) -> Record<Self> {
             #body
         }
@@ -1252,11 +1262,7 @@ fn fact_method(component: &Component, input: &Input, interface: &TokenStream) ->
 fn command_method(component: &Component, input: &Input, interface: &TokenStream) -> TokenStream {
     let ty = ident(input.message.name());
     let m = format_ident!("{}", method(input.message.name()));
-    let starts = if input.starts {
-        quote!(, starts)
-    } else {
-        quote!()
-    };
+    let starts = starts(input);
     match input.refuses.as_slice() {
         [] => {
             let emit = emitted(component, input, &quote!(Failed<Rejection>));
