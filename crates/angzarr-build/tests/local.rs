@@ -7,9 +7,12 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use angzarr_build::{Existing, Scaffolded, Translate, scaffold_into};
+
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
+use test_dir::TestDir;
 
 const BUYIN: &[&str] = &[
     "buyin/v1/wallet.proto",
@@ -52,13 +55,7 @@ fn translate() -> Vec<Translate> {
 /// not a hand-made one.)
 #[test]
 fn test_the_apps_components_are_the_complete_scaffold() {
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let src = std::env::temp_dir().join(format!(
-        "angzarr-build-local-test-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&src).unwrap();
+    let src = TestDir::new("angzarr-build-local-test");
     for file in COMPONENTS {
         std::fs::copy(app().join("src").join(file), src.join(file)).unwrap();
     }
@@ -76,7 +73,6 @@ fn test_the_apps_components_are_the_complete_scaffold() {
         .map(|file| Scaffolded::Kept(src.join(file)))
         .collect();
     assert_eq!(done, kept);
-    std::fs::remove_dir_all(&src).unwrap();
 }
 
 /// The generated adapters and register() compile against angzarr-embedded

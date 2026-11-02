@@ -4,10 +4,13 @@
 
 use std::path::Path;
 
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
+use test_dir::TestDir;
+
 #[test]
 fn test_descriptors_writes_into_out_dir_with_the_crates_version() {
-    let out = std::env::temp_dir().join(format!("angzarr-build-out-dir-{}", std::process::id()));
-    std::fs::create_dir_all(&out).unwrap();
+    let out = TestDir::new("angzarr-build-out-dir");
     // SAFETY: this binary's one test; nothing else reads the environment.
     unsafe { std::env::set_var("OUT_DIR", &out) };
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -22,5 +25,4 @@ fn test_descriptors_writes_into_out_dir_with_the_crates_version() {
         "{source}"
     );
     assert!(source.contains("projector-audit-trail-view"), "{source}");
-    std::fs::remove_dir_all(&out).unwrap();
 }

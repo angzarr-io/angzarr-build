@@ -14,6 +14,8 @@ mod common;
 use angzarr_codegen::{Generated, adapters, markup_domain, register, scaffold};
 use common::*;
 
+use common::test_dir::TestDir;
+
 const TABLE: &str = "io/angzarr/examples/v1/table.proto";
 const LEDGER: &str = "io/angzarr/examples/v1/ledger.proto";
 const WIRE: &[(&str, &str)] = &[("io.angzarr.examples.v1", "crate::wire")];
@@ -268,14 +270,7 @@ fn test_generated_register_composes_with_a_hand_written_component() {
 /// the crate `stub`: the diagnostics, if rustc refused it.
 fn compile_with_stub(stub: &str, source: &str) -> Result<(), String> {
     use std::process::Command;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-codegen-table-generation-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = TestDir::new("angzarr-codegen-table-generation");
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let rustc = |args: &[&str]| {
         Command::new(&rustc)
@@ -298,7 +293,6 @@ fn compile_with_stub(stub: &str, source: &str) -> Result<(), String> {
         "--extern=angzarr_embedded=libangzarr_embedded.rlib",
         "app.rs",
     ]);
-    std::fs::remove_dir_all(&dir).unwrap();
     if out.status.success() {
         Ok(())
     } else {

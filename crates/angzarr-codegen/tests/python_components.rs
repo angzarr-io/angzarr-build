@@ -14,6 +14,8 @@ use angzarr_codegen::{
 };
 use common::*;
 
+use common::test_dir::TestDir;
+
 const LEDGER: &str = "io/angzarr/examples/v1/ledger.proto";
 const POLICIES: &str = "io/angzarr/examples/v1/policies.proto";
 const BUY_IN: &str = "io/angzarr/examples/v1/buy_in.proto";
@@ -686,12 +688,7 @@ fn test_the_users_files_of_every_kind_name_nothing_of_the_harness() {
 /// Runs `script` with python3 beside `domain` (a generated `domain.py`),
 /// an `angzarr_client.router` stub standing in for the client.
 fn run_domain(domain: &str, script: &str) -> std::process::Output {
-    static RUN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-codegen-python-components-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    ));
+    let dir = TestDir::new("angzarr-codegen-python-components");
     let client = dir.join("angzarr_client");
     std::fs::create_dir_all(&client).unwrap();
     std::fs::write(client.join("__init__.py"), "").unwrap();
@@ -711,13 +708,11 @@ fn run_domain(domain: &str, script: &str) -> std::process::Output {
         ),
     )
     .unwrap();
-    let out = std::process::Command::new("python3")
+    std::process::Command::new("python3")
         .arg("-I")
         .arg(&main)
         .output()
-        .expect("python3 on PATH");
-    std::fs::remove_dir_all(&dir).unwrap();
-    out
+        .expect("python3 on PATH")
 }
 
 /// buf generates every proto the reached ones import, used or not: a

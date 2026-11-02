@@ -3,10 +3,13 @@
 
 use std::path::Path;
 
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
+use test_dir::TestDir;
+
 #[test]
 fn test_stand_ins_writes_into_out_dir() {
-    let out = std::env::temp_dir().join(format!("angzarr-build-stand-ins-{}", std::process::id()));
-    std::fs::create_dir_all(&out).unwrap();
+    let out = TestDir::new("angzarr-build-stand-ins");
     // SAFETY: this binary's one test; nothing else reads the environment.
     unsafe { std::env::set_var("OUT_DIR", &out) };
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -16,5 +19,4 @@ fn test_stand_ins_writes_into_out_dir() {
     angzarr_build::stand_ins(&["buyin/v1/wallet.proto"], &[&fixtures]).unwrap();
     let source = std::fs::read_to_string(out.join("angzarr-stand-ins.rs")).unwrap();
     assert!(source.contains("impl CommandTarget for Wallet"), "{source}");
-    std::fs::remove_dir_all(&out).unwrap();
 }

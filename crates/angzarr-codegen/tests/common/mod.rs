@@ -5,9 +5,12 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use quote::ToTokens;
+
+#[path = "../../../../test-support/test_dir.rs"]
+pub mod test_dir;
+use test_dir::TestDir;
 
 /// The toy buy-in project: a wallet aggregate, a buy-in process manager,
 /// and a policy each way between them.
@@ -29,12 +32,7 @@ pub fn spec() -> PathBuf {
 /// first, so its options (the ones the generator reads) are the spec's,
 /// then angzarr-proto's for what the spec does not hold.
 pub fn descriptors(files: &[&str]) -> Vec<u8> {
-    static RUN: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "angzarr-codegen-scaffold-test-{}-{}",
-        std::process::id(),
-        RUN.fetch_add(1, Ordering::Relaxed)
-    ));
+    let dir = TestDir::new("angzarr-codegen-scaffold-test");
     let angzarr = angzarr_proto::protos::write_include_dir(&dir.join("angzarr")).unwrap();
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     let out: PathBuf = dir.join("set.bin");
@@ -49,9 +47,7 @@ pub fn descriptors(files: &[&str]) -> Vec<u8> {
         .status()
         .expect("protoc on PATH");
     assert!(status.success(), "protoc failed on {files:?}");
-    let bytes = std::fs::read(&out).unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
-    bytes
+    std::fs::read(&out).unwrap()
 }
 
 /// Tokens as text without spacing.

@@ -5,9 +5,13 @@
 
 use std::path::Path;
 
+#[path = "../../../test-support/test_dir.rs"]
+mod test_dir;
+use test_dir::TestDir;
+
 #[test]
 fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
-    let root = std::env::temp_dir().join(format!("angzarr-build-app-out-{}", std::process::id()));
+    let root = TestDir::new("angzarr-build-app-out");
     let out = root.join("out");
     std::fs::create_dir_all(&out).unwrap();
     std::fs::write(
@@ -42,5 +46,4 @@ fn test_app_reads_the_crates_config_and_writes_into_out_dir() {
         .unwrap();
     assert!(over.join("angzarr-register.rs").exists());
     assert!(!over.join("shop.v1.domain.rs").exists());
-    std::fs::remove_dir_all(&root).unwrap();
 }
