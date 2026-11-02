@@ -14,11 +14,11 @@ angzarr-codegen = { path = "crates/angzarr-codegen" }
 angzarr-fmt = { path = "crates/angzarr-fmt" }
 # angzarr core's localizable-error trait, pinned by full commit at the rev
 # angzarr-embedded's crates name; bumps are deliberate commits.
-angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "63571a5c1a2d0478eca46d17aefaef02e5a41172" }
+angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "2be5a43d83fa35a9be1696b57aed3474971bf9cf" }
 # angzarr-embedded is pinned by full commit; bumps are deliberate commits.
-angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "421265f791d8633255b83bff70dc6dd60055de72" }
+angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "171d3d62113f4bf35ad85af663bf6464ae0cf2d0" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
-angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "63571a5c1a2d0478eca46d17aefaef02e5a41172" }
+angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "2be5a43d83fa35a9be1696b57aed3474971bf9cf" }
 clap = { version = "4.5", features = ["derive"] }
 fluent-bundle = "0.15"
 fluent-syntax = "0.11"

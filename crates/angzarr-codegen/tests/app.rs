@@ -257,7 +257,7 @@ fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
     // its kind (the owner's config rulings): the table, the player a
     // Python child, the two policies between them in process; the wallet
     // policy's target is not in the application, so it is not listed.
-    let hand = "schema_version: 1\
+    let hand = "schema_version: 2\
                 \ncomponent:\
                 \n  - name: table\
                 \n    kind: domain\
@@ -281,9 +281,10 @@ fn the_generated_blackjack_config_is_the_one_its_e2e_hand_writes() {
         settings(hand)
     );
     // examples-rust's remote_player: the same components, its `dir` an
-    // environment variable's and its handshake a slow first `uv` run's.
-    let remote_player = "schema_version: 1\
-                         \ncomponent:\
+    // environment variable's and its handshake a slow first `uv` run's. It
+    // is a version-1 file, which reads as the current version: its stamp is
+    // not a setting the generated one must share.
+    let remote_player = "component:\
                          \n  - name: table\
                          \n    kind: domain\
                          \n    language: rust\
@@ -787,7 +788,7 @@ fn lint_app_refuses_what_is_not_the_hosts_config() {
     // newer version.
     for config in [
         "[[component]]\nname = \"table\"\nkind = \"domain\"\nlanguage = \"rust\"\n",
-        "schema_version: 2\n",
+        "schema_version: 3\n",
     ] {
         assert!(
             matches!(
@@ -799,13 +800,16 @@ fn lint_app_refuses_what_is_not_the_hosts_config() {
     }
 }
 
-/// A config with no stamp is the oldest generation, which for the host
-/// config is version 1: it lints as the stamped one does.
+/// A config with no stamp is the oldest generation, version 0, which has
+/// version 1's shape: it reads through every step, and lints as the
+/// stamped one does; so does the same file stamped version 1.
 #[test]
-fn an_unstamped_config_lints_as_version_1() {
+fn an_unstamped_or_version_1_config_lints_as_the_current_one() {
     let stamped = golden("blackjack", "angzarr.yaml");
-    assert!(stamped.contains("\nschema_version: 1\n"), "{stamped}");
-    let unstamped = stamped.replace("\nschema_version: 1\n", "\n");
+    assert!(stamped.contains("\nschema_version: 2\n"), "{stamped}");
+    let version_1 = stamped.replace("\nschema_version: 2\n", "\nschema_version: 1\n");
+    assert_eq!(lints(&version_1, BLACKJACK), []);
+    let unstamped = stamped.replace("\nschema_version: 2\n", "\n");
     assert_eq!(lints(&unstamped, BLACKJACK), []);
 }
 
