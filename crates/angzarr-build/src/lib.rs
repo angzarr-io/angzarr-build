@@ -365,21 +365,22 @@ pub enum Scaffolded {
 }
 
 /// The markup scaffold of every component in `protos`, one file each
-/// under `src` (see `angzarr_codegen::scaffold`), `translate` being the
-/// refusal switch's translate selections. An absent file is written; an
-/// existing one is the user's, kept, or completed with `Existing::Complete`.
-/// Every file is decided before any is written, so a refusal writes none.
+/// under `src` (see `angzarr_codegen::scaffold`), `translate`'s selections
+/// checked against them (every Rust method is required, a policy's refusal
+/// callbacks too, so nothing is optional to select). An absent file is
+/// written; an existing one is the user's, kept, or completed with
+/// `Existing::Complete`. Every file is decided before any is written, so a
+/// refusal writes none.
 pub fn scaffold_into(
     src: &Path,
     protos: &[&str],
     includes: &[&str],
     translate: &[Translate],
-    on_refused: &[String],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
-    let files = angzarr_codegen::scaffold(&bytes, protos, translate, on_refused)
-        .map_err(BuildError::Codegen)?;
+    let files =
+        angzarr_codegen::scaffold(&bytes, protos, translate).map_err(BuildError::Codegen)?;
     write_scaffold(src, files, existing)
 }
 

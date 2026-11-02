@@ -17,4 +17,13 @@ impl LedgerAuditPolicy for LedgerAuditPolicyImpl {
     ) -> Result<Vec<(Vec<u8>, AuditStateOutput)>, Bug> {
         todo!()
     }
+
+    fn audit_refused(
+        &self,
+        _command: &Audit,
+        _refusal: Option<AuditRefuses>,
+        _ctx: &CommandContext,
+    ) -> Result<LedgerStateFact, Bug> {
+        todo!()
+    }
 }

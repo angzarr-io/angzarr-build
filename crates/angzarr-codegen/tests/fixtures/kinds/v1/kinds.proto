@@ -1,5 +1,5 @@
 // Typed refusals of every field kind, a command refusing several of them,
-// inputs of each emits cardinality, a projector of two source domains, and
+// inputs of several emits, a projector of two source domains, and
 // a policy between the two domains (decision 14.50). Each field set is
 // an arg (an integer its number,
 // a string itself, an enum its value's name without the enum's prefix,
@@ -46,16 +46,15 @@ message Noted {
   };
 }
 
-// ONE of two types: a tuple.
+// Two emits types (every handling a list, decision 14.75).
 message Open {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.LedgerState"
     emits: ["kinds.v1.Posted", "kinds.v1.Noted"]
-    emits_cardinality: EMITS_CARDINALITY_ONE
   };
 }
 
-// ONE of four types: the widest tuple.
+// Four emits types.
 message Four {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.LedgerState"
@@ -71,56 +70,51 @@ message Closed {
   option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerState"};
 }
 
-// OPTIONAL of one type.
+// One emits type.
 message Maybe {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.LedgerState"
     emits: "kinds.v1.Posted"
-    emits_cardinality: EMITS_CARDINALITY_OPTIONAL
   };
 }
 
-// OPTIONAL of two types: the tuple or nothing.
+// Two emits types, or nothing.
 message MaybeBoth {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.LedgerState"
     emits: ["kinds.v1.Posted", "kinds.v1.Noted"]
-    emits_cardinality: EMITS_CARDINALITY_OPTIONAL
   };
 }
 
-// MANY, refusing: each step returns the handler's own failure.
+// Refusing: each step returns the handler's own failure.
 message Batch {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.LedgerState"
     emits: ["kinds.v1.Posted", "kinds.v1.Noted"]
     refuses: "kinds.v1.PostRefused"
-    emits_cardinality: EMITS_CARDINALITY_MANY
   };
 }
 
-// No emits and no cardinality: MANY.
+// No emits: any of the component's events.
 message Raw {
   option (io.angzarr.v1.command) = {component: "kinds.v1.LedgerState"};
 }
 
-// A fact, OPTIONAL of two types.
+// A fact of two emits types.
 message Arrived {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.LedgerState"
     emits: ["kinds.v1.Posted", "kinds.v1.Noted"]
     fact: true
-    emits_cardinality: EMITS_CARDINALITY_OPTIONAL
   };
 }
 
-// A fact, MANY.
+// A fact of two emits types, again.
 message Swept {
   option (io.angzarr.v1.command) = {
     component: "kinds.v1.LedgerState"
     emits: ["kinds.v1.Posted", "kinds.v1.Noted"]
     fact: true
-    emits_cardinality: EMITS_CARDINALITY_MANY
   };
 }
 

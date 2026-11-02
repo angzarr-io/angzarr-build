@@ -17,4 +17,22 @@ impl WalletBuyIn for WalletBuyInImpl {
     ) -> Result<Vec<(Vec<u8>, BuyInOutput)>, Bug> {
         todo!()
     }
+
+    fn start_buy_in_refused(
+        &self,
+        _command: &StartBuyIn,
+        _refusal: Option<BuyInRefused>,
+        _ctx: &CommandContext,
+    ) -> Result<WalletFact, Bug> {
+        todo!()
+    }
+
+    fn record_held_refused(
+        &self,
+        _command: &RecordHeld,
+        _refusal: Option<BuyInRefused>,
+        _ctx: &CommandContext,
+    ) -> Result<WalletFact, Bug> {
+        todo!()
+    }
 }

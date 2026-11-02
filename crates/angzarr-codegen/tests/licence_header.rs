@@ -43,7 +43,7 @@ fn the_header_is_the_rulings_line() {
 
 #[test]
 fn every_rust_scaffold_file_is_headed() {
-    assert_headed(&scaffold(&descriptors(BUYIN), BUYIN, &[], &[]).unwrap());
+    assert_headed(&scaffold(&descriptors(BUYIN), BUYIN, &[]).unwrap());
 }
 
 #[test]

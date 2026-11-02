@@ -60,13 +60,12 @@ fn test_the_apps_components_are_the_complete_scaffold() {
         BUYIN,
         &[&fixtures()],
         &translate(),
-        &[],
         Existing::Complete,
     )
     .unwrap();
     done.sort_by_key(|d| format!("{d:?}"));
-    // Each is kept as it is, lacking nothing; the policy's other refusal
-    // callback, optional, is reported.
+    // Each is kept as it is, lacking nothing: every refusal callback is
+    // required (decision 14.76), so none is optional.
     let kept: Vec<(PathBuf, Vec<String>, Vec<String>)> = done
         .into_iter()
         .filter_map(|d| match d {
@@ -76,13 +75,7 @@ fn test_the_apps_components_are_the_complete_scaffold() {
         .collect();
     let expected: Vec<(PathBuf, Vec<String>, Vec<String>)> = COMPONENTS
         .iter()
-        .map(|file| {
-            let optional = match *file {
-                "buy_in_wallet_impl.rs" => vec!["deposit_refused".to_string()],
-                _ => Vec::new(),
-            };
-            (src.join(file), Vec::new(), optional)
-        })
+        .map(|file| (src.join(file), Vec::new(), Vec::new()))
         .collect();
     assert_eq!(kept, expected);
 }
@@ -145,8 +138,8 @@ fn test_the_generated_register_runs_a_command_a_policy_step_and_a_refusal() {
 }
 
 /// `tests/local/kinds-app`: the generated domain layer of a typed refusal
-/// of each field kind and a command refusing several, inputs of each emits
-/// cardinality and a projector of two domains, with their adapters, built
+/// of each field kind and a command refusing several, inputs of several
+/// emits, each returning a list, and a projector of two domains, with their adapters, built
 /// against angzarr-embedded and run: each refusal's code and args, then
 /// commands whose events the generated projector and one written by hand
 /// (registered through angzarr-embedded's public API beside the generated

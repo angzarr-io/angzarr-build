@@ -20,6 +20,7 @@ message Deposit {
   option (io.angzarr.v1.command) = {
     component: "buyin.v1.WalletState"
     emits: ["buyin.v1.Deposited"]
+    refuses: ["buyin.v1.DepositRefused"]
   };
 
   int64 cents = 1;
@@ -36,6 +37,31 @@ message Hold {
   // The buy-in holding: a policy names its target root from a field of
   // the source event (decision 14.36).
   bytes buy_in = 2;
+}
+
+// Deposit's typed refusal: every command a policy may send names one
+// (decision 14.76).
+message DepositRefused {
+  string reason = 1;
+}
+
+// The domestic fact WalletBuyIn's refusal callback hands the wallet when the
+// buy-in refuses one of its commands (decision 14.76): a fact, recorded,
+// never refused.
+message RecordBuyInRefused {
+  option (io.angzarr.v1.command) = {
+    component: "buyin.v1.WalletState"
+    emits: ["buyin.v1.BuyInRefusalRecorded"]
+    fact: true
+  };
+
+  string reason = 1;
+}
+
+message BuyInRefusalRecorded {
+  option (io.angzarr.v1.event) = {component: "buyin.v1.WalletState"};
+
+  string reason = 1;
 }
 
 // Hold's typed refusal: a message of the wallet's domain, never an event.

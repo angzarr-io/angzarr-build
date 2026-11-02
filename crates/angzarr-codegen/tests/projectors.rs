@@ -62,7 +62,7 @@ fn test_one_input_domain_is_the_one_entry_list() {
         source.contains("#[projector(name = \"projector-thing-view\", sources = [\"things\"])]"),
         "{source}"
     );
-    let files = scaffold(&common::descriptors(&[ONE]), &[ONE], &[], &[]).unwrap();
+    let files = scaffold(&common::descriptors(&[ONE]), &[ONE], &[]).unwrap();
     assert!(files.iter().any(|f| f.path == "thing_view_impl.rs"));
 }
 

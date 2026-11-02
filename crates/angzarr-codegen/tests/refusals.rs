@@ -52,7 +52,7 @@ fn test_the_kinds_adapters_match_the_golden_file() {
 
 #[test]
 fn test_the_kinds_scaffold_matches_the_golden_files() {
-    for file in scaffold(&descriptors(&[KINDS]), &[KINDS], &[], &[])
+    for file in scaffold(&descriptors(&[KINDS]), &[KINDS], &[])
         .unwrap()
         .iter()
         .filter(|f| f.owner == angzarr_codegen::Owner::User)
@@ -78,7 +78,7 @@ fn test_a_command_refusing_several_types_refuses_with_their_choice() {
     let interface = kinds_domain();
     assert!(
         interface.contains(
-            "fn post(&self, cmd: &Post, ctx: &Context) -> Result<Posted, Failed<PostRefuses>>;"
+            "fn post(&self, cmd: &Post, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<PostRefuses>>;"
         ),
         "{interface}"
     );

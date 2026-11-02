@@ -688,13 +688,31 @@ fn output_enum(component: &crate::model::Component) -> TokenStream {
         .map(|i| ident(i.message.name()))
         .collect();
     let doc = format!(
-        " What a policy sends {}: its commands and facts, each in its arm.",
+        " What a policy sends {}: its commands and facts, each in its arm. As a \
+         `markup::CommandTarget`, its domain and commands: the destination a \
+         process manager's compensation step names (decision 14.74).",
         component.name
     );
+    let root = root();
+    let domain = &component.domain;
+    let commands: Vec<String> = component
+        .inputs
+        .iter()
+        .filter(|i| !i.fact)
+        .map(|i| i.message.full_name().to_string())
+        .collect();
     quote! {
         #[doc = #doc]
         #[derive(Clone, Debug, PartialEq)]
         pub enum #name { #(#variants(#variants)),* }
+
+        impl #root::markup::CommandTarget for #name {
+            const DOMAIN: &'static str = #domain;
+
+            fn command_types() -> Vec<String> {
+                [#(#commands),*].iter().map(|c| c.to_string()).collect()
+            }
+        }
 
         #(
             impl From<#variants> for #name {

@@ -31,10 +31,10 @@ fn dispatch_doc(unit: &Unit, package: &str, logic: &str) -> String {
     let name = &unit.component.name;
     let what = match unit.kind() {
         ComponentKind::Aggregate | ComponentKind::ProcessManager => {
-            "and converts what it returns back: a decision's events (one, an iterable, \
-             or None) into the event book, or its typed refusal into the client's \
-             ``Refused``, a fact's flags beside it into its record, a fold's next state \
-             into the state."
+            "and converts what it returns back: a decision's list of events into the \
+             event book, or its typed refusal into the client's ``Refused``, a fact's \
+             list of events beside it into its record, a fold's next state into the \
+             state."
         }
         ComponentKind::Policy => {
             "and converts what it returns back: each output, with its target root, \
@@ -57,12 +57,10 @@ fn dispatch_doc(unit: &Unit, package: &str, logic: &str) -> String {
     format!("{doc}\n\"\"\"\n")
 }
 
-/// The events a domain's decisions return, on the wire.
+/// The events a domain's decisions return, a list (decision 14.75), on the
+/// wire.
 const WIRE_EVENTS: &str = "\n\ndef _wire(result) -> list:\n    \
-    if result is None:\n        events = ()\n    \
-    elif dataclasses.is_dataclass(result):\n        events = (result,)\n    \
-    else:\n        events = result\n    \
-    return [_EVENTS[type(event)](event) for event in events]\n\n\n\
+    return [_EVENTS[type(event)](event) for event in result or ()]\n\n\n\
     def _book(result) -> _t.EventBook:\n    \
     book = _t.EventBook()\n    \
     for wire in _wire(result):\n        \
@@ -110,8 +108,7 @@ pub(super) fn dispatch(app: &PythonApp, unit: &Unit) -> String {
         modules.insert((relative(&here, &pb2_module(m)), alias(m)));
     }
     let stdlib = match unit.kind() {
-        ComponentKind::Aggregate | ComponentKind::ProcessManager => "import dataclasses\n\n",
-        ComponentKind::Policy => "",
+        ComponentKind::Aggregate | ComponentKind::ProcessManager | ComponentKind::Policy => "",
         ComponentKind::Projector => "import asyncio\nimport threading\n\n",
     };
     let types = if unit.kind() == ComponentKind::Projector {
@@ -226,10 +223,9 @@ fn register(registrar: &str, message: &MessageDescriptor, method: &str) -> Strin
 }
 
 /// `if hasattr(logic, "<method>"):` registering `thunk` for `command`'s
-/// refusals with the client's `on_refused`: the user's logic decides, its
-/// callback optional (the interface's reference protocol, never
-/// subclassed), as a Rust implementation overrides its interface's
-/// declining default.
+/// refusals with the client's `on_refused`: a domain's handler is optional
+/// (the interface's reference protocol, never subclassed), and one it does
+/// not define declines the refusal.
 fn register_refused(command: &MessageDescriptor, method: &str, thunk: &str) -> String {
     let mut out = format!("    if hasattr(logic, \"{method}\"):\n");
     out.push_str(&call(
@@ -366,8 +362,8 @@ fn refused_handler(refusable: &Refusable, state_to: &str) -> String {
 
 /// A policy's dispatch: a reaction per event, its outputs addressed to
 /// the target domain, each in the arm the target declares (decision
-/// 14.69), and, when its source takes facts, a translating callback per
-/// command it sends, when its logic has it.
+/// 14.69), and, when its source takes facts, the required translating
+/// callback per command of its target (decision 14.76).
 fn policy_dispatch(unit: &Unit, new: &str) -> String {
     let component = &unit.component;
     let mut out = table(
@@ -440,10 +436,11 @@ fn policy_dispatch(unit: &Unit, new: &str) -> String {
             &format!("{args}ctx)"),
         ));
         out.push('\n');
-        out.push_str(&register_refused(
+        // Required (decision 14.76): the interface's abstract method.
+        out.push_str(&register(
+            "dispatch.on_refused",
             &refusable.command,
             &method,
-            &format!("_{method}"),
         ));
     }
     out

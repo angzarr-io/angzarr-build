@@ -12,7 +12,7 @@ pub struct LedgerStateImpl {
 
 impl LedgerState for LedgerStateImpl {
     /// Always refused: over the limit, with every kind of arg set.
-    fn post(&self, _cmd: &Post, _ctx: &Context) -> Result<Posted, Failed<PostRefuses>> {
+    fn post(&self, _cmd: &Post, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<PostRefuses>> {
         Err(Failed::rejected(PostRefused {
             reason: PostRefusedReason::OverLimit,
             small: -1,
@@ -35,28 +35,24 @@ impl LedgerState for LedgerStateImpl {
         }))
     }
 
-    fn open(&self, _cmd: &Open, _ctx: &Context) -> Result<(Posted, Noted), Failed<Rejection>> {
-        Ok((Posted {}, Noted {}))
+    fn open(&self, _cmd: &Open, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+        Ok(vec![Posted {}.into(), Noted {}.into()])
     }
 
-    fn four(
-        &self,
-        _cmd: &Four,
-        _ctx: &Context,
-    ) -> Result<(Posted, Noted, Cleared, Closed), Failed<Rejection>> {
-        Ok((Posted {}, Noted {}, Cleared {}, Closed {}))
+    fn four(&self, _cmd: &Four, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+        Ok(vec![Posted {}.into(), Noted {}.into(), Cleared {}.into(), Closed {}.into()])
     }
 
-    fn maybe(&self, _cmd: &Maybe, _ctx: &Context) -> Result<Option<Posted>, Failed<Rejection>> {
-        Ok(None)
+    fn maybe(&self, _cmd: &Maybe, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+        Ok(Vec::new())
     }
 
     fn maybe_both(
         &self,
         _cmd: &MaybeBoth,
         _ctx: &Context,
-    ) -> Result<Option<(Posted, Noted)>, Failed<Rejection>> {
-        Ok(Some((Posted {}, Noted {})))
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+        Ok(vec![Posted {}.into(), Noted {}.into()])
     }
 
     fn batch(
@@ -71,8 +67,8 @@ impl LedgerState for LedgerStateImpl {
         Ok(Vec::new())
     }
 
-    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Option<(Posted, Noted)> {
-        None
+    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Vec<LedgerStateEvent> {
+        Vec::new()
     }
 
     fn swept(&self, _fact: &Swept, _ctx: &Context) -> Vec<LedgerStateEvent> {

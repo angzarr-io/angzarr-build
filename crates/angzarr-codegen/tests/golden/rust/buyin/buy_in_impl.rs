@@ -16,7 +16,7 @@ impl BuyIn for BuyInImpl {
         &self,
         _cmd: &StartBuyIn,
         _ctx: &Context,
-    ) -> Result<BuyInStarted, Failed<Rejection>> {
+    ) -> Result<Vec<BuyInEvent>, Failed<BuyInRefused>> {
         todo!()
     }
 
@@ -24,11 +24,11 @@ impl BuyIn for BuyInImpl {
         &self,
         _cmd: &RecordHeld,
         _ctx: &Context,
-    ) -> Result<BuyInHeld, Failed<Rejection>> {
+    ) -> Result<Vec<BuyInEvent>, Failed<BuyInRefused>> {
         todo!()
     }
 
-    fn hold_lost(&self, _fact: &HoldLost, _ctx: &Context) -> BuyInFailed {
+    fn hold_lost(&self, _fact: &HoldLost, _ctx: &Context) -> Vec<BuyInEvent> {
         todo!()
     }
 

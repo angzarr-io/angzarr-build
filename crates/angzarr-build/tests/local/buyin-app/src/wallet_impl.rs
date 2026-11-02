@@ -9,11 +9,19 @@ pub struct WalletImpl {
 }
 
 impl Wallet for WalletImpl {
-    fn deposit(&self, cmd: &Deposit, _ctx: &Context) -> Result<Deposited, Failed<Rejection>> {
-        Ok(Deposited { cents: cmd.cents })
+    fn deposit(
+        &self,
+        cmd: &Deposit,
+        _ctx: &Context,
+    ) -> Result<Vec<WalletEvent>, Failed<DepositRefused>> {
+        Ok(vec![Deposited { cents: cmd.cents }.into()])
     }
 
-    fn hold(&self, cmd: &Hold, _ctx: &Context) -> Result<Held, Failed<InsufficientFunds>> {
+    fn hold(
+        &self,
+        cmd: &Hold,
+        _ctx: &Context,
+    ) -> Result<Vec<WalletEvent>, Failed<InsufficientFunds>> {
         let available = self.state.balance - self.state.held;
         if cmd.cents > available {
             return Err(InsufficientFunds {
@@ -21,11 +29,25 @@ impl Wallet for WalletImpl {
             }
             .into());
         }
-        Ok(Held {
+        Ok(vec![Held {
             cents: cmd.cents,
             buy_in: cmd.buy_in.clone(),
-        })
+        }
+        .into()])
     }
+
+    fn record_buy_in_refused(
+        &self,
+        fact: &RecordBuyInRefused,
+        _ctx: &Context,
+    ) -> Vec<WalletEvent> {
+        vec![BuyInRefusalRecorded {
+            reason: fact.reason.clone(),
+        }
+        .into()]
+    }
+
+    fn apply_buy_in_refusal_recorded(&mut self, _event: &BuyInRefusalRecorded) {}
 
     fn apply_deposited(&mut self, event: &Deposited) {
         self.state.balance += event.cents;

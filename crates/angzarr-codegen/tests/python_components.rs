@@ -244,7 +244,11 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
         &[
             "class TablePlayerPolicyLogic(ABC):",
             "def turn_started(self, event: TurnStarted, source: bytes, ctx: PageContext) \
-             -> list[tuple[bytes, DecideMove]]: ...",
+             -> list[tuple[bytes, DecideMove | RecordMoveRefused]]: ...",
+            // Required (decision 14.76): the player refusing DecideMove is
+            // translated into a fact of the table.
+            "def decide_move_refused(self, command: DecideMove, refusal: DecideMoveRefused | None, \
+             ctx: CommandContext) -> ReleaseSeat | RecordMoveUndecided: ...",
         ],
     );
     for import in [
@@ -306,7 +310,8 @@ fn test_a_policys_dispatch_addresses_each_output_to_its_target() {
             "return _outputs(logic.turn_started(event, source, ctx))",
             // DecideMove is a command of the player's (decision 14.69).
             "_COMMANDS = {_d.DecideMove: _from_decide_move,}",
-            "_SENT_FACTS = {}",
+            "_SENT_FACTS = {_d.RecordMoveRefused: _from_record_move_refused,}",
+            "dispatch.on_refused(\"io.angzarr.examples.v1.DecideMove\", _decide_move_refused)",
             "book.page.command.payload.CopyFrom(_az.pack(to_wire(output)))",
             "dispatch.on_event(\"io.angzarr.examples.v1.TurnStarted\", _turn_started)",
         ],
@@ -338,9 +343,10 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
         &[
             "class BuyInLogic(ABC):",
             // A fact the table's policy sends (ruling 9, decision 14.69).
-            "def start_buy_in(self, fact: StartBuyIn, state: BuyInState, ctx: CommandContext) -> BuyInStarted: ...",
+            "def start_buy_in(self, fact: StartBuyIn, state: BuyInState, ctx: CommandContext) \
+             -> list[BuyInStarted]: ...",
             "def seat_confirmation_refused(self, fact: SeatConfirmationRefused, state: BuyInState, \
-             ctx: CommandContext) -> BuyInSeatLost: ...",
+             ctx: CommandContext) -> list[BuyInSeatLost | HoldReleaseDue | SeatReleaseDue]: ...",
         ],
     );
     let dispatch = source(&files, "buy_in_process_manager_angzarr.py");
@@ -363,34 +369,33 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
     assert_has(domain, &["class BuyInStatePhase(enum.IntEnum):"]);
 }
 
-// ------------------------------------------------ refusals, cardinality
+// ------------------------------------------------ refusals, lists
 
 fn till() -> Vec<ScaffoldFile> {
     scaffold_python(&descriptors(TILL), TILL, &app("till"), &[], &[]).unwrap()
 }
 
-/// A decision returns its events or one of its typed refusals, several to
-/// a command; the return follows the emits cardinality: one event (a
-/// fixed tuple for several), that or None, or a list of any of them.
+/// A decision returns a list of its events (decision 14.75; C-0797) or one
+/// of its typed refusals, several to a command.
 #[test]
-fn test_a_decision_returns_its_cardinality_or_one_of_its_refusals() {
+fn test_a_decision_returns_a_list_or_one_of_its_refusals() {
     let files = till();
     let logic = source(&files, "/logic.py");
     assert_has(
         logic,
         &[
             "def charge(self, cmd: Charge, state: TillState, ctx: CommandContext) \
-             -> Charged | TillRefused | CardDeclined: ...",
+             -> list[Charged] | TillRefused | CardDeclined: ...",
             "def refund(self, cmd: Refund, state: TillState, ctx: CommandContext) \
-             -> Refunded | None | TillRefused: ...",
+             -> list[Refunded] | TillRefused: ...",
             "def settle(self, cmd: Settle, state: TillState, ctx: CommandContext) \
              -> list[Charged | Refunded]: ...",
             "def open(self, cmd: Open, state: TillState, ctx: CommandContext) \
-             -> tuple[Charged, Refunded]: ...",
+             -> list[Charged | Refunded]: ...",
             "def close(self, cmd: Close, state: TillState, ctx: CommandContext) \
-             -> tuple[Charged, Refunded] | None | Unbalanced: ...",
+             -> list[Charged | Refunded] | Unbalanced: ...",
             "def cash_counted(self, fact: CashCounted, state: TillState, ctx: CommandContext) \
-             -> Refunded: ...",
+             -> list[Refunded]: ...",
         ],
     );
 }
@@ -529,12 +534,12 @@ fn test_the_spec_table_is_scaffolded() {
         logic,
         &[
             "def place_bet(self, cmd: PlaceBet, state: TableState, ctx: CommandContext) \
-             -> BetPlaced | TableRefused: ...",
+             -> list[BetPlaced] | TableRefused: ...",
             "def confirm_seat(self, cmd: ConfirmSeat, state: TableState, ctx: CommandContext) \
-             -> PlayerSeated | None | SeatNotConfirmable: ...",
+             -> list[PlayerSeated] | SeatNotConfirmable: ...",
             // A fact: the buy-in's compensation (ruling 9, decision 14.69).
             "def release_seat(self, fact: ReleaseSeat, state: TableState, ctx: CommandContext) \
-             -> SeatReleased | None: ...",
+             -> list[SeatReleased]: ...",
             "def hit(self, cmd: Hit, state: TableState, ctx: CommandContext) \
              -> list[CardDealt | TurnStarted | DealerPlayed | RoundSettled] | TableRefused: ...",
         ],
@@ -885,19 +890,21 @@ fn assert_parses(path: &str, source: &str) {
 }
 
 /// A domain whose policies send commands handles the pass-through
-/// refusal (decision 14.31, the coordinator's `CommandRefused`) of each
-/// that declares a `refuses` type, and only those (decision 14.73), in
+/// refusal (decision 14.31, the coordinator's `CommandRefused`) of each,
+/// every one declaring a `refuses` type (decision 14.76), in
 /// `on_refused_<command>`: the refused command, its typed refusal or None,
-/// the state and the context, returning the events that record it.
-/// Deposit declares none: no handler, no registration.
+/// the state and the context, returning the events that record it. The
+/// handler is optional, as item S built it; a generated policy always
+/// translates, so it serves a hand-written policy's pass-through.
 #[test]
-fn test_a_domain_handles_the_pass_through_refusal_of_each_command_that_declares_refuses() {
+fn test_a_domain_handles_the_pass_through_refusal_of_each_command_its_policies_send() {
     let files = buyin_python("buyin", &[]);
     let logic = source(&files, "/logic.py");
     assert_has(
         logic,
         &[
             "def on_refused_hold(self, command: Hold, refusal: InsufficientFunds | None, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
+            "def on_refused_deposit(self, command: Deposit, refusal: DepositRefused | None, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
         ],
     );
     assert_has(
@@ -905,7 +912,6 @@ fn test_a_domain_handles_the_pass_through_refusal_of_each_command_that_declares_
         &["raise NotImplementedError  # TODO: record the refusal of Hold"],
     );
     let domain = source(&files, "/domain.py");
-    assert!(!logic.contains("on_refused_deposit"), "{logic}");
     for plain in ["class Hold:", "class InsufficientFunds:"] {
         assert!(domain.contains(plain), "{plain}:\n{domain}");
     }
@@ -913,7 +919,7 @@ fn test_a_domain_handles_the_pass_through_refusal_of_each_command_that_declares_
     assert_has(
         dispatch,
         &[
-            "_TYPED_REFUSALS = {\"buyin.v1.InsufficientFunds\": (_wallet.InsufficientFunds, _to_insufficient_funds),}",
+            "\"buyin.v1.InsufficientFunds\": (_wallet.InsufficientFunds, _to_insufficient_funds)",
             "entry = _TYPED_REFUSALS.get(payload.type_url.rpartition(\"/\")[2])",
             "def _on_refused_hold(refused, state, cctx):",
             "command = _to_hold(_decode(_wallet.Hold(), refused.command.page.command.payload))",
@@ -921,9 +927,9 @@ fn test_a_domain_handles_the_pass_through_refusal_of_each_command_that_declares_
             "flags = logic.on_refused_hold(command, typed, _to_buy_in_state(state), cctx)",
             "return _az.FactRecord(refused, tuple(_wire(flags)))",
             "if hasattr(logic, \"on_refused_hold\"): dispatch.on_refused(\"buyin.v1.Hold\", _on_refused_hold)",
+            "if hasattr(logic, \"on_refused_deposit\"): dispatch.on_refused(\"buyin.v1.Deposit\", _on_refused_deposit)",
         ],
     );
-    assert!(!dispatch.contains("buyin.v1.Deposit"), "{dispatch}");
     assert_parses("buy_in_angzarr.py", dispatch);
     assert_parses("logic.py", logic);
 }
@@ -931,35 +937,41 @@ fn test_a_domain_handles_the_pass_through_refusal_of_each_command_that_declares_
 /// A command the refusal switch translates reaches its source as the
 /// policy's fact, never as `CommandRefused`: the source's implementation is
 /// created with no `on_refused_<command>` for it, which stays optional in
-/// its interface. Hold is the toy buy-in's one command declaring
-/// `refuses`, so none is left.
+/// its interface; Deposit's, untranslated, stays.
 #[test]
 fn test_translate_drops_the_sources_pass_through_of_the_command_it_translates() {
     let untranslated = buyin_python("buyin", &[]);
     assert!(source(&untranslated, "/logic_impl.py").contains("def on_refused_hold("));
     let files = buyin_python("buyin", &[translate_hold()]);
     let implementation = source(&files, "/logic_impl.py");
-    assert!(!implementation.contains("on_refused_"), "{implementation}");
+    assert!(
+        !implementation.contains("def on_refused_hold("),
+        "{implementation}"
+    );
+    assert!(
+        implementation.contains("def on_refused_deposit("),
+        "{implementation}"
+    );
     assert!(source(&files, "/logic.py").contains("def on_refused_hold("));
 }
 
-/// A policy whose source takes facts may translate the refusal of each
-/// command it sends, in `<command>_refused`: taking the refused command,
-/// its typed refusal or None and the refused command's context, returning
-/// a fact of its source. Each is optional, in the reference protocol; the
-/// refusal switch (`--translate`) writes the one it selects into the
-/// implementation, returning the fact it selects; the dispatch registers
-/// each one the logic has with the client's `on_refused`.
+/// A policy translates the refusal of every command of its target, in
+/// `<command>_refused` (decision 14.76; C-0612): taking the refused
+/// command, its typed refusal or None and the refused command's context,
+/// returning a fact of its source. Each is required, an abstract method of
+/// the interface; the implementation is created with each, the one the
+/// switch (`--translate`) names returning the fact it names; the dispatch
+/// registers each with the client's `on_refused`.
 #[test]
-fn test_a_policy_translates_the_refused_command_the_switch_selects() {
+fn test_a_policy_must_translate_each_refused_command() {
     let files = buyin_python("policy-buyin-wallet", &[translate_hold()]);
     let logic = source(&files, "/logic.py");
-    let refusals = &logic[logic.find("(Protocol):").expect("the refusals protocol")..];
+    assert!(!logic.contains("(Protocol):"), "{logic}");
     assert_has(
-        refusals,
+        logic,
         &[
-            "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: ...",
-            "def deposit_refused(self, command: Deposit, ctx: CommandContext) -> HoldLost: ...",
+            "@abstractmethod def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: ...",
+            "@abstractmethod def deposit_refused(self, command: Deposit, refusal: DepositRefused | None, ctx: CommandContext) -> HoldLost: ...",
         ],
     );
     let implementation = source(&files, "/logic_impl.py");
@@ -968,11 +980,9 @@ fn test_a_policy_translates_the_refused_command_the_switch_selects() {
         &[
             "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: \
              raise NotImplementedError # TODO: translate the refusal of Hold",
+            "def deposit_refused(self, command: Deposit, refusal: DepositRefused | None, ctx: CommandContext) -> HoldLost: \
+             raise NotImplementedError # TODO: translate the refusal of Deposit",
         ],
-    );
-    assert!(
-        !implementation.contains("deposit_refused"),
-        "{implementation}"
     );
     let domain = source(&files, "/domain.py");
     assert!(
@@ -988,22 +998,27 @@ fn test_a_policy_translates_the_refused_command_the_switch_selects() {
             "command = _to_hold(_decode(_wallet.Hold(), refusal.command.page.command.payload))",
             "typed = _typed_refusal(refusal.response.refusal)",
             "return _fact(logic.hold_refused(command, typed, ctx))",
-            "if hasattr(logic, \"hold_refused\"): dispatch.on_refused(\"buyin.v1.Hold\", _hold_refused)",
-            "if hasattr(logic, \"deposit_refused\"): dispatch.on_refused(\"buyin.v1.Deposit\", _deposit_refused)",
+            "dispatch.on_refused(\"buyin.v1.Hold\", _hold_refused)",
+            "dispatch.on_refused(\"buyin.v1.Deposit\", _deposit_refused)",
         ],
     );
+    assert!(!dispatch.contains("hasattr"), "{dispatch}");
     assert_parses("buy_in_wallet_angzarr.py", dispatch);
     assert_parses("logic.py", logic);
 }
 
-/// What the switch leaves alone is passed through: the policy's
-/// implementation has no `<command>_refused`, and the generated files are
-/// the same either way, so a run without `--translate` keeps a translation
-/// the user's logic has.
+/// The switch changes only the user's stub: the generated files are the
+/// same with it or without, and a stub it does not name returns any fact
+/// of the source.
 #[test]
-fn test_a_policy_without_translate_passes_every_refusal_through() {
+fn test_translate_names_only_the_fact_a_stub_returns() {
     let plain = buyin_python("policy-buyin-wallet", &[]);
-    assert!(!source(&plain, "/logic_impl.py").contains("_refused"));
+    assert_has(
+        source(&plain, "/logic_impl.py"),
+        &[
+            "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost:",
+        ],
+    );
     let translated = buyin_python("policy-buyin-wallet", &[translate_hold()]);
     for (a, b) in plain.iter().zip(&translated) {
         if a.owner == Owner::Generated {
@@ -1028,16 +1043,22 @@ fn test_scaffold_python_refuses_translate_for_an_unknown_policy() {
     );
 }
 
-/// A policy whose source takes no facts can translate nothing: its
-/// `domain.py` re-exports no `CommandContext` and its dispatch has no
-/// translating callback.
+/// policy-player-table translates the table's refusal of a move into the
+/// player's RecordMoveRefused (decision 14.76): its dispatch registers a
+/// callback for each table command.
 #[test]
-fn test_a_policy_whose_source_takes_no_facts_has_no_refusal_plumbing() {
+fn test_a_policy_translates_into_its_sources_fact() {
     let files = blackjack(POLICIES, "policy-player-table");
     let domain = source(&files, "/domain.py");
-    assert!(!domain.contains("CommandContext"), "{domain}");
+    assert!(domain.contains("CommandContext"), "{domain}");
     let dispatch = source(&files, "player_table_policy_angzarr.py");
-    assert!(!dispatch.contains("on_refused"), "{dispatch}");
+    assert_has(
+        dispatch,
+        &[
+            "_FACTS = {_d.RecordMoveRefused: _from_record_move_refused,}",
+            "dispatch.on_refused(\"io.angzarr.examples.v1.Hit\", _hit_refused)",
+        ],
+    );
 }
 
 /// The implementation's file, by suffix.
@@ -1072,15 +1093,16 @@ fn test_a_selected_translation_returns_the_fact_it_selects() {
         &implementation.source,
         &["ctx: CommandContext) -> Arrived:"],
     );
-    assert_eq!(implementation.selected, ["audit_refused"]);
+    assert!(implementation.selected.is_empty());
+    assert!(implementation.optional.is_empty());
     assert_has(source(&files, "/logic.py"), &["-> Arrived | Swept: ..."]);
 }
 
-/// `--on-refused` writes the callback it names alone into a policy's
-/// implementation, and selects it; the switch selects the one it translates
-/// alone.
+/// A policy has no optional callback: `--on-refused` selects nothing of a
+/// policy's, whose implementation is created with every callback, and the
+/// switch selects nothing either.
 #[test]
-fn test_on_refused_and_translate_select_their_own_callbacks_alone() {
+fn test_a_policys_callbacks_are_never_selected() {
     let named = scaffold_python(
         &descriptors(BUYIN),
         BUYIN,
@@ -1090,19 +1112,16 @@ fn test_on_refused_and_translate_select_their_own_callbacks_alone() {
     )
     .unwrap();
     let named = implementation(&named);
-    assert!(
-        named.source.contains("def deposit_refused("),
-        "{}",
-        named.source
-    );
-    assert!(
-        !named.source.contains("def hold_refused("),
-        "{}",
-        named.source
-    );
-    assert_eq!(named.selected, ["deposit_refused"]);
+    for callback in ["def deposit_refused(", "def hold_refused("] {
+        assert!(
+            named.source.contains(callback),
+            "{callback}:\n{}",
+            named.source
+        );
+    }
+    assert!(named.selected.is_empty());
     let translated = buyin_python("policy-buyin-wallet", &[translate_hold()]);
-    assert_eq!(implementation(&translated).selected, ["hold_refused"]);
+    assert!(implementation(&translated).selected.is_empty());
 }
 
 /// A domain's refusal handlers are never the switch's to select: a

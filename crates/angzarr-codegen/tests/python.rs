@@ -324,7 +324,7 @@ fn test_the_dispatch_hands_each_decision_its_context() {
     assert!(
         dispatch
             .source
-            .contains("return _book(logic.decide_move(cmd, _to_player_state(state), cctx))"),
+            .contains("return _decided(logic.decide_move(cmd, _to_player_state(state), cctx))"),
         "{}",
         dispatch.source
     );
@@ -363,9 +363,15 @@ from ._gen.logic import PlayerLogic
 
 
 class PlayerLogicImpl(PlayerLogic):
-    def decide_move(self, cmd: DecideMove, state: PlayerState) -> MoveDecided:
+    def decide_move(self, cmd: DecideMove, state: PlayerState) -> list[MoveDecided]:
         action = MoveAction.HIT if cmd.total < 17 else MoveAction.STAND
-        return MoveDecided(table_root=cmd.table_root, round=cmd.round, seat=cmd.seat, action=action)  # USER-WRITTEN
+        return [MoveDecided(table_root=cmd.table_root, round=cmd.round, seat=cmd.seat, action=action)]  # USER-WRITTEN
+
+    def record_move_refused(self, fact: RecordMoveRefused, state: PlayerState) -> list[MoveRefused]:
+        return []
+
+    def apply_move_refused(self, state: PlayerState, event: MoveRefused) -> PlayerState:
+        return state
 
     def apply_move_undone(self, state: PlayerState, event: MoveUndone) -> PlayerState:
         return state
@@ -520,9 +526,9 @@ fn test_the_logic_takes_and_returns_the_domains_plain_types() {
     assert!(logic.contains("class PlayerLogic(ABC):"), "{logic}");
     assert!(
         logic.contains(
-            "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) -> MoveDecided: ..."
+            "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) -> list[MoveDecided] | DecideMoveRefused: ..."
         ),
-        "a decision: the command, the state and its context in, the event out:\n{logic}"
+        "a decision: the command, the state and its context in, its events or its refusal out:\n{logic}"
     );
     assert!(
         logic.contains("from .domain import (\n    CommandContext,\n"),
@@ -569,7 +575,7 @@ fn test_reroot_python_takes_the_longest_package_a_line_names() {
 fn test_complete_adds_an_absent_method_that_is_not_the_classes_last() {
     let fresh = file(&player(), IMPL).clone();
     let decide = "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) \
-                  -> MoveDecided:\n        raise NotImplementedError  # TODO: decide DecideMove\n";
+                  -> list[MoveDecided] | DecideMoveRefused:\n        raise NotImplementedError  # TODO: decide DecideMove\n";
     let user = fresh.source.replace(&format!("{decide}\n"), "");
     assert_ne!(user, fresh.source);
     let completed = complete(&fresh, &user, Existing::Complete)
@@ -818,7 +824,7 @@ fn test_scaffold_python_scaffolds_a_command_with_a_typed_refusal() {
     .unwrap();
     let logic = &file(&files, "src/angzarr_wallet/_gen/logic.py").source;
     assert!(
-        logic.contains(") -> Held | InsufficientFunds: ..."),
+        logic.contains(") -> list[Held] | InsufficientFunds: ..."),
         "{logic}"
     );
 }

@@ -145,9 +145,7 @@ mod tests {
     fn every_samples_text_args_are_their_own_names() {
         for sample in diagnostic_samples() {
             for (name, arg) in sample.args() {
-                if let Arg::Str(value) = arg
-                    && name != "cardinality"
-                {
+                if let Arg::Str(value) = arg {
                     assert_eq!(value, name, "{}", sample.code());
                 }
             }

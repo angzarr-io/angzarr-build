@@ -34,7 +34,12 @@ fn test_a_stand_in_is_its_domains_command_and_event_sets_from_its_proto() {
     let traits: Vec<&str> = found.iter().map(|(t, _)| t.as_str()).collect();
     assert_eq!(
         traits,
-        ["CommandTarget", "Decides<DecideMove>", "EventSource"],
+        [
+            "CommandTarget",
+            "Decides<DecideMove>",
+            "EventSource",
+            "Ingests<RecordMoveRefused>"
+        ],
         "{source}"
     );
     let body = |name: &str| &found.iter().find(|(t, _)| t == name).unwrap().1;
@@ -44,7 +49,7 @@ fn test_a_stand_in_is_its_domains_command_and_event_sets_from_its_proto() {
     );
     assert_eq!(
         body("EventSource"),
-        "constDOMAIN:&'staticstr=\"player\";fnevent_types()->Vec<String>{vec![\"io.angzarr.examples.v1.MoveDecided\".to_string()]}"
+        "constDOMAIN:&'staticstr=\"player\";fnevent_types()->Vec<String>{vec![\"io.angzarr.examples.v1.MoveDecided\".to_string(),\"io.angzarr.examples.v1.MoveRefused\".to_string()]}"
     );
     assert!(
         source.starts_with(&format!("// {}", angzarr_codegen::LICENCE_HEADER)),
@@ -132,6 +137,8 @@ fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
         "pub mod domain {{\n\
          #[derive(Clone)] pub struct DecideMove;\n\
          impl ::angzarr_embedded::markup::DomainMessage for DecideMove {{}}\n\
+         #[derive(Clone)] pub struct RecordMoveRefused;\n\
+         impl ::angzarr_embedded::markup::DomainMessage for RecordMoveRefused {{}}\n\
          }}\n\
          pub mod stand_ins {{\n{source}\n}}\n\
          fn target<T: ::angzarr_embedded::markup::Decides<domain::DecideMove>>() -> &'static str {{\n\
@@ -155,6 +162,7 @@ fn test_a_stand_in_takes_a_policys_fact() {
         "Deposit",
         "Hold",
         "InsufficientFunds",
+        "RecordBuyInRefused",
     ];
     let domain: String = messages
         .iter()

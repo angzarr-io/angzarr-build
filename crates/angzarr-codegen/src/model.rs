@@ -98,62 +98,26 @@ pub(crate) const ALL_KINDS: &[ComponentKind] = &[
     ComponentKind::Projector,
 ];
 
-/// How many events one handling of an input emits
-/// (`CommandOptions.emits_cardinality`, decision 14.50).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Cardinality {
-    /// One event of each emits type, in order: the one event, or a tuple.
-    One,
-    /// That, or nothing.
-    Optional,
-    /// Any number of events of the emits types, in any order.
-    Many,
-}
-
-/// `EmitsCardinality`'s numbers (options.proto).
-const CARDINALITY_ONE: i32 = 1;
-const CARDINALITY_OPTIONAL: i32 = 2;
-const CARDINALITY_MANY: i32 = 3;
-
-/// The most emits a ONE or OPTIONAL input may list: the markup's widest
-/// tuple.
-pub(crate) const MAX_TUPLE: usize = 4;
-
 /// One input of an aggregate or a process manager: a command, or a fact
 /// (`CommandOptions.fact`).
 pub(crate) struct Input {
     pub message: MessageDescriptor,
     pub emits: Vec<MessageDescriptor>,
-    pub cardinality: Cardinality,
     /// Its typed refusals; always empty for a fact.
     pub refuses: Vec<MessageDescriptor>,
     pub starts: bool,
     pub fact: bool,
 }
 
-/// What one handling of an input returns (decision 14.50), for each
-/// emitter to write in its own types.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Decided<'a> {
-    /// One event of each type, in order: the one event, or a tuple.
-    One(&'a [MessageDescriptor]),
-    /// That, or nothing.
-    Optional(&'a [MessageDescriptor]),
-    /// Any number of events of these types, in any order: the input's
-    /// emits or, when it lists none, any of its component's events.
-    Many(&'a [MessageDescriptor]),
-}
-
 impl Input {
-    /// What a handling of this input, of `component`, returns: by its
-    /// cardinality, and an input listing no emits any number of the
+    /// The events a handling of this input, of `component`, returns a list
+    /// of (decision 14.75): its emits, or, when it lists none, any of the
     /// component's events.
-    pub(crate) fn decided<'a>(&'a self, component: &'a Component) -> Decided<'a> {
-        match self.cardinality {
-            _ if self.emits.is_empty() => Decided::Many(&component.events),
-            Cardinality::Many => Decided::Many(&self.emits),
-            Cardinality::One => Decided::One(&self.emits),
-            Cardinality::Optional => Decided::Optional(&self.emits),
+    pub(crate) fn decided<'a>(&'a self, component: &'a Component) -> &'a [MessageDescriptor] {
+        if self.emits.is_empty() {
+            &component.events
+        } else {
+            &self.emits
         }
     }
 }
@@ -437,7 +401,44 @@ fn declare(
         }
     }
     check_refusal_statuses(&markup, files, &declaring)?;
-    Ok(declared.into_iter().map(|d| d.component).collect())
+    let components: Vec<Component> = declared.into_iter().map(|d| d.component).collect();
+    check_refusal_paths(&components)?;
+    Ok(components)
+}
+
+/// Every command a policy of `components` may send has a refusal path
+/// (decision 14.76): nothing declares what a policy sends, so each command
+/// of its target names a `refuses` type, and its source, which a refusal
+/// is translated into a fact of, takes a fact. Checked where `components`
+/// hold the target (and the source); a domain declared elsewhere is held
+/// to it where it is generated with the policy.
+fn check_refusal_paths(components: &[Component]) -> Result<(), MarkupError> {
+    let policies = components
+        .iter()
+        .filter(|c| c.kind == ComponentKind::Policy);
+    for policy in policies {
+        let Some(target) = owner(components, &policy.output_domain) else {
+            continue;
+        };
+        let mut commands = target.inputs.iter().filter(|i| !i.fact).peekable();
+        if commands.peek().is_none() {
+            continue;
+        }
+        if let Some(command) = commands.find(|i| i.refuses.is_empty()) {
+            return Err(MarkupError::SentCommandRefusesNothing {
+                policy: policy.anchor.full_name().to_string(),
+                command: command.message.full_name().to_string(),
+            });
+        }
+        let source = owner(components, &policy.input_domain);
+        if source.is_some_and(|s| !s.inputs.iter().any(|i| i.fact)) {
+            return Err(MarkupError::SourceTakesNoFact {
+                policy: policy.anchor.full_name().to_string(),
+                domain: policy.input_domain.clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// angzarr's declaration options as a descriptor set has them:
@@ -729,7 +730,7 @@ fn attach_event(
 /// The input the `(command)` `message` declares (`declared`) of
 /// `component`: its emits, held to the component's events (one it folds
 /// none of refused, or kept in `unapplied` and left out when that is
-/// given), their cardinality, and its refusals, each a message of `pool`
+/// given), and its refusals, each a message of `pool`
 /// in the command's own package.
 fn command_input(
     pool: &DescriptorPool,
@@ -757,7 +758,6 @@ fn command_input(
             },
         }
     }
-    let cardinality = cardinality(message, declared, emits.len())?;
     let fact = bool_field(declared, "fact");
     let refused = strings_field(declared, "refuses");
     if fact && !refused.is_empty() {
@@ -791,40 +791,10 @@ fn command_input(
     Ok(Input {
         message: message.clone(),
         emits,
-        cardinality,
         refuses,
         starts,
         fact,
     })
-}
-
-/// A command's emits cardinality, given how many types it emits: refusing
-/// ONE or OPTIONAL with none, and a tuple longer than the markup's.
-fn cardinality(
-    message: &MessageDescriptor,
-    declared: &DynamicMessage,
-    emits: usize,
-) -> Result<Cardinality, MarkupError> {
-    let cardinality = match enum_field(declared, "emits_cardinality") {
-        CARDINALITY_MANY => Cardinality::Many,
-        // With no emits, the raw form is a list: unset is MANY.
-        0 if emits == 0 => Cardinality::Many,
-        n @ (CARDINALITY_ONE | CARDINALITY_OPTIONAL) if emits == 0 => {
-            return Err(MarkupError::CardinalityWithoutEmits {
-                message: message.full_name().to_string(),
-                optional: n == CARDINALITY_OPTIONAL,
-            });
-        }
-        CARDINALITY_OPTIONAL => Cardinality::Optional,
-        _ => Cardinality::One,
-    };
-    if cardinality != Cardinality::Many && emits > MAX_TUPLE {
-        return Err(MarkupError::EmitsTuple {
-            message: message.full_name().to_string(),
-            count: emits,
-        });
-    }
-    Ok(cardinality)
 }
 
 /// The status a refusal Reason's value marks (decision 14.52), its

@@ -1,7 +1,7 @@
 # The end-to-end fixture of angzarr-build's tests/local.rs: an application on
 # angzarr-embedded, its domain layer and register() generated from the
 # kinds fixture proto (a typed refusal of each field kind, a command
-# refusing several, each emits cardinality, a projector of two domains),
+# refusing several, inputs of several emits, a projector of two domains),
 # its components the scaffold with their bodies written, and a projector
 # written by hand beside them, run by angzarr-embedded-host.
 # Built and run by that test only; a workspace of its own, outside

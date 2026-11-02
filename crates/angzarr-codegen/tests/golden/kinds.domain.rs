@@ -739,7 +739,7 @@ impl ::angzarr_embedded::Payload for LedgerStateCommand {
             .to_vec()
     }
 }
-/// What a policy sends LedgerState: its commands and facts, each in its arm.
+/// What a policy sends LedgerState: its commands and facts, each in its arm. As a `markup::CommandTarget`, its domain and commands: the destination a process manager's compensation step names (decision 14.74).
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedgerStateOutput {
     Post(Post),
@@ -751,6 +751,23 @@ pub enum LedgerStateOutput {
     Raw(Raw),
     Arrived(Arrived),
     Swept(Swept),
+}
+impl ::angzarr_embedded::markup::CommandTarget for LedgerStateOutput {
+    const DOMAIN: &'static str = "ledger";
+    fn command_types() -> Vec<String> {
+        [
+            "kinds.v1.Post",
+            "kinds.v1.Open",
+            "kinds.v1.Four",
+            "kinds.v1.Maybe",
+            "kinds.v1.MaybeBoth",
+            "kinds.v1.Batch",
+            "kinds.v1.Raw",
+        ]
+            .iter()
+            .map(|c| c.to_string())
+            .collect()
+    }
 }
 impl From<Post> for LedgerStateOutput {
     fn from(value: Post) -> Self {
@@ -939,10 +956,16 @@ impl ::angzarr_embedded::Payload for AuditStateCommand {
         [::angzarr_embedded::markup::type_url_of::<Audit>()].to_vec()
     }
 }
-/// What a policy sends AuditState: its commands and facts, each in its arm.
+/// What a policy sends AuditState: its commands and facts, each in its arm. As a `markup::CommandTarget`, its domain and commands: the destination a process manager's compensation step names (decision 14.74).
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuditStateOutput {
     Audit(Audit),
+}
+impl ::angzarr_embedded::markup::CommandTarget for AuditStateOutput {
+    const DOMAIN: &'static str = "audit";
+    fn command_types() -> Vec<String> {
+        ["kinds.v1.Audit"].iter().map(|c| c.to_string()).collect()
+    }
 }
 impl From<Audit> for AuditStateOutput {
     fn from(value: Audit) -> Self {
@@ -1718,23 +1741,19 @@ impl ::angzarr_embedded::markup::DomainMessage for Audited {
 /// event.
 #[allow(clippy::result_large_err)]
 pub trait LedgerState {
-    fn post(&self, cmd: &Post, ctx: &Context) -> Result<Posted, Failed<PostRefuses>>;
+    fn post(&self, cmd: &Post, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<PostRefuses>>;
 
-    fn open(&self, cmd: &Open, ctx: &Context) -> Result<(Posted, Noted), Failed<Rejection>>;
+    fn open(&self, cmd: &Open, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
 
-    fn four(
-        &self,
-        cmd: &Four,
-        ctx: &Context,
-    ) -> Result<(Posted, Noted, Cleared, Closed), Failed<Rejection>>;
+    fn four(&self, cmd: &Four, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
 
-    fn maybe(&self, cmd: &Maybe, ctx: &Context) -> Result<Option<Posted>, Failed<Rejection>>;
+    fn maybe(&self, cmd: &Maybe, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
 
     fn maybe_both(
         &self,
         cmd: &MaybeBoth,
         ctx: &Context,
-    ) -> Result<Option<(Posted, Noted)>, Failed<Rejection>>;
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
 
     fn batch(
         &self,
@@ -1744,7 +1763,7 @@ pub trait LedgerState {
 
     fn raw(&self, cmd: &Raw, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
 
-    fn arrived(&self, fact: &Arrived, ctx: &Context) -> Option<(Posted, Noted)>;
+    fn arrived(&self, fact: &Arrived, ctx: &Context) -> Vec<LedgerStateEvent>;
 
     fn swept(&self, fact: &Swept, ctx: &Context) -> Vec<LedgerStateEvent>;
 
@@ -1766,7 +1785,11 @@ pub trait LedgerState {
 /// event.
 #[allow(clippy::result_large_err)]
 pub trait AuditState {
-    fn audit(&self, cmd: &Audit, ctx: &Context) -> Result<Audited, Failed<AuditRefuses>>;
+    fn audit(
+        &self,
+        cmd: &Audit,
+        ctx: &Context,
+    ) -> Result<Vec<AuditStateEvent>, Failed<AuditRefuses>>;
 
     fn apply_audited(&mut self, event: &Audited);
 }
@@ -1802,9 +1825,9 @@ pub trait LedgerView {
 /// returns what it sends its target, each with its target root: a command, or a
 /// fact the target declares, sent in the arm the target declares. Or its `Bug`:
 /// a defect, since a policy reacts to events the application's own domains
-/// recorded. Each `<command>_refused` is optional: its default declines,
-/// passing the refusal through to the source; an implementation translating it
-/// answers one of the source's facts.
+/// recorded. Each `<command>_refused` answers the refusal of a command of its
+/// target with one of the source's facts (or a `Bug`, for a command it never
+/// sends): every command a policy sends has a refusal path.
 #[allow(clippy::result_large_err)]
 pub trait LedgerAuditPolicy {
     fn noted(
@@ -1819,8 +1842,5 @@ pub trait LedgerAuditPolicy {
         command: &Audit,
         refusal: Option<AuditRefuses>,
         ctx: &CommandContext,
-    ) -> Result<Option<LedgerStateFact>, Bug> {
-        let _ = (command, refusal, ctx);
-        Ok(None)
-    }
+    ) -> Result<LedgerStateFact, Bug>;
 }

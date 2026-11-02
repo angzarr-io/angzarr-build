@@ -100,7 +100,7 @@ impl Generator {
         let outcome = descriptors(&set, &names, &version).and_then(|descriptors| {
             markup_domain(&set, &names, &wire)?;
             // The user's files `angzarr scaffold rust` writes: their checks.
-            scaffold(&set, &names, &self.translate, &[])?;
+            scaffold(&set, &names, &self.translate)?;
             let adapters = adapters(&set, &names, &[])?;
             Ok(Generated {
                 descriptors,

@@ -13,7 +13,7 @@ pub struct AuditStateImpl {
 impl AuditState for AuditStateImpl {
     /// Audits every root but 2, which it refuses with one of its two
     /// refusal types: the policy that sent it translates the refusal.
-    fn audit(&self, _cmd: &Audit, ctx: &Context) -> Result<Audited, Failed<AuditRefuses>> {
+    fn audit(&self, _cmd: &Audit, ctx: &Context) -> Result<Vec<AuditStateEvent>, Failed<AuditRefuses>> {
         let root = ctx
             .command
             .cover
@@ -25,7 +25,7 @@ impl AuditState for AuditStateImpl {
                 reason: Tone::Loud,
             })));
         }
-        Ok(Audited {})
+        Ok(vec![Audited {}.into()])
     }
 
     fn apply_audited(&mut self, _event: &Audited) {}

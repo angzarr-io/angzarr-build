@@ -3,8 +3,8 @@
 //! OUT_DIR.
 
 const PROTOS: &[&str] = &["kinds/v1/kinds.proto"];
-/// The fixtures, then the spec's protos, whose options.proto (decision
-/// 14.50's emits_cardinality) angzarr-proto's copy can trail.
+/// The fixtures, then the spec's protos, whose options.proto
+/// angzarr-proto's copy can trail.
 const INCLUDES: &[&str] = &[
     "../../../../angzarr-codegen/tests/fixtures",
     "../../../../../angzarr-project/proto",

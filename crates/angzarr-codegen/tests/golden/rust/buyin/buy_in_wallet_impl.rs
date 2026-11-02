@@ -17,4 +17,22 @@ impl BuyInWallet for BuyInWalletImpl {
     ) -> Result<Vec<(Vec<u8>, WalletOutput)>, Bug> {
         todo!()
     }
+
+    fn deposit_refused(
+        &self,
+        _command: &Deposit,
+        _refusal: Option<DepositRefused>,
+        _ctx: &CommandContext,
+    ) -> Result<BuyInFact, Bug> {
+        todo!()
+    }
+
+    fn hold_refused(
+        &self,
+        _command: &Hold,
+        _refusal: Option<InsufficientFunds>,
+        _ctx: &CommandContext,
+    ) -> Result<BuyInFact, Bug> {
+        todo!()
+    }
 }

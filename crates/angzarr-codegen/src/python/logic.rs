@@ -6,10 +6,8 @@
 
 use std::collections::BTreeSet;
 
-use prost_reflect::MessageDescriptor;
-
 use crate::common::snake;
-use crate::model::{Component, ComponentKind, Decided, Input};
+use crate::model::{Component, ComponentKind, Input};
 
 use super::layout::{head, wrap};
 use super::{GENERATED, PythonApp, Refusable, Unit};
@@ -23,10 +21,13 @@ struct Method {
     params: Vec<(String, String)>,
     returns: String,
     todo: String,
-    /// The refused command, for an optional refusal callback (which the
-    /// implementation may leave out, the refusal then passed through);
-    /// `None` for a required method.
+    /// The refused command, for a domain's optional refusal handler (which
+    /// the implementation may leave out, declining the refusal); `None` for
+    /// a required method.
     refused: Option<String>,
+    /// The refused command, for a policy's refusal callback, required
+    /// (decision 14.76): what `--translate` names the stub's fact for.
+    translates: Option<String>,
 }
 
 /// The interface's name: a domain's, camel-cased, then `Logic` (`player`
@@ -58,22 +59,16 @@ fn refusals_name(app: &PythonApp, unit: &Unit) -> String {
     format!("{}Refusals", logic.trim_end_matches("Logic"))
 }
 
-/// What a decision of `input` returns: its events by its cardinality (one
-/// event, a tuple of several, that or None, or a list of any of them; an
-/// input declaring no emits, a list of any of `component`'s events, None
-/// when it has none), or one of its typed refusals.
+/// What a decision of `input` returns: a list of its events (decision
+/// 14.75), of its emits or, when it lists none, of any of `component`'s
+/// events (None when it has none), or one of its typed refusals.
 fn decided(component: &Component, input: &Input) -> String {
-    let names = |events: &[MessageDescriptor], by: &str| {
-        let names: Vec<&str> = events.iter().map(|e| e.name()).collect();
-        names.join(by)
-    };
     let events = match input.decided(component) {
-        Decided::Many([]) => "None".to_string(),
-        Decided::Many(events) => format!("list[{}]", names(events, " | ")),
-        Decided::Optional([one]) => format!("{} | None", one.name()),
-        Decided::Optional(events) => format!("tuple[{}] | None", names(events, ", ")),
-        Decided::One([one]) => one.name().to_string(),
-        Decided::One(events) => format!("tuple[{}]", names(events, ", ")),
+        [] => "None".to_string(),
+        events => {
+            let names: Vec<&str> = events.iter().map(|e| e.name()).collect();
+            format!("list[{}]", names.join(" | "))
+        }
     };
     std::iter::once(events)
         .chain(input.refuses.iter().map(|r| r.name().to_string()))
@@ -115,10 +110,10 @@ fn any_events(component: &Component) -> String {
 /// state and the context, returning the events recording it). A policy's: a
 /// reaction per event from the event, its source root and its page's
 /// context, returning the target's commands and facts, each with its root,
-/// and, optional, a translating callback per command it sends when its
-/// source takes facts (`<command>_refused`: the command, its typed refusal
-/// or None and the refused command's context, returning one of the source's
-/// facts). A projector's: a coroutine per event from the projection, the
+/// and a required translating callback per command of its target
+/// (`<command>_refused`: the command, its typed refusal or None and the
+/// refused command's context, returning one of the source's facts; decision
+/// 14.76). A projector's: a coroutine per event from the projection, the
 /// event and its page's context, returning the next projection. All of it
 /// in the plain types (`domain.py`).
 fn methods(unit: &Unit) -> Vec<Method> {
@@ -156,6 +151,7 @@ fn domain_methods(unit: &Unit) -> Vec<Method> {
             returns: decided(component, input),
             todo: format!("{todo} {ty}"),
             refused: None,
+            translates: None,
         }
     });
     let folds = component.events.iter().map(|event| {
@@ -167,6 +163,7 @@ fn domain_methods(unit: &Unit) -> Vec<Method> {
             returns: state.to_string(),
             todo: format!("fold {ty} into the state"),
             refused: None,
+            translates: None,
         }
     });
     let refusals = unit.refusable.iter().map(|refusable| {
@@ -182,6 +179,7 @@ fn domain_methods(unit: &Unit) -> Vec<Method> {
             returns: any_events(component),
             todo: format!("record the refusal of {ty}"),
             refused: Some(refusable.command.full_name().to_string()),
+            translates: None,
         }
     });
     decisions.chain(folds).chain(refusals).collect()
@@ -212,6 +210,7 @@ fn policy_methods(unit: &Unit) -> Vec<Method> {
             returns: format!("list[tuple[bytes, {command}]]"),
             todo: format!("react to {ty}"),
             refused: None,
+            translates: None,
         }
     });
     let facts: Vec<&str> = unit.facts.iter().map(|f| f.name()).collect();
@@ -226,7 +225,8 @@ fn policy_methods(unit: &Unit) -> Vec<Method> {
             params,
             returns: facts.join(" | "),
             todo: format!("translate the refusal of {ty}"),
-            refused: Some(refusable.command.full_name().to_string()),
+            refused: None,
+            translates: Some(refusable.command.full_name().to_string()),
         }
     });
     reactions.chain(translations).collect()
@@ -248,6 +248,7 @@ fn projector_methods(unit: &Unit) -> Vec<Method> {
             returns: projection.to_string(),
             todo: format!("project {ty}"),
             refused: None,
+            translates: None,
         }
     });
     projections.collect()
@@ -386,9 +387,9 @@ pub(super) fn interface(app: &PythonApp, unit: &Unit) -> String {
         out.push_str(&format!("\n\nclass {refusals}(Protocol):\n"));
         let class_doc = crate::common::wrap(
             &format!(
-                "\"\"\"The refusal callbacks {name}Impl may define, each optional: \
-             the dispatch registers each one it has, and passes the refusal of any \
-             other command through. Never subclassed; a reference.",
+                "\"\"\"The refusal handlers {name}Impl may define, each optional: \
+             the dispatch registers each one it has, and declines the refusal of any \
+             other command. Never subclassed; a reference.",
             ),
             75,
         );
@@ -416,33 +417,22 @@ fn indented(text: &str) -> String {
         .join("\n")
 }
 
-/// The refusal callbacks a unit's implementation is created with: a
-/// domain's handler of each refusal its policies pass through (one the
-/// refusal switch translates excepted), a policy's translating callback for
-/// each command the switch translates; and those `selected`
-/// (`--on-refused`), each by its refused command's full name.
+/// The refusal handlers a domain's implementation is created with: each
+/// refusal its policies may pass through (one the refusal switch names a
+/// fact for excepted), and those `selected` (`--on-refused`), each by its
+/// refused command's full name.
 fn created_with(unit: &Unit, refused: &str) -> bool {
     let translated = unit
         .translated
         .iter()
         .any(|(command, _)| command == refused);
-    let created = if unit.is_domain() {
-        !translated
-    } else {
-        translated
-    };
-    created || unit.on_refused.iter().any(|c| c == refused)
+    !translated || selected(unit, refused)
 }
 
-/// Whether the refusal callback for `refused` is selected for the unit:
-/// `--translate` (a policy's) or `--on-refused`.
+/// Whether a domain's refusal handler for `refused` is selected for the
+/// unit: `--on-refused`.
 fn selected(unit: &Unit, refused: &str) -> bool {
-    let translated = !unit.is_domain()
-        && unit
-            .translated
-            .iter()
-            .any(|(command, _)| command == refused);
-    translated || unit.on_refused.iter().any(|c| c == refused)
+    unit.on_refused.iter().any(|c| c == refused)
 }
 
 /// The user's implementation, as `logic_impl.py` is created: a stub of every
@@ -467,13 +457,19 @@ pub(super) fn implementation(app: &PythonApp, unit: &Unit) -> (String, Vec<Strin
         .filter(|m| m.refused.as_deref().is_some_and(|r| selected(unit, r)))
         .map(|m| m.name.clone())
         .collect();
+    let refusals = if optional.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Its refusal handlers are optional\n(``{}``): delete one to decline that refusal.",
+            refusals_name(app, unit)
+        )
+    };
     let mut out = format!(
         "\"\"\"{name}Impl: the implementation of ``{name}``, written once by\n\
          ``angzarr scaffold python`` and yours from then on: ``--missing`` adds the\n\
-         required methods it lacks, each a TODO. Its refusal callbacks are optional\n\
-         (``{}``): delete one to pass that refusal through.\n\"\"\"\n\n\
+         required methods it lacks, each a TODO.{refusals}\n\"\"\"\n\n\
          from __future__ import annotations\n\n",
-        refusals_name(app, unit),
     );
     out.push_str(&import(
         "._gen.domain",
@@ -491,16 +487,12 @@ pub(super) fn implementation(app: &PythonApp, unit: &Unit) -> (String, Vec<Strin
 /// translating callback the refusal switch selects returns the fact it
 /// selects.
 fn translated(unit: &Unit, method: &Method) -> Method {
-    let fact = method
-        .refused
-        .as_deref()
-        .filter(|_| !unit.is_domain())
-        .and_then(|refused| {
-            unit.translated
-                .iter()
-                .find(|(command, _)| command == refused)
-                .map(|(_, fact)| fact.name().to_string())
-        });
+    let fact = method.translates.as_deref().and_then(|refused| {
+        unit.translated
+            .iter()
+            .find(|(command, _)| command == refused)
+            .map(|(_, fact)| fact.name().to_string())
+    });
     Method {
         name: method.name.clone(),
         asynchronous: method.asynchronous,
@@ -508,6 +500,7 @@ fn translated(unit: &Unit, method: &Method) -> Method {
         returns: fact.unwrap_or_else(|| method.returns.clone()),
         todo: method.todo.clone(),
         refused: method.refused.clone(),
+        translates: method.translates.clone(),
     }
 }
 

@@ -34,6 +34,42 @@ fn aggregate(w: &mut Generator, name: String, domain: String, kind: String, inpu
     }
 }
 
+/// An aggregate with one input emitting one event of its own, folded by it
+/// (decision 14.75; C-0797).
+#[given(
+    regex = r#"^an aggregate "(\w+)" owning domain "([\w-]+)" with (command|fact) "([^"]+)" whose \(command\)\.emits lists "([^"]+)"$"#
+)]
+fn aggregate_emitting(
+    w: &mut Generator,
+    name: String,
+    domain: String,
+    kind: String,
+    input: String,
+    event: String,
+) {
+    aggregate(w, name.clone(), domain, kind, input);
+    let input = w.last_input.clone().expect("the input");
+    let component = w.named(&name);
+    w.protos
+        .message(&input)
+        .input
+        .as_mut()
+        .expect("an input")
+        .emits
+        .push(full(&event));
+    w.protos
+        .message(&full(&event))
+        .events
+        .push((component, None));
+}
+
+/// An aggregate with no input at all, so it takes no fact to translate a
+/// refusal into (decision 14.76; C-0799).
+#[given(regex = r#"^an aggregate "(\w+)" owning domain "([\w-]+)" that takes no fact$"#)]
+fn aggregate_without_facts(w: &mut Generator, name: String, domain: String) {
+    aggregate(w, name, domain, String::new(), String::new());
+}
+
 #[given(regex = r#"^aggregates owning domains "([\w-]+)" and "([\w-]+)"$"#)]
 fn aggregates(w: &mut Generator, first: String, second: String) {
     for domain in [first, second] {

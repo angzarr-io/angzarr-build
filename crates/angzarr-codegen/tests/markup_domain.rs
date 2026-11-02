@@ -100,13 +100,17 @@ fn test_markup_domain_implements_domain_message_for_every_input_event_and_refusa
         [
             "BuyInFailed",
             "BuyInHeld",
+            "BuyInRefusalRecorded",
+            "BuyInRefused",
             "BuyInStarted",
             "Deposit",
+            "DepositRefused",
             "Deposited",
             "Held",
             "Hold",
             "HoldLost",
             "InsufficientFunds",
+            "RecordBuyInRefused",
             "RecordHeld",
             "StartBuyIn",
         ]

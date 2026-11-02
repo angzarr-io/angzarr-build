@@ -25,8 +25,8 @@ impl LedgerAuditPolicy for LedgerAuditPolicyImpl {
         _command: &Audit,
         refusal: Option<AuditRefuses>,
         _ctx: &CommandContext,
-    ) -> Result<Option<LedgerStateFact>, Bug> {
+    ) -> Result<LedgerStateFact, Bug> {
         println!("audit refused: {refusal:?}");
-        Ok(Some(Arrived {}.into()))
+        Ok(Arrived {}.into())
     }
 }

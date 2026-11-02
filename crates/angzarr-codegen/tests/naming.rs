@@ -11,7 +11,7 @@ const NAMING: &str = "naming/v1/naming.proto";
 const BOTH: &[&str] = &[NAMING, "naming/v1/policy.proto"];
 
 fn files() -> Vec<ScaffoldFile> {
-    scaffold(&descriptors(BOTH), BOTH, &[], &[]).unwrap()
+    scaffold(&descriptors(BOTH), BOTH, &[]).unwrap()
 }
 
 fn generated() -> String {

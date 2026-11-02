@@ -12,11 +12,31 @@ pub struct WalletImpl {
 }
 
 impl Wallet for WalletImpl {
-    fn deposit(&self, _cmd: &Deposit, _ctx: &Context) -> Result<Deposited, Failed<Rejection>> {
+    fn deposit(
+        &self,
+        _cmd: &Deposit,
+        _ctx: &Context,
+    ) -> Result<Vec<WalletEvent>, Failed<DepositRefused>> {
         todo!()
     }
 
-    fn hold(&self, _cmd: &Hold, _ctx: &Context) -> Result<Held, Failed<InsufficientFunds>> {
+    fn hold(
+        &self,
+        _cmd: &Hold,
+        _ctx: &Context,
+    ) -> Result<Vec<WalletEvent>, Failed<InsufficientFunds>> {
+        todo!()
+    }
+
+    fn record_buy_in_refused(
+        &self,
+        _fact: &RecordBuyInRefused,
+        _ctx: &Context,
+    ) -> Vec<WalletEvent> {
+        todo!()
+    }
+
+    fn apply_buy_in_refusal_recorded(&mut self, _event: &BuyInRefusalRecorded) {
         todo!()
     }
 

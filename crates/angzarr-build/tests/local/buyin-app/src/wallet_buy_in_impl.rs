@@ -18,4 +18,26 @@ impl WalletBuyIn for WalletBuyInImpl {
             BuyInOutput::RecordHeld(RecordHeld { cents: event.cents }),
         )])
     }
+
+    /// Never sent: the wallet starts no buy-in.
+    fn start_buy_in_refused(
+        &self,
+        _command: &StartBuyIn,
+        _refusal: Option<BuyInRefused>,
+        _ctx: &CommandContext,
+    ) -> Result<WalletFact, Bug> {
+        Err(Bug::new(angzarr_embedded::angzarr_diagnostic::code!("start-never-sent")))
+    }
+
+    fn record_held_refused(
+        &self,
+        _command: &RecordHeld,
+        refusal: Option<BuyInRefused>,
+        _ctx: &CommandContext,
+    ) -> Result<WalletFact, Bug> {
+        Ok(RecordBuyInRefused {
+            reason: refusal.map(|r| r.reason).unwrap_or_default(),
+        }
+        .into())
+    }
 }

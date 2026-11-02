@@ -12,11 +12,19 @@ pub struct LedgerStateImpl {
 }
 
 impl LedgerState for LedgerStateImpl {
-    fn post(&self, _cmd: &Post, _ctx: &Context) -> Result<Posted, Failed<PostRefuses>> {
+    fn post(
+        &self,
+        _cmd: &Post,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<PostRefuses>> {
         todo!()
     }
 
-    fn open(&self, _cmd: &Open, _ctx: &Context) -> Result<(Posted, Noted), Failed<Rejection>> {
+    fn open(
+        &self,
+        _cmd: &Open,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
         todo!()
     }
 
@@ -24,11 +32,15 @@ impl LedgerState for LedgerStateImpl {
         &self,
         _cmd: &Four,
         _ctx: &Context,
-    ) -> Result<(Posted, Noted, Cleared, Closed), Failed<Rejection>> {
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
         todo!()
     }
 
-    fn maybe(&self, _cmd: &Maybe, _ctx: &Context) -> Result<Option<Posted>, Failed<Rejection>> {
+    fn maybe(
+        &self,
+        _cmd: &Maybe,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
         todo!()
     }
 
@@ -36,7 +48,7 @@ impl LedgerState for LedgerStateImpl {
         &self,
         _cmd: &MaybeBoth,
         _ctx: &Context,
-    ) -> Result<Option<(Posted, Noted)>, Failed<Rejection>> {
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
         todo!()
     }
 
@@ -52,7 +64,7 @@ impl LedgerState for LedgerStateImpl {
         todo!()
     }
 
-    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Option<(Posted, Noted)> {
+    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Vec<LedgerStateEvent> {
         todo!()
     }
 

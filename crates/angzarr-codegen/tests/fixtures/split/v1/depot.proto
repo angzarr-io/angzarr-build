@@ -15,7 +15,29 @@ message Ship {
   option (io.angzarr.v1.command) = {
     component: "split.v1.DepotState"
     emits: "split.v1.Shipped"
+    refuses: "split.v1.ShipRefused"
   };
+}
+
+// Ship's typed refusal: every command a policy may send names one
+// (decision 14.76).
+message ShipRefused {
+  string reason = 1;
+}
+
+// What RoutePolicy translates a refused Ship into: a fact of its source.
+message RecordShipRefused {
+  option (io.angzarr.v1.command) = {
+    component: "split.v1.DepotState"
+    emits: "split.v1.ShipRefusalRecorded"
+    fact: true
+  };
+  string reason = 1;
+}
+
+message ShipRefusalRecorded {
+  option (io.angzarr.v1.event) = {component: "split.v1.DepotState"};
+  string reason = 1;
 }
 
 message Shipped {

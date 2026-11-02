@@ -2,7 +2,7 @@ syntax = "proto3";
 
 // One aggregate whose commands refuse with typed refusals, several to a
 // command, one of them its domain's rejection codes as a Reason enum
-// (decision 14.50), and whose inputs declare each emits cardinality.
+// (decision 14.50), and whose inputs return lists of events (decision 14.75).
 package pyshop.v1;
 
 import "google/protobuf/timestamp.proto";
@@ -42,7 +42,6 @@ message Refund {
     component: "pyshop.v1.TillState"
     emits: "pyshop.v1.Refunded"
     refuses: "pyshop.v1.TillRefused"
-    emits_cardinality: EMITS_CARDINALITY_OPTIONAL
   };
 
   int64 amount = 1;
@@ -54,11 +53,10 @@ message Settle {
     component: "pyshop.v1.TillState"
     emits: "pyshop.v1.Charged"
     emits: "pyshop.v1.Refunded"
-    emits_cardinality: EMITS_CARDINALITY_MANY
   };
 }
 
-// Exactly one of each, in order.
+// Both, in order.
 message Open {
   option (io.angzarr.v1.command) = {
     component: "pyshop.v1.TillState"
@@ -67,14 +65,13 @@ message Open {
   };
 }
 
-// One of each, or nothing; refused when the count is off.
+// Both, or nothing; refused when the count is off.
 message Close {
   option (io.angzarr.v1.command) = {
     component: "pyshop.v1.TillState"
     emits: "pyshop.v1.Charged"
     emits: "pyshop.v1.Refunded"
     refuses: "pyshop.v1.Unbalanced"
-    emits_cardinality: EMITS_CARDINALITY_OPTIONAL
   };
 }
 

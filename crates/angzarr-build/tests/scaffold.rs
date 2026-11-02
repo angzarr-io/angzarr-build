@@ -10,8 +10,8 @@
 use std::path::Path;
 
 use angzarr_build::{
-    BuildError, Existing, Notes, Scaffolded, Translate, adapters_into, markup_domain_into,
-    register_into, scaffold_into,
+    BuildError, Existing, Notes, Scaffolded, adapters_into, markup_domain_into, register_into,
+    scaffold_into,
 };
 use angzarr_codegen::{CodegenError, UseError};
 
@@ -44,7 +44,7 @@ fn empty_dir() -> TestDir {
 }
 
 fn scaffold(src: &Path, existing: Existing) -> Vec<Scaffolded> {
-    let mut done = scaffold_into(src, BUYIN, &[&fixtures()], &[], &[], existing).unwrap();
+    let mut done = scaffold_into(src, BUYIN, &[&fixtures()], &[], existing).unwrap();
     done.sort_by_key(|d| format!("{d:?}"));
     done
 }
@@ -79,7 +79,17 @@ fn test_scaffold_into_never_overwrites_a_users_file_and_reports_what_it_lacks() 
             _ => None,
         })
         .unwrap_or_else(|| panic!("{done:?}"));
-    assert_eq!(lacks, ["deposit", "hold", "apply_deposited", "apply_held"]);
+    assert_eq!(
+        lacks,
+        [
+            "deposit",
+            "hold",
+            "record_buy_in_refused",
+            "apply_buy_in_refusal_recorded",
+            "apply_deposited",
+            "apply_held"
+        ]
+    );
     assert_eq!(
         std::fs::read_to_string(src.join("wallet_impl.rs")).unwrap(),
         mine
@@ -102,39 +112,40 @@ fn test_scaffold_into_reports_an_earlier_interface_file_as_obsolete() {
     assert_eq!(std::fs::read_to_string(src.join("wallet.rs")).unwrap(), old);
 }
 
-/// `--missing` adds no optional callback; the switch (`--translate`) adds
-/// the one it selects to an existing implementation.
+/// A policy's refusal callbacks are required (decision 14.76): a kept file
+/// lacking one reports it, and `--missing` adds it, as any required method.
 #[test]
-fn test_scaffold_into_adds_a_selected_refused_method_to_an_existing_file() {
+fn test_scaffold_into_adds_a_missing_refused_method_to_an_existing_file() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
     let path = src.join("buy_in_wallet_impl.rs");
-    let before = std::fs::read_to_string(&path).unwrap();
+    let fresh = std::fs::read_to_string(&path).unwrap();
+    let start = fresh.find("    fn hold_refused(").unwrap();
+    let end = start + fresh[start..].find("    }\n").unwrap() + "    }\n".len();
+    let mine = format!("{}{}", &fresh[..start], &fresh[end..]);
+    std::fs::write(&path, &mine).unwrap();
+    let kept = scaffold(&src, Existing::Keep);
     assert!(
-        scaffold(&src, Existing::Complete)
-            .iter()
-            .all(|d| matches!(d, Scaffolded::Kept { .. }))
+        kept.contains(&Scaffolded::Kept {
+            path: path.clone(),
+            notes: Notes {
+                lacks: vec!["hold_refused".to_string()],
+                ..Notes::default()
+            },
+        }),
+        "{kept:?}"
     );
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), before);
-    let translate = [Translate {
-        policy: "buyin.v1.BuyInWalletPolicy".to_string(),
-        command: "buyin.v1.Hold".to_string(),
-        fact: "buyin.v1.HoldLost".to_string(),
-    }];
-    let done = scaffold_into(&src, BUYIN, &[&fixtures()], &translate, &[], Existing::Keep).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), mine);
+    let done = scaffold(&src, Existing::Complete);
     assert!(
         done.contains(&Scaffolded::Completed {
             path: path.clone(),
-            notes: Notes {
-                optional: vec!["deposit_refused".to_string()],
-                ..Notes::default()
-            },
+            notes: Notes::default(),
         }),
         "{done:?}"
     );
     let after = std::fs::read_to_string(&path).unwrap();
     assert!(after.contains("fn hold_refused("), "{after}");
-    assert!(after.starts_with(&before[..before.rfind('}').unwrap()]));
 }
 
 #[test]
@@ -147,7 +158,7 @@ fn test_scaffold_into_with_complete_refuses_an_input_the_proto_contradicts() {
         .unwrap()
         .replace("_fact: &HoldLost", "_cmd: &HoldLost");
     std::fs::write(&path, &mine).unwrap();
-    let error = scaffold_into(&src, BUYIN, &[&fixtures()], &[], &[], Existing::Complete)
+    let error = scaffold_into(&src, BUYIN, &[&fixtures()], &[], Existing::Complete)
         .expect_err("a mismatched marker");
     assert!(
         matches!(

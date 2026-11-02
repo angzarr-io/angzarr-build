@@ -9,19 +9,28 @@ pub struct BuyInImpl {
 }
 
 impl BuyIn for BuyInImpl {
-    fn start_buy_in(&self, cmd: &StartBuyIn, _ctx: &Context) -> Result<BuyInStarted, Failed<Rejection>> {
-        Ok(BuyInStarted {
+    fn start_buy_in(
+        &self,
+        cmd: &StartBuyIn,
+        _ctx: &Context,
+    ) -> Result<Vec<BuyInEvent>, Failed<BuyInRefused>> {
+        Ok(vec![BuyInStarted {
             wallet: cmd.wallet.clone(),
             cents: cmd.cents,
-        })
+        }
+        .into()])
     }
 
-    fn record_held(&self, cmd: &RecordHeld, _ctx: &Context) -> Result<BuyInHeld, Failed<Rejection>> {
-        Ok(BuyInHeld { cents: cmd.cents })
+    fn record_held(
+        &self,
+        cmd: &RecordHeld,
+        _ctx: &Context,
+    ) -> Result<Vec<BuyInEvent>, Failed<BuyInRefused>> {
+        Ok(vec![BuyInHeld { cents: cmd.cents }.into()])
     }
 
-    fn hold_lost(&self, fact: &HoldLost, _ctx: &Context) -> BuyInFailed {
-        BuyInFailed { short: fact.short }
+    fn hold_lost(&self, fact: &HoldLost, _ctx: &Context) -> Vec<BuyInEvent> {
+        vec![BuyInFailed { short: fact.short }.into()]
     }
 
     fn apply_buy_in_started(&mut self, _event: &BuyInStarted) {

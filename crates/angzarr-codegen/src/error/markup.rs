@@ -48,12 +48,14 @@ pub enum MarkupError {
     /// default) that is not lower-case ASCII letters, digits and `-`,
     /// starting with a letter.
     ComponentName { component: String, name: String },
-    /// An input with no emits whose `emits_cardinality` is ONE (`optional`
-    /// false) or OPTIONAL: only MANY is accepted without emits.
-    CardinalityWithoutEmits { message: String, optional: bool },
-    /// A ONE or OPTIONAL input listing more emits than the markup's widest
-    /// tuple holds.
-    EmitsTuple { message: String, count: usize },
+    /// A command of a policy's target declaring no `refuses`: a policy may
+    /// send any command of its target, and every command it sends has a
+    /// refusal path (decision 14.76; C-0798).
+    SentCommandRefusesNothing { policy: String, command: String },
+    /// A policy whose target takes a command, sourced from a domain that
+    /// takes no fact: its refusal callback answers one of its source's
+    /// facts (decision 14.76; C-0799).
+    SourceTakesNoFact { policy: String, domain: String },
     /// A `refusal_status` on an enum value that is no refusal's code
     /// (decision 14.52): a value of an enum other than the nested `Reason`
     /// of a message some command refuses with, or that Reason's zero.
@@ -109,10 +111,10 @@ impl Diagnostic for MarkupError {
             MarkupError::UnlistedSource { .. } => code!("unlisted-source"),
             MarkupError::UnprojectedSource { .. } => code!("unprojected-source"),
             MarkupError::ComponentName { .. } => code!("component-name"),
-            MarkupError::CardinalityWithoutEmits { .. } => {
-                code!("cardinality-without-emits")
+            MarkupError::SentCommandRefusesNothing { .. } => {
+                code!("sent-command-refuses-nothing")
             }
-            MarkupError::EmitsTuple { .. } => code!("emits-tuple"),
+            MarkupError::SourceTakesNoFact { .. } => code!("source-takes-no-fact"),
             MarkupError::RefusalStatusMisplaced { .. } => {
                 code!("refusal-status-misplaced")
             }
@@ -157,19 +159,8 @@ impl Diagnostic for MarkupError {
                 domain,
             } => texts![component, event, domain],
             E::ComponentName { component, name } => texts![component, name],
-            E::CardinalityWithoutEmits { message, optional } => {
-                let cardinality = if *optional { "OPTIONAL" } else { "ONE" };
-                vec![
-                    ("message", message.as_str().into()),
-                    ("cardinality", cardinality.into()),
-                ]
-            }
-            E::EmitsTuple { message, count } => {
-                vec![
-                    ("message", message.as_str().into()),
-                    ("count", (*count).into()),
-                ]
-            }
+            E::SentCommandRefusesNothing { policy, command } => texts![policy, command],
+            E::SourceTakesNoFact { policy, domain } => texts![policy, domain],
             E::RefusalStatusMisplaced { value } => texts![value],
             E::ProcessManagerSubscribes {
                 component,
@@ -237,13 +228,13 @@ pub(super) fn samples() -> Vec<MarkupError> {
             component: text("component"),
             name: text("name"),
         },
-        E::CardinalityWithoutEmits {
-            message: text("message"),
-            optional: true,
+        E::SentCommandRefusesNothing {
+            policy: text("policy"),
+            command: text("command"),
         },
-        E::EmitsTuple {
-            message: text("message"),
-            count: 5,
+        E::SourceTakesNoFact {
+            policy: text("policy"),
+            domain: text("domain"),
         },
         E::RefusalStatusMisplaced {
             value: text("value"),

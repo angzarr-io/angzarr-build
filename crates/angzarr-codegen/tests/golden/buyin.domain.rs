@@ -17,6 +17,25 @@ impl TryFrom<crate::wire::Deposit> for Deposit {
     }
 }
 #[derive(Clone, Debug, PartialEq)]
+pub struct DepositRefused {
+    pub reason: String,
+}
+impl From<DepositRefused> for crate::wire::DepositRefused {
+    fn from(value: DepositRefused) -> Self {
+        crate::wire::DepositRefused {
+            reason: value.reason,
+        }
+    }
+}
+impl TryFrom<crate::wire::DepositRefused> for DepositRefused {
+    type Error = ::angzarr_embedded::WireError;
+    fn try_from(value: crate::wire::DepositRefused) -> Result<Self, Self::Error> {
+        Ok(DepositRefused {
+            reason: value.reason,
+        })
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
 pub struct Hold {
     pub cents: i64,
     pub buy_in: Vec<u8>,
@@ -54,6 +73,44 @@ impl TryFrom<crate::wire::InsufficientFunds> for InsufficientFunds {
     fn try_from(value: crate::wire::InsufficientFunds) -> Result<Self, Self::Error> {
         Ok(InsufficientFunds {
             short: value.short,
+        })
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct RecordBuyInRefused {
+    pub reason: String,
+}
+impl From<RecordBuyInRefused> for crate::wire::RecordBuyInRefused {
+    fn from(value: RecordBuyInRefused) -> Self {
+        crate::wire::RecordBuyInRefused {
+            reason: value.reason,
+        }
+    }
+}
+impl TryFrom<crate::wire::RecordBuyInRefused> for RecordBuyInRefused {
+    type Error = ::angzarr_embedded::WireError;
+    fn try_from(value: crate::wire::RecordBuyInRefused) -> Result<Self, Self::Error> {
+        Ok(RecordBuyInRefused {
+            reason: value.reason,
+        })
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct BuyInRefusalRecorded {
+    pub reason: String,
+}
+impl From<BuyInRefusalRecorded> for crate::wire::BuyInRefusalRecorded {
+    fn from(value: BuyInRefusalRecorded) -> Self {
+        crate::wire::BuyInRefusalRecorded {
+            reason: value.reason,
+        }
+    }
+}
+impl TryFrom<crate::wire::BuyInRefusalRecorded> for BuyInRefusalRecorded {
+    type Error = ::angzarr_embedded::WireError;
+    fn try_from(value: crate::wire::BuyInRefusalRecorded) -> Result<Self, Self::Error> {
+        Ok(BuyInRefusalRecorded {
+            reason: value.reason,
         })
     }
 }
@@ -115,6 +172,25 @@ impl TryFrom<crate::wire::StartBuyIn> for StartBuyIn {
         Ok(StartBuyIn {
             wallet: value.wallet,
             cents: value.cents,
+        })
+    }
+}
+#[derive(Clone, Debug, PartialEq)]
+pub struct BuyInRefused {
+    pub reason: String,
+}
+impl From<BuyInRefused> for crate::wire::BuyInRefused {
+    fn from(value: BuyInRefused) -> Self {
+        crate::wire::BuyInRefused {
+            reason: value.reason,
+        }
+    }
+}
+impl TryFrom<crate::wire::BuyInRefused> for BuyInRefused {
+    type Error = ::angzarr_embedded::WireError;
+    fn try_from(value: crate::wire::BuyInRefused) -> Result<Self, Self::Error> {
+        Ok(BuyInRefused {
+            reason: value.reason,
         })
     }
 }
@@ -373,11 +449,18 @@ impl ::angzarr_embedded::Payload for WalletCommand {
             .to_vec()
     }
 }
-/// What a policy sends Wallet: its commands and facts, each in its arm.
+/// What a policy sends Wallet: its commands and facts, each in its arm. As a `markup::CommandTarget`, its domain and commands: the destination a process manager's compensation step names (decision 14.74).
 #[derive(Clone, Debug, PartialEq)]
 pub enum WalletOutput {
     Deposit(Deposit),
     Hold(Hold),
+    RecordBuyInRefused(RecordBuyInRefused),
+}
+impl ::angzarr_embedded::markup::CommandTarget for WalletOutput {
+    const DOMAIN: &'static str = "wallet";
+    fn command_types() -> Vec<String> {
+        ["buyin.v1.Deposit", "buyin.v1.Hold"].iter().map(|c| c.to_string()).collect()
+    }
 }
 impl From<Deposit> for WalletOutput {
     fn from(value: Deposit) -> Self {
@@ -389,11 +472,46 @@ impl From<Hold> for WalletOutput {
         WalletOutput::Hold(value)
     }
 }
+impl From<RecordBuyInRefused> for WalletOutput {
+    fn from(value: RecordBuyInRefused) -> Self {
+        WalletOutput::RecordBuyInRefused(value)
+    }
+}
+/// A fact of Wallet: what a policy sourced from it translates a refusal into.
+#[derive(Clone, Debug, PartialEq)]
+pub enum WalletFact {
+    RecordBuyInRefused(RecordBuyInRefused),
+}
+impl From<RecordBuyInRefused> for WalletFact {
+    fn from(value: RecordBuyInRefused) -> Self {
+        WalletFact::RecordBuyInRefused(value)
+    }
+}
+impl<S> ::angzarr_embedded::markup::Translation<S> for WalletFact
+where
+    S: ::angzarr_embedded::markup::Ingests<RecordBuyInRefused>,
+{
+    fn fact(self) -> ::core::option::Option<::angzarr_embedded::Any> {
+        ::core::option::Option::Some(
+            match self {
+                WalletFact::RecordBuyInRefused(value) => {
+                    ::angzarr_embedded::markup::pack_message(&value)
+                }
+            },
+        )
+    }
+}
 /// An event of Wallet, for a decision recording any number of them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WalletEvent {
+    BuyInRefusalRecorded(BuyInRefusalRecorded),
     Deposited(Deposited),
     Held(Held),
+}
+impl From<BuyInRefusalRecorded> for WalletEvent {
+    fn from(value: BuyInRefusalRecorded) -> Self {
+        WalletEvent::BuyInRefusalRecorded(value)
+    }
 }
 impl From<Deposited> for WalletEvent {
     fn from(value: Deposited) -> Self {
@@ -408,6 +526,9 @@ impl From<Held> for WalletEvent {
 impl ::angzarr_embedded::Payload for WalletEvent {
     fn to_any(&self) -> ::angzarr_embedded::Any {
         match self {
+            WalletEvent::BuyInRefusalRecorded(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
             WalletEvent::Deposited(value) => {
                 ::angzarr_embedded::markup::pack_message(value)
             }
@@ -417,6 +538,11 @@ impl ::angzarr_embedded::Payload for WalletEvent {
     fn from_any(
         any: &::angzarr_embedded::Any,
     ) -> Result<Self, ::angzarr_embedded::PayloadError> {
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            BuyInRefusalRecorded,
+        >(any)? {
+            return Ok(WalletEvent::BuyInRefusalRecorded(value));
+        }
         if let Some(value) = ::angzarr_embedded::markup::decode_message::<
             Deposited,
         >(any)? {
@@ -431,6 +557,7 @@ impl ::angzarr_embedded::Payload for WalletEvent {
     }
     fn type_urls() -> Vec<String> {
         [
+            ::angzarr_embedded::markup::type_url_of::<BuyInRefusalRecorded>(),
             ::angzarr_embedded::markup::type_url_of::<Deposited>(),
             ::angzarr_embedded::markup::type_url_of::<Held>(),
         ]
@@ -489,12 +616,21 @@ impl ::angzarr_embedded::Payload for BuyInCommand {
             .to_vec()
     }
 }
-/// What a policy sends BuyIn: its commands and facts, each in its arm.
+/// What a policy sends BuyIn: its commands and facts, each in its arm. As a `markup::CommandTarget`, its domain and commands: the destination a process manager's compensation step names (decision 14.74).
 #[derive(Clone, Debug, PartialEq)]
 pub enum BuyInOutput {
     StartBuyIn(StartBuyIn),
     RecordHeld(RecordHeld),
     HoldLost(HoldLost),
+}
+impl ::angzarr_embedded::markup::CommandTarget for BuyInOutput {
+    const DOMAIN: &'static str = "buyin";
+    fn command_types() -> Vec<String> {
+        ["buyin.v1.StartBuyIn", "buyin.v1.RecordHeld"]
+            .iter()
+            .map(|c| c.to_string())
+            .collect()
+    }
 }
 impl From<StartBuyIn> for BuyInOutput {
     fn from(value: StartBuyIn) -> Self {
@@ -604,6 +740,32 @@ impl ::angzarr_embedded::Payload for BuyInEvent {
 }
 /// A bug of the handler refusing with this, as it fails:
 /// `Failed::Bug`.
+impl ::core::convert::From<Bug> for Failed<DepositRefused> {
+    fn from(bug: Bug) -> Self {
+        Failed::bug(&bug)
+    }
+}
+impl ::std::fmt::Display for DepositRefused {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
+    }
+}
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for DepositRefused {
+    fn code(&self) -> &str {
+        "buyin-v1-depositrefused"
+    }
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
+        let mut args = Vec::new();
+        let value = &self.reason;
+        args.push((
+            "reason",
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(value.as_str()),
+        ));
+        args
+    }
+}
+/// A bug of the handler refusing with this, as it fails:
+/// `Failed::Bug`.
 impl ::core::convert::From<Bug> for Failed<InsufficientFunds> {
     fn from(bug: Bug) -> Self {
         Failed::bug(&bug)
@@ -622,6 +784,32 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for InsufficientFunds {
         let mut args = Vec::new();
         let value = &self.short;
         args.push(("short", ::angzarr_embedded::angzarr_diagnostic::Arg::from(*value)));
+        args
+    }
+}
+/// A bug of the handler refusing with this, as it fails:
+/// `Failed::Bug`.
+impl ::core::convert::From<Bug> for Failed<BuyInRefused> {
+    fn from(bug: Bug) -> Self {
+        Failed::bug(&bug)
+    }
+}
+impl ::std::fmt::Display for BuyInRefused {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.write_str(::angzarr_embedded::angzarr_diagnostic::Diagnostic::code(self))
+    }
+}
+impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for BuyInRefused {
+    fn code(&self) -> &str {
+        "buyin-v1-buyinrefused"
+    }
+    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
+        let mut args = Vec::new();
+        let value = &self.reason;
+        args.push((
+            "reason",
+            ::angzarr_embedded::angzarr_diagnostic::Arg::from(value.as_str()),
+        ));
         args
     }
 }
@@ -660,6 +848,17 @@ impl ::angzarr_embedded::markup::DomainMessage for Deposit {
         Deposit::try_from(wire)
     }
 }
+impl ::angzarr_embedded::markup::DomainMessage for DepositRefused {
+    type Wire = crate::wire::DepositRefused;
+    fn to_wire(&self) -> crate::wire::DepositRefused {
+        crate::wire::DepositRefused::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::DepositRefused,
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
+        DepositRefused::try_from(wire)
+    }
+}
 impl ::angzarr_embedded::markup::DomainMessage for Hold {
     type Wire = crate::wire::Hold;
     fn to_wire(&self) -> crate::wire::Hold {
@@ -680,6 +879,28 @@ impl ::angzarr_embedded::markup::DomainMessage for InsufficientFunds {
         wire: crate::wire::InsufficientFunds,
     ) -> Result<Self, ::angzarr_embedded::WireError> {
         InsufficientFunds::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::markup::DomainMessage for RecordBuyInRefused {
+    type Wire = crate::wire::RecordBuyInRefused;
+    fn to_wire(&self) -> crate::wire::RecordBuyInRefused {
+        crate::wire::RecordBuyInRefused::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::RecordBuyInRefused,
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
+        RecordBuyInRefused::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::markup::DomainMessage for BuyInRefusalRecorded {
+    type Wire = crate::wire::BuyInRefusalRecorded;
+    fn to_wire(&self) -> crate::wire::BuyInRefusalRecorded {
+        crate::wire::BuyInRefusalRecorded::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::BuyInRefusalRecorded,
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
+        BuyInRefusalRecorded::try_from(wire)
     }
 }
 impl ::angzarr_embedded::markup::DomainMessage for Deposited {
@@ -713,6 +934,17 @@ impl ::angzarr_embedded::markup::DomainMessage for StartBuyIn {
         wire: crate::wire::StartBuyIn,
     ) -> Result<Self, ::angzarr_embedded::WireError> {
         StartBuyIn::try_from(wire)
+    }
+}
+impl ::angzarr_embedded::markup::DomainMessage for BuyInRefused {
+    type Wire = crate::wire::BuyInRefused;
+    fn to_wire(&self) -> crate::wire::BuyInRefused {
+        crate::wire::BuyInRefused::from(self.clone())
+    }
+    fn from_wire(
+        wire: crate::wire::BuyInRefused,
+    ) -> Result<Self, ::angzarr_embedded::WireError> {
+        BuyInRefused::try_from(wire)
     }
 }
 impl ::angzarr_embedded::markup::DomainMessage for RecordHeld {
@@ -780,9 +1012,21 @@ impl ::angzarr_embedded::markup::DomainMessage for BuyInFailed {
 /// event.
 #[allow(clippy::result_large_err)]
 pub trait Wallet {
-    fn deposit(&self, cmd: &Deposit, ctx: &Context) -> Result<Deposited, Failed<Rejection>>;
+    fn deposit(
+        &self,
+        cmd: &Deposit,
+        ctx: &Context,
+    ) -> Result<Vec<WalletEvent>, Failed<DepositRefused>>;
 
-    fn hold(&self, cmd: &Hold, ctx: &Context) -> Result<Held, Failed<InsufficientFunds>>;
+    fn hold(
+        &self,
+        cmd: &Hold,
+        ctx: &Context,
+    ) -> Result<Vec<WalletEvent>, Failed<InsufficientFunds>>;
+
+    fn record_buy_in_refused(&self, fact: &RecordBuyInRefused, ctx: &Context) -> Vec<WalletEvent>;
+
+    fn apply_buy_in_refusal_recorded(&mut self, event: &BuyInRefusalRecorded);
 
     fn apply_deposited(&mut self, event: &Deposited);
 
@@ -802,11 +1046,15 @@ pub trait BuyIn {
         &self,
         cmd: &StartBuyIn,
         ctx: &Context,
-    ) -> Result<BuyInStarted, Failed<Rejection>>;
+    ) -> Result<Vec<BuyInEvent>, Failed<BuyInRefused>>;
 
-    fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<BuyInHeld, Failed<Rejection>>;
+    fn record_held(
+        &self,
+        cmd: &RecordHeld,
+        ctx: &Context,
+    ) -> Result<Vec<BuyInEvent>, Failed<BuyInRefused>>;
 
-    fn hold_lost(&self, fact: &HoldLost, ctx: &Context) -> BuyInFailed;
+    fn hold_lost(&self, fact: &HoldLost, ctx: &Context) -> Vec<BuyInEvent>;
 
     fn apply_buy_in_started(&mut self, event: &BuyInStarted);
 
@@ -824,9 +1072,9 @@ pub trait BuyIn {
 /// returns what it sends its target, each with its target root: a command, or a
 /// fact the target declares, sent in the arm the target declares. Or its `Bug`:
 /// a defect, since a policy reacts to events the application's own domains
-/// recorded. Each `<command>_refused` is optional: its default declines,
-/// passing the refusal through to the source; an implementation translating it
-/// answers one of the source's facts.
+/// recorded. Each `<command>_refused` answers the refusal of a command of its
+/// target with one of the source's facts (or a `Bug`, for a command it never
+/// sends): every command a policy sends has a refusal path.
 #[allow(clippy::result_large_err)]
 pub trait BuyInWallet {
     fn buy_in_started(
@@ -839,21 +1087,16 @@ pub trait BuyInWallet {
     fn deposit_refused(
         &self,
         command: &Deposit,
+        refusal: Option<DepositRefused>,
         ctx: &CommandContext,
-    ) -> Result<Option<BuyInFact>, Bug> {
-        let _ = (command, ctx);
-        Ok(None)
-    }
+    ) -> Result<BuyInFact, Bug>;
 
     fn hold_refused(
         &self,
         command: &Hold,
         refusal: Option<InsufficientFunds>,
         ctx: &CommandContext,
-    ) -> Result<Option<BuyInFact>, Bug> {
-        let _ = (command, refusal, ctx);
-        Ok(None)
-    }
+    ) -> Result<BuyInFact, Bug>;
 }
 
 /// WalletBuyIn: the interface of `buyin.v1.WalletBuyInPolicy`, generated from
@@ -865,9 +1108,9 @@ pub trait BuyInWallet {
 /// returns what it sends its target, each with its target root: a command, or a
 /// fact the target declares, sent in the arm the target declares. Or its `Bug`:
 /// a defect, since a policy reacts to events the application's own domains
-/// recorded. Each `<command>_refused` is optional: its default declines,
-/// passing the refusal through to the source; an implementation translating it
-/// answers one of the source's facts.
+/// recorded. Each `<command>_refused` answers the refusal of a command of its
+/// target with one of the source's facts (or a `Bug`, for a command it never
+/// sends): every command a policy sends has a refusal path.
 #[allow(clippy::result_large_err)]
 pub trait WalletBuyIn {
     fn held(
@@ -876,4 +1119,18 @@ pub trait WalletBuyIn {
         event: &Held,
         ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, BuyInOutput)>, Bug>;
+
+    fn start_buy_in_refused(
+        &self,
+        command: &StartBuyIn,
+        refusal: Option<BuyInRefused>,
+        ctx: &CommandContext,
+    ) -> Result<WalletFact, Bug>;
+
+    fn record_held_refused(
+        &self,
+        command: &RecordHeld,
+        refusal: Option<BuyInRefused>,
+        ctx: &CommandContext,
+    ) -> Result<WalletFact, Bug>;
 }

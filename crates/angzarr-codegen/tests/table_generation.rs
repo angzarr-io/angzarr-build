@@ -94,7 +94,7 @@ fn test_markup_domain_generates_the_ledger_projectors_events_and_context() {
 /// user interface); its implementation, the user's, holds the projection.
 #[test]
 fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
-    let files = scaffold(&descriptors(BLACKJACK), &[LEDGER], &[], &[]).unwrap();
+    let files = scaffold(&descriptors(BLACKJACK), &[LEDGER], &[]).unwrap();
     let interface = one(markup_domain(&descriptors(BLACKJACK), &[LEDGER], WIRE).unwrap());
     for expected in [
         "pub trait LedgerProjector {",

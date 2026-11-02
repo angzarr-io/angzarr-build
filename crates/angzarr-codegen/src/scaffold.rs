@@ -29,7 +29,7 @@ use quote::{format_ident, quote};
 
 use crate::common::{Arm, has_code_status, output_name, refusal_choice_name, snake};
 use crate::error::{CodegenError, UseError};
-use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Decided, Input, owner};
+use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input, owner};
 use crate::rust::{RUNTIME, ident, root, runtime_macros};
 use crate::{Generated, generate};
 
@@ -141,10 +141,10 @@ pub struct Translate {
 /// The scaffold of every component declared in `files`: its
 /// implementation (`<component>_impl.rs`), the user's, of its generated
 /// interface; and the interface an earlier scaffold wrote beside it
-/// (`<component>.rs`), now the domain layer's, [`Owner::Obsolete`]. A
-/// policy's translating callbacks are optional, each written when the
-/// refusal switch translates its command (`translate`) or `on_refused`
-/// names it (by full name).
+/// (`<component>.rs`), now the domain layer's, [`Owner::Obsolete`]. Every
+/// method is required, a policy's refusal callbacks too (decision 14.76),
+/// so each is stubbed; `translate`'s selections are checked against the
+/// protos.
 ///
 /// A policy is scaffolded when an aggregate or a process manager of the
 /// descriptor set owns each of its `input_domain` and `output_domain`.
@@ -152,7 +152,6 @@ pub fn scaffold(
     descriptor_set: &[u8],
     files: &[&str],
     translate: &[Translate],
-    on_refused: &[String],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
     let pool = checked_pool(descriptor_set, translate)?;
@@ -164,39 +163,19 @@ pub fn scaffold(
         let stem = snake(&component.name);
         let anchor = component.anchor.full_name().to_string();
         let methods = interface_methods(component, &pool)?;
-        let chosen = |m: &&Method| {
-            m.refused.as_deref().is_some_and(|refused| {
-                on_refused.iter().any(|c| c == refused)
-                    || selected(translate, component).any(|t| t.command == refused)
-            })
-        };
-        let stubs: Vec<&Method> = methods
-            .iter()
-            .filter(|m| m.refused.is_none() || chosen(m))
-            .collect();
+        let stubs: Vec<&Method> = methods.iter().collect();
         out.push(ScaffoldFile::new(
             anchor.clone(),
             format!("{stem}.rs"),
             String::new(),
             Owner::Obsolete,
         ));
-        let mut implementation = ScaffoldFile::new(
+        out.push(ScaffoldFile::new(
             anchor,
             format!("{stem}_impl.rs"),
             impl_source(component, &stubs),
             Owner::User,
-        );
-        implementation.optional = methods
-            .iter()
-            .filter(|m| m.refused.is_some())
-            .map(|m| m.name.clone())
-            .collect();
-        implementation.selected = methods
-            .iter()
-            .filter(chosen)
-            .map(|m| m.name.clone())
-            .collect();
-        out.push(implementation);
+        ));
     }
     Ok(crate::headed_files(out))
 }
@@ -268,9 +247,8 @@ struct Method {
     /// (`impl Future<Output = ..> + Send`), its implementation's is an
     /// `async fn`.
     asynchronous: bool,
-    /// The refused command (its full name), for an optional refusal
-    /// callback, which the interface gives a default declining it; `None`
-    /// for a required method.
+    /// The refused command (its full name), for a policy's refusal
+    /// callback; `None` for any other method. Every method is required.
     refused: Option<String>,
 }
 
@@ -317,22 +295,10 @@ fn method(message: &str) -> String {
     ident(&snake(message)).to_string()
 }
 
-/// What a decision returns for `input` (decision 14.50): ONE its one event,
-/// or a tuple of one of each type in order; OPTIONAL that or `None`; MANY
-/// any number of the component's events, as its event enum.
-fn decided(component: &Component, input: &Input) -> String {
-    let one = |events: &[MessageDescriptor]| match events {
-        [single] => single.name().to_string(),
-        several => {
-            let names: Vec<&str> = several.iter().map(|e| e.name()).collect();
-            format!("({})", names.join(", "))
-        }
-    };
-    match input.decided(component) {
-        Decided::One(events) => one(events),
-        Decided::Optional(events) => format!("Option<{}>", one(events)),
-        Decided::Many(_) => format!("Vec<{}Event>", component.name),
-    }
+/// What a decision returns (decision 14.75): a list of any number of the
+/// component's events, as its event enum.
+fn decided(component: &Component) -> String {
+    format!("Vec<{}Event>", component.name)
 }
 
 /// The typed refusal `input` refuses with, as the domain layer names it:
@@ -379,11 +345,10 @@ fn projector_methods(component: &Component) -> Vec<Method> {
 }
 
 /// A policy's interface: a reaction per event, and, when its source takes
-/// facts, an optional translating callback per command it sends
+/// facts, a required refusal callback per command of its target
 /// (`<command>_refused`: the command, its typed refusal if it declares one
 /// and the refused command's context, returning one of the source's facts,
-/// [`fact_choice`], or `None`, the refusal passed through: the interface's
-/// default).
+/// [`fact_choice`], or a `Bug`; it cannot decline, decision 14.76).
 fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Method>, CodegenError> {
     let target = component.target(pool)?;
     let reactions = component.events.iter().map(|event| Method {
@@ -412,7 +377,7 @@ fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Metho
                 name: format!("{}_refused", snake(command)),
                 receiver: "&self",
                 params,
-                returns: Some(format!("Result<Option<{choice}>, Bug>")),
+                returns: Some(format!("Result<{choice}, Bug>")),
                 asynchronous: false,
                 refused: Some(input.message.full_name().to_string()),
             }
@@ -433,7 +398,7 @@ pub(crate) fn fact_choice(domain: &Component) -> Option<String> {
 fn domain_methods(component: &Component) -> Vec<Method> {
     let decisions = component.inputs.iter().map(|input| {
         let ty = input.message.name();
-        let out = decided(component, input);
+        let out = decided(component);
         let (arg, returns) = if input.fact {
             ("fact", out)
         } else {
@@ -461,8 +426,7 @@ fn domain_methods(component: &Component) -> Vec<Method> {
 }
 
 /// A component's interface, as the domain layer declares it: a trait over
-/// the domain types, each optional refusal callback with its default
-/// (declining: the refusal passed through).
+/// the domain types, every method required.
 fn interface_source(component: &Component, methods: &[Method]) -> String {
     let name = &component.name;
     let anchor = component.anchor.full_name();
@@ -476,9 +440,9 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
              and returns what it sends its target, each with its target root: a command, \
              or a fact the target declares, sent in the arm the target declares. Or its \
              `Bug`: a defect, since a policy reacts to events the application's own \
-             domains recorded. Each `<command>_refused` is optional: its default declines, \
-             passing the refusal through to the source; an implementation translating it \
-             answers one of the source's facts."
+             domains recorded. Each `<command>_refused` answers the refusal of a command \
+             of its target with one of the source's facts (or a `Bug`, for a command it \
+             never sends): every command a policy sends has a refusal path."
         }
         ComponentKind::Aggregate | ComponentKind::ProcessManager => {
             "Each handler takes its input and its `Context`; each `apply_` folds an event."
@@ -506,17 +470,7 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
     ));
     let body: Vec<String> = methods
         .iter()
-        .map(|m| match &m.refused {
-            None => format!("{}\n", m.signature("", ";", false)),
-            Some(_) => {
-                let names: Vec<&str> = m.params.iter().map(|(p, _)| p.as_str()).collect();
-                format!(
-                    "{}\n        let _ = ({});\n        Ok(None)\n    }}\n",
-                    m.signature("", " {", false),
-                    names.join(", ")
-                )
-            }
-        })
+        .map(|m| format!("{}\n", m.signature("", ";", false)))
         .collect();
     out.push_str(&body.join("\n"));
     out.push_str("}\n");
@@ -937,9 +891,9 @@ fn application(components: &[Component]) -> Vec<&Component> {
 /// projector's angzarr-embedded markup, every handler delegating to the
 /// component's interface (the domain layer's trait, [`markup_domain`]) on
 /// its implementation (`crate::<component>_impl::<Component>Impl`). A
-/// policy's adapter has an `#[on_refused]` callback per command its
-/// interface may translate the refusal of, which the interface's default
-/// declines. What a child process serves is in `remote`, a domain by its
+/// policy's adapter has an `#[on_refused]` callback per command of its
+/// target, each translating the refusal through its interface's required
+/// callback (decision 14.76). What a child process serves is in `remote`, a domain by its
 /// stream domain, a policy or a projector by its name in the application.
 /// A remote domain has no markup here: it is its command set
 /// (`CommandTarget`) and its event set (`EventSource`), so a policy can name
@@ -1093,18 +1047,10 @@ impl Adapter {
 }
 
 /// What a decision's `Ok` becomes for the markup, `Emit` for a command and
-/// `Record` for a fact: ONE `of` it (the markup takes an event or a tuple
-/// as is); OPTIONAL of one type the same (it takes an `Option`), of
-/// several the tuple or no event; MANY one continuation step per event of
-/// the event enum, each returning it (a command's step as `Ok` of the
-/// handler's own failure, `failed`).
-/// Whether the markup takes `input`'s decision as is, by `of`: ONE (an
-/// event or a tuple), or OPTIONAL of one type (an `Option`).
-fn is_of(input: &Input) -> bool {
-    input.cardinality == Cardinality::One
-        || (input.cardinality == Cardinality::Optional && input.emits.len() == 1)
-}
-
+/// `Record` for a fact: its list of the component's events (decision
+/// 14.75), one continuation step per event of the event enum, each
+/// returning it (a command's step as `Ok` of the handler's own failure,
+/// `failed`).
 fn emitted(component: &Component, input: &Input, failed: &TokenStream) -> TokenStream {
     let open = if input.fact {
         format_ident!("Record")
@@ -1116,38 +1062,20 @@ fn emitted(component: &Component, input: &Input, failed: &TokenStream) -> TokenS
         .first()
         .map(|e| ident(e.name()))
         .unwrap_or_else(|| format_ident!("Rejection"));
-    if is_of(input) {
-        return quote!(#open::of);
-    }
-    match input.cardinality {
-        // OPTIONAL of several types: the tuple, or no event.
-        Cardinality::One | Cardinality::Optional => {
-            let ty: syn::Type =
-                syn::parse_str(&decided(component, input)).expect("a decided type parses");
-            quote! {
-                |events: #ty| match events {
-                Some(events) => #open::of(events),
-                    None => #open::of(None::<#first>),
-                }
-            }
+    let enum_name = format_ident!("{}Event", component.name);
+    let arms = component.events.iter().map(|e| {
+        let v = ident(e.name());
+        if input.fact {
+            quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| event))
+        } else {
+            quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, #failed>(event)))
         }
-        Cardinality::Many => {
-            let enum_name = format_ident!("{}Event", component.name);
-            let arms = component.events.iter().map(|e| {
-                let v = ident(e.name());
-                if input.fact {
-                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| event))
-                } else {
-                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, #failed>(event)))
-                }
-            });
-            quote! {
-                |events: Vec<#enum_name>| {
-                    events.into_iter().fold(#open::of(None::<#first>), |emit, event| match event {
-                        #(#arms,)*
-                    })
-                }
-            }
+    });
+    quote! {
+        |events: Vec<#enum_name>| {
+            events.into_iter().fold(#open::of(None::<#first>), |emit, event| match event {
+                #(#arms,)*
+            })
         }
     }
 }
@@ -1239,20 +1167,13 @@ fn fact_method(component: &Component, input: &Input, interface: &TokenStream) ->
     let m = format_ident!("{}", method(input.message.name()));
     let emit = emitted(component, input, &quote!());
     let call = quote!(#interface::#m(&self.0, &fact, ctx));
-    let body = if is_of(input) {
-        quote!(Record::of(#call))
-    } else {
-        // Bound first: a closure called where it is declared is
-        // clippy's `redundant_closure_call`.
-        quote! {
-            let record = #emit;
-            record(#call)
-        }
-    };
+    // Bound first: a closure called where it is declared is clippy's
+    // `redundant_closure_call`.
     quote! {
         #[handles_fact(#ty #starts)]
         fn #m(&self, fact: #ty, ctx: &Context) -> Record<Self> {
-            #body
+            let record = #emit;
+            record(#call)
         }
     }
 }
@@ -1485,7 +1406,7 @@ fn policy_adapter(
                 refusal: &Refusal<#command>,
                 ctx: &CommandContext,
             ) -> ::core::result::Result<::core::option::Option<#fact>, Bug> {
-                #interface::#m(&self.0, #args, ctx)
+                #interface::#m(&self.0, #args, ctx).map(::core::option::Option::Some)
             }
         })
     });
