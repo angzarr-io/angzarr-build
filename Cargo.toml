@@ -15,15 +15,15 @@ angzarr-codegen = { path = "crates/angzarr-codegen" }
 angzarr-fmt = { path = "crates/angzarr-fmt" }
 # angzarr core's localizable-error trait, pinned by full commit at the rev
 # angzarr-embedded's crates name; bumps are deliberate commits.
-angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "4d7ef3573aad114d789a9c30f9cd702d7bb5c213" }
+angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "b09fe13ad08979f0712fcfc639c48cb70afcc999" }
 # angzarr-embedded is pinned by full commit; bumps are deliberate commits.
-angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "14b607091155bbc0c7ee6cebec365c36c2fd3391" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "14b607091155bbc0c7ee6cebec365c36c2fd3391" }
+angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "234c2de15bffc063781a006663a49ee13a493079" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "234c2de15bffc063781a006663a49ee13a493079" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
-angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "4d7ef3573aad114d789a9c30f9cd702d7bb5c213" }
+angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "b09fe13ad08979f0712fcfc639c48cb70afcc999" }
 # The local-process transport's keys (a child's failures) and their English
 # (decision 14.64), at angzarr-proto's core rev.
-angzarr-proto-transport-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "4d7ef3573aad114d789a9c30f9cd702d7bb5c213" }
+angzarr-proto-transport-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "b09fe13ad08979f0712fcfc639c48cb70afcc999" }
 clap = { version = "4.5", features = ["derive"] }
 fluent-bundle = "0.15"
 fluent-syntax = "0.11"
