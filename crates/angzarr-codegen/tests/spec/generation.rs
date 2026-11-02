@@ -263,10 +263,11 @@ fn sends_as(w: &mut Generator, policy: String, output: String, arm: String) {
     // Rust: the arm the adapter's reaction builds it in.
     let adapters = squeezed(&w.generated().adapters);
     let call = if arm == "Fact" { "fact" } else { "to" };
+    // prettyplease may brace the arm's body.
+    let sent = format!("commands.{call}(root,output)");
     assert!(
-        adapters.contains(&format!(
-            "Output::{bare}(output)=>commands.{call}(root,output)"
-        )),
+        adapters.contains(&format!("Output::{bare}(output)=>{sent}"))
+            || adapters.contains(&format!("Output::{bare}(output)=>{{{sent}}}")),
         "the Rust reaction does not send {bare} as a {arm}: {adapters}"
     );
     // Python: the table the dispatch sends it from.

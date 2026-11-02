@@ -34,8 +34,9 @@ fn dispatch_doc(unit: &Unit, package: &str, logic: &str) -> String {
              into the state."
         }
         ComponentKind::Policy => {
-            "and converts what it returns back: each command, with its target root, \
-             into a command book to the policy's target domain."
+            "and converts what it returns back: each output, with its target root, \
+             into a command book to the policy's target domain, in the arm the target \
+             declares (a command, or a fact it records and never refuses)."
         }
         ComponentKind::Projector => {
             "runs its coroutine on the dispatch's event loop, and converts the \
@@ -353,25 +354,37 @@ fn refused_handler(refusable: &Refusable, state_to: &str) -> String {
     out
 }
 
-/// A policy's dispatch: a reaction per event, its commands addressed to
-/// the target domain, and, when its source takes facts, a translating
-/// callback per command it sends, when its logic has it.
+/// A policy's dispatch: a reaction per event, its outputs addressed to
+/// the target domain, each in the arm the target declares (decision
+/// 14.69), and, when its source takes facts, a translating callback per
+/// command it sends, when its logic has it.
 fn policy_dispatch(unit: &Unit, new: &str) -> String {
     let component = &unit.component;
     let mut out = table(
-        "Each command's plain type, and its converter to the wire.",
+        "Each command the target declares, by its plain type: its converter to the wire.",
         "_COMMANDS",
         &unit.commands,
     );
+    out.push_str(&table(
+        "Each fact the target declares, by its plain type: its converter to the wire.",
+        "_SENT_FACTS",
+        &unit.sent_facts,
+    ));
     out.push_str(&format!(
-        "\n\ndef _commands(result) -> list:\n    \
-         \"\"\"A reaction's commands, each to its root of the {target} domain.\"\"\"\n    \
+        "\n\ndef _outputs(result) -> list:\n    \
+         \"\"\"A reaction's outputs, each to its root of the {target} domain, a\n    \
+         command or a fact as the target declares it.\n    \
+         \"\"\"\n    \
          books = []\n    \
-         for root, command in result or ():\n        \
+         for root, output in result or ():\n        \
          book = _t.CommandBook(cover=_t.Cover(domain=\"{target}\"))\n        \
          book.cover.root.value = root\n        \
-         wire = _COMMANDS[type(command)](command)\n        \
-         book.page.command.payload.CopyFrom(_az.pack(wire))\n        \
+         to_wire = _COMMANDS.get(type(output))\n        \
+         if to_wire is not None:\n            \
+         book.page.command.payload.CopyFrom(_az.pack(to_wire(output)))\n        \
+         else:\n            \
+         wire = _SENT_FACTS[type(output)](output)\n            \
+         book.page.fact.payload.CopyFrom(_az.pack(wire))\n        \
          books.append(book)\n    \
          return books\n",
         target = component.output_domain,
@@ -401,7 +414,7 @@ fn policy_dispatch(unit: &Unit, new: &str) -> String {
             "\n    def _{method}(payload, ctx):\n        \
              event = {event_to}(_decode({}(), payload))\n        \
              source = ctx.cover.root.value if ctx.cover is not None else b\"\"\n        \
-             return _commands(logic.{method}(event, source, ctx))\n\n",
+             return _outputs(logic.{method}(event, source, ctx))\n\n",
             pb2_class(event),
         ));
         out.push_str(&register("dispatch.on_event", event, &method));

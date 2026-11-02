@@ -23,7 +23,7 @@ use proc_macro2::TokenStream;
 use prost_reflect::MessageDescriptor;
 use quote::{format_ident, quote};
 
-use crate::common::{has_code_status, refusal_choice_name, snake};
+use crate::common::{Arm, has_code_status, output_name, refusal_choice_name, snake};
 use crate::error::{CodegenError, UseError};
 use crate::model::{self, ALL_KINDS, Cardinality, Component, ComponentKind, Decided, Input, owner};
 use crate::rust::{RUNTIME, ident, root, runtime_macros};
@@ -293,8 +293,8 @@ fn policy_methods(
             param("ctx", "&PolicyContext"),
         ],
         returns: Some(format!(
-            "Result<Vec<(Vec<u8>, {}Command)>, Bug>",
-            target.name
+            "Result<Vec<(Vec<u8>, {})>, Bug>",
+            output_name(target)
         )),
         asynchronous: false,
     });
@@ -363,10 +363,12 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
             "//! {name}: the interface of `{anchor}`, written once by\n\
              //! `angzarr scaffold rust` and yours from then on: `--missing` adds the\n\
              //! methods it lacks. Each reaction takes the source stream's root, the\n\
-             //! event and its context, and returns the commands to send, each with its\n\
-             //! target root, or its `Bug`: a defect, since a policy reacts to events the\n\
-             //! application's own domains recorded. The generated adapter\n\
-             //! (`crate::adapters::{name}`) carries the markup.\n\n"
+             //! event and its context, and returns what it sends its target, each with\n\
+             //! its target root: a command, or a fact the target declares, sent in the\n\
+             //! arm the target declares by the generated adapter\n\
+             //! (`crate::adapters::{name}`, which carries the markup). Or its `Bug`: a\n\
+             //! defect, since a policy reacts to events the application's own domains\n\
+             //! recorded.\n\n"
         )
     } else {
         format!(
@@ -1229,14 +1231,17 @@ fn policy_adapter(
     let policy_name = &component.component_name;
     let source_ty = ident(&source.name);
     let target_ty = ident(&target.name);
-    let command_enum = format_ident!("{}Command", target.name);
+    // Each output in the arm its target declares (decision 14.69).
+    let output_enum = format_ident!("{}", output_name(target));
     let arms: Vec<TokenStream> = target
         .inputs
         .iter()
-        .filter(|i| !i.fact)
         .map(|i| {
             let v = ident(i.message.name());
-            quote!(#command_enum::#v(command) => commands.to(root, command))
+            match Arm::of(i) {
+                Arm::Command => quote!(#output_enum::#v(output) => commands.to(root, output)),
+                Arm::Fact => quote!(#output_enum::#v(output) => commands.fact(root, output)),
+            }
         })
         .collect();
     let methods = component.events.iter().map(|event| {
@@ -1252,9 +1257,9 @@ fn policy_adapter(
                 let orders = #interface::#m(&self.0, &ctx.source_root().value, event, ctx)?;
                 ::core::result::Result::Ok(orders
                     .into_iter()
-                    .fold(Commands::none(), |commands, (root, command)| {
+                    .fold(Commands::none(), |commands, (root, output)| {
                         let root = Uuid { value: root.into() };
-                        match command {
+                        match output {
                             #(#arms,)*
                         }
                     }))

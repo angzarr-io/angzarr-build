@@ -42,7 +42,7 @@ use std::collections::BTreeSet;
 
 use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 
-use crate::common::{local_name, snake, wire_name};
+use crate::common::{Arm, handed_refusals, local_name, snake, wire_name};
 use crate::error::{CodegenError, ProtoError, UseError};
 use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input};
 use crate::scaffold::{Owner, ScaffoldFile, Translate, selected};
@@ -121,14 +121,18 @@ struct Unit {
     /// Its name in an application: its `component_name`, else its kind's
     /// default.
     name: String,
-    /// A policy's target's commands: what its reactions send.
+    /// A policy's target's commands: what its reactions send as commands.
     commands: Vec<MessageDescriptor>,
+    /// A policy's target's facts: what its reactions send as facts, the
+    /// arm the target declares (decision 14.69).
+    sent_facts: Vec<MessageDescriptor>,
     /// A projector's source domains.
     sources: Vec<String>,
     /// The commands whose refusal reaches the unit: a domain's, each
-    /// command a policy it sources sends (the pass-through `CommandRefused`,
-    /// decision 14.31); a policy's, each command it sends when its source
-    /// takes facts to translate a refusal into. Whatever `--translate`
+    /// command a policy it sources sends that declares a `refuses` type (the
+    /// pass-through `CommandRefused`, decision 14.31; only a typed refusal
+    /// is handed over, decision 14.73); a policy's, each command it sends
+    /// when its source takes facts to translate a refusal into. Whatever `--translate`
     /// selects: the generated files are the same either way.
     refusable: Vec<Refusable>,
     /// The refusal switch's selections touching the unit, each a command's
@@ -390,14 +394,25 @@ fn unit(
         owner_input(pool, &selection.fact).map(|f| (selection.command.clone(), f))
     };
     let mut commands = Vec::new();
+    let mut sent_facts = Vec::new();
     let mut refusable = Vec::new();
     let mut translated = Vec::new();
     let mut facts = Vec::new();
     match component.kind {
         ComponentKind::Policy => {
             let target = component.target(pool)?;
-            let sent: Vec<&Input> = target.inputs.iter().filter(|i| !i.fact).collect();
+            let sent: Vec<&Input> = target
+                .inputs
+                .iter()
+                .filter(|i| Arm::of(i) == Arm::Command)
+                .collect();
             commands = sent.iter().map(|i| i.message.clone()).collect();
+            sent_facts = target
+                .inputs
+                .iter()
+                .filter(|i| Arm::of(i) == Arm::Fact)
+                .map(|i| i.message.clone())
+                .collect();
             if let Some(source) = owner(&component.input_domain) {
                 facts = source
                     .inputs
@@ -421,7 +436,7 @@ fn unit(
                 let Some(target) = owner(&policy.output_domain) else {
                     continue;
                 };
-                for input in target.inputs.iter().filter(|i| !i.fact) {
+                for input in handed_refusals(target) {
                     if !refusable
                         .iter()
                         .any(|r: &Refusable| r.command == input.message)
@@ -443,6 +458,7 @@ fn unit(
         name: component.component_name.clone(),
         component,
         commands,
+        sent_facts,
         sources,
         refusable,
         translated,
@@ -507,7 +523,8 @@ fn alias(message: &MessageDescriptor) -> String {
 
 /// The messages the plain types start from: a domain's state, inputs,
 /// what they emit and refuse, and its events; a policy's events and its
-/// target's commands; a projector's projection and its events.
+/// target's inputs, commands and facts; a projector's projection and its
+/// events.
 fn roots(unit: &Unit) -> Vec<MessageDescriptor> {
     let component = &unit.component;
     let mut roots = Vec::new();
@@ -521,6 +538,7 @@ fn roots(unit: &Unit) -> Vec<MessageDescriptor> {
     }
     roots.extend(component.events.iter().cloned());
     roots.extend(unit.commands.iter().cloned());
+    roots.extend(unit.sent_facts.iter().cloned());
     for refusable in &unit.refusable {
         roots.push(refusable.command.clone());
         roots.extend(refusable.refuses.iter().cloned());

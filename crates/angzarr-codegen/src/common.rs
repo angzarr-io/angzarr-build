@@ -41,6 +41,43 @@ pub(crate) fn has_code_status(input: &crate::model::Input) -> bool {
     input.refuses.iter().any(|r| refusal_reason(r).is_some())
 }
 
+/// The arm a policy sends one of its target's inputs in (decision 14.69):
+/// a Fact for a type its destination's `(command).fact` declares one, a
+/// Command otherwise. The generated code reads it; business code never
+/// picks it (decision 14.73).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Arm {
+    Command,
+    Fact,
+}
+
+impl Arm {
+    /// The arm `input` is sent in.
+    pub(crate) fn of(input: &crate::model::Input) -> Arm {
+        if input.fact { Arm::Fact } else { Arm::Command }
+    }
+}
+
+/// The name of what a policy sends `target` in its domain layer
+/// (`<Target>Output`): each of its inputs, commands and facts alike, as
+/// `PolicyReaction.outputs` carries them (decision 14.70).
+pub(crate) fn output_name(target: &crate::model::Component) -> String {
+    format!("{}Output", target.name)
+}
+
+/// The commands of `target` whose pass-through refusal a domain sourcing
+/// a policy to it is handed (`on_refused_<command>`, decision 14.73): each
+/// that declares a `refuses` type. A command naming none has no typed
+/// refusal for a handler to read, and a fact is never refused.
+pub(crate) fn handed_refusals(
+    target: &crate::model::Component,
+) -> impl Iterator<Item = &crate::model::Input> {
+    target
+        .inputs
+        .iter()
+        .filter(|i| !i.fact && !i.refuses.is_empty())
+}
+
 /// The name of the choice a command refusing several types refuses with
 /// (`<Command>Refuses`) in the domain layer, which no message or enum may
 /// take.

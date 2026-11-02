@@ -15,8 +15,8 @@ use prost_reflect::{EnumDescriptor, FieldDescriptor, Kind, MessageDescriptor};
 use quote::{format_ident, quote};
 
 use crate::common::{
-    enum_name, has_code_status, refusal_choice_name, refusal_key, refusal_reason, screaming,
-    wire_name,
+    enum_name, has_code_status, output_name, refusal_choice_name, refusal_key, refusal_reason,
+    screaming, wire_name,
 };
 use crate::model::{Package, TIMESTAMP};
 
@@ -77,8 +77,9 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         items.extend(plain_enum(
             &format_ident!("{}Command", component.name),
             &commands,
-            &format!(" A command of {}, as a policy sends it.", component.name),
+            &format!(" A command of {}.", component.name),
         ));
+        items.extend(output_enum(component));
         items.extend(plain_enum(
             &format_ident!("{}Event", component.name),
             &component.events,
@@ -662,6 +663,35 @@ fn plain_enum(name: &syn::Ident, messages: &[MessageDescriptor], doc: &str) -> T
         #(#froms)*
 
         #payload
+    }
+}
+
+/// What a policy sends `component` (`<Component>Output`): one variant per
+/// input, command or fact, each `From` its type. The policy's generated
+/// adapter sends each in the arm the input declares (decision 14.69).
+fn output_enum(component: &crate::model::Component) -> TokenStream {
+    let name = format_ident!("{}", output_name(component));
+    let variants: Vec<syn::Ident> = component
+        .inputs
+        .iter()
+        .map(|i| ident(i.message.name()))
+        .collect();
+    let doc = format!(
+        " What a policy sends {}: its commands and facts, each in its arm.",
+        component.name
+    );
+    quote! {
+        #[doc = #doc]
+        #[derive(Clone, Debug, PartialEq)]
+        pub enum #name { #(#variants(#variants)),* }
+
+        #(
+            impl From<#variants> for #name {
+                fn from(value: #variants) -> Self {
+                    #name::#variants(value)
+                }
+            }
+        )*
     }
 }
 

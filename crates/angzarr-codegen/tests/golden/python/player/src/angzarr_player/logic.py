@@ -25,7 +25,6 @@ from angzarr_player.domain import (
     MoveDecided,
     PlaceBet,
     PlayerState,
-    ReleaseSeat,
     RequestSeat,
     SeatNotConfirmable,
     Stand,
@@ -108,10 +107,6 @@ class PlayerLogic(Protocol):
         refusal: SeatNotConfirmable | None,
         state: PlayerState,
         ctx: CommandContext,
-    ) -> list[MoveDecided]: ...
-
-    def on_refused_release_seat(
-        self, command: ReleaseSeat, state: PlayerState, ctx: CommandContext
     ) -> list[MoveDecided]: ...
 
     def apply_move_decided(

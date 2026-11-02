@@ -78,13 +78,11 @@ fn test_every_domain_of_the_files_gets_a_stand_in_and_nothing_else_does() {
     }
 }
 
-/// The stand-in compiles, warnings denied, against the markup's traits
-/// (a stub of angzarr-embedded's, their shapes as its `markup`'s)
-/// and the domain layer's types, and a policy's bounds take it.
-#[test]
-fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
+/// `app` (a crate root naming `domain` and `stand_ins`) compiles, warnings
+/// denied, against the markup's traits (a stub of angzarr-embedded's, their
+/// shapes as its `markup`'s).
+fn assert_compiles(app: &str) {
     use std::process::Command;
-    let source = stand_ins(&descriptors(BLACKJACK), &[PLAYER]).unwrap();
     let dir = TestDir::new(concat!(env!("CARGO_PKG_NAME"), "-stand-ins"));
     std::fs::write(
         dir.join("stub.rs"),
@@ -97,22 +95,7 @@ fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
          }\n",
     )
     .unwrap();
-    std::fs::write(
-        dir.join("app.rs"),
-        format!(
-            "pub mod domain {{\n\
-             #[derive(Clone)] pub struct DecideMove;\n\
-             impl ::angzarr_embedded::markup::DomainMessage for DecideMove {{}}\n\
-             }}\n\
-             pub mod stand_ins {{\n{source}\n}}\n\
-             fn target<T: ::angzarr_embedded::markup::Decides<domain::DecideMove>>() -> &'static str {{\n\
-             <T as ::angzarr_embedded::markup::CommandTarget>::DOMAIN\n}}\n\
-             fn source<T: ::angzarr_embedded::markup::EventSource>() -> Vec<String> {{ T::event_types() }}\n\
-             pub fn check() -> (&'static str, Vec<String>) {{\n\
-             (target::<stand_ins::PlayerAggregate>(), source::<stand_ins::PlayerAggregate>())\n}}\n"
-        ),
-    )
-    .unwrap();
+    std::fs::write(dir.join("app.rs"), app).unwrap();
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let run = |args: &[&str]| {
         Command::new(&rustc)
@@ -128,14 +111,66 @@ fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
         "{}",
         String::from_utf8_lossy(&stub.stderr)
     );
-    let app = run(&[
+    let built = run(&[
         "--crate-name=app",
         "--extern=angzarr_embedded=libangzarr_embedded.rlib",
         "app.rs",
     ]);
     assert!(
-        app.status.success(),
-        "{source}\n{}",
-        String::from_utf8_lossy(&app.stderr)
+        built.status.success(),
+        "{app}\n{}",
+        String::from_utf8_lossy(&built.stderr)
     );
+}
+
+/// The stand-in compiles and a policy's bounds take it: its command set
+/// as a target, its event set as a source.
+#[test]
+fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
+    let source = stand_ins(&descriptors(BLACKJACK), &[PLAYER]).unwrap();
+    assert_compiles(&format!(
+        "pub mod domain {{\n\
+         #[derive(Clone)] pub struct DecideMove;\n\
+         impl ::angzarr_embedded::markup::DomainMessage for DecideMove {{}}\n\
+         }}\n\
+         pub mod stand_ins {{\n{source}\n}}\n\
+         fn target<T: ::angzarr_embedded::markup::Decides<domain::DecideMove>>() -> &'static str {{\n\
+         <T as ::angzarr_embedded::markup::CommandTarget>::DOMAIN\n}}\n\
+         fn source<T: ::angzarr_embedded::markup::EventSource>() -> Vec<String> {{ T::event_types() }}\n\
+         pub fn check() -> (&'static str, Vec<String>) {{\n\
+         (target::<stand_ins::PlayerAggregate>(), source::<stand_ins::PlayerAggregate>())\n}}\n"
+    ));
+}
+
+/// A stand-in takes a policy's fact (angzarr decision 14.69): the bound
+/// `Commands::fact` puts on its target, `Ingests` of the fact, whose
+/// supertrait is the event set.
+#[test]
+fn test_a_stand_in_takes_a_policys_fact() {
+    let source = stand_ins(&descriptors(BUYIN), BUYIN).unwrap();
+    let messages = [
+        "StartBuyIn",
+        "RecordHeld",
+        "HoldLost",
+        "Deposit",
+        "Hold",
+        "InsufficientFunds",
+    ];
+    let domain: String = messages
+        .iter()
+        .map(|m| {
+            format!(
+                "#[derive(Clone)] pub struct {m};\n\
+                 impl ::angzarr_embedded::markup::DomainMessage for {m} {{}}\n"
+            )
+        })
+        .collect();
+    assert_compiles(&format!(
+        "#![allow(dead_code)]\n\
+         pub mod domain {{\n{domain}}}\n\
+         pub mod stand_ins {{\n{source}\n}}\n\
+         fn fact_target<T: ::angzarr_embedded::markup::Ingests<domain::HoldLost>>() -> &'static str {{\n\
+         <T as ::angzarr_embedded::markup::EventSource>::DOMAIN\n}}\n\
+         pub fn check() -> &'static str {{ fact_target::<stand_ins::BuyIn>() }}\n"
+    ));
 }

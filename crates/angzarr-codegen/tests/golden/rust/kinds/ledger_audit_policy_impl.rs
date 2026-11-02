@@ -15,7 +15,7 @@ impl LedgerAuditPolicy for LedgerAuditPolicyImpl {
         _source: &[u8],
         _event: &Noted,
         _ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, AuditStateCommand)>, Bug> {
+    ) -> Result<Vec<(Vec<u8>, AuditStateOutput)>, Bug> {
         todo!()
     }
 }

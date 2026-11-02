@@ -271,12 +271,10 @@ impl LedgerAuditPolicy {
                 .into_iter()
                 .fold(
                     Commands::none(),
-                    |commands, (root, command)| {
+                    |commands, (root, output)| {
                         let root = Uuid { value: root.into() };
-                        match command {
-                            AuditStateCommand::Audit(command) => {
-                                commands.to(root, command)
-                            }
+                        match output {
+                            AuditStateOutput::Audit(output) => commands.to(root, output),
                         }
                     },
                 ),

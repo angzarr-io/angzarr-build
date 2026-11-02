@@ -14,5 +14,5 @@ pub trait WalletBuyIn {
         source: &[u8],
         event: &Held,
         ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, BuyInCommand)>, Bug>;
+    ) -> Result<Vec<(Vec<u8>, BuyInOutput)>, Bug>;
 }

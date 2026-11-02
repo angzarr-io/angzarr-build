@@ -250,8 +250,10 @@ fn test_scaffold_of_one_file_finds_its_policies_owners_and_events_elsewhere() {
     let files = scaffold(&descriptors(BLACKJACK), &[POLICIES], &[]).unwrap();
     let player_table = &file_at(&files, "player_table_policy.rs").source;
     assert!(player_table.contains("fn move_decided("), "{player_table}");
+    // What it sends the table: its outputs, commands and facts alike
+    // (decision 14.69).
     assert!(
-        player_table.contains("TableAggregateCommand"),
+        player_table.contains("TableAggregateOutput"),
         "{player_table}"
     );
 }
@@ -273,7 +275,9 @@ fn test_a_decision_returns_its_one_event_or_any_of_its_events() {
         "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
         // ConfirmSeat is OPTIONAL: a repeat emits nothing.
         "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<Option<PlayerSeated>, Failed<SeatNotConfirmable>>;",
-        "        cmd: &ReleaseSeat,\n        ctx: &Context,\n    ) -> Result<Option<SeatReleased>, Failed<Rejection>>;",
+        // ReleaseSeat is a fact (ruling 9, decision 14.69): recorded, never
+        // refused.
+        "fn release_seat(&self, fact: &ReleaseSeat, ctx: &Context) -> Option<SeatReleased>;",
     ] {
         assert!(table.contains(expected), "{expected}:\n{table}");
     }
@@ -488,14 +492,15 @@ fn test_adapters_forward_each_handlers_context() {
 }
 
 /// A policy reaction takes the source root, the event and its context, and
-/// answers its commands or its error, a bug.
+/// answers its outputs (its target's commands and facts) or its error, a
+/// bug.
 #[test]
 fn test_scaffold_gives_a_policy_reaction_its_context_and_a_result() {
     let files = buyin(&[]);
     let source = &file_at(&files, "buy_in_wallet.rs").source;
     assert!(
         source.contains(
-            "    fn buy_in_started(\n        &self,\n        source: &[u8],\n        event: &BuyInStarted,\n        ctx: &PolicyContext,\n    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Bug>;"
+            "    fn buy_in_started(\n        &self,\n        source: &[u8],\n        event: &BuyInStarted,\n        ctx: &PolicyContext,\n    ) -> Result<Vec<(Vec<u8>, WalletOutput)>, Bug>;"
         ),
         "{source}"
     );

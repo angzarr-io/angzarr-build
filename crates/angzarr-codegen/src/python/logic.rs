@@ -95,13 +95,14 @@ fn any_events(component: &Component) -> String {
 /// The interface's methods, by kind. A domain's: a decision per command
 /// (or fact) from the state and its context (the harness's
 /// `CommandContext`, re-exported by `domain.py`), returning what it emits
-/// or a typed refusal, a handler per command its policies send of that
-/// command's pass-through refusal (`on_refused_<command>`: the command, its
+/// or a typed refusal, a handler per command its policies send that
+/// declares a `refuses` type, of that command's pass-through refusal
+/// (`on_refused_<command>`: the command, its
 /// typed refusal or None, the state and the context, returning the events
 /// recording it) unless the refusal switch translates it, and a fold per
 /// event from the state to the next state. A policy's: a reaction per event
 /// from the event, its source root and its page's context, returning the
-/// target's commands, each with its root, and a translating callback per
+/// target's commands and facts, each with its root, and a translating callback per
 /// command the refusal switch selects (`<command>_refused`: the command, its
 /// typed refusal or None and the refused command's context, returning the
 /// fact). A projector's: a coroutine per event from the projection, the
@@ -176,7 +177,12 @@ fn domain_methods(unit: &Unit) -> Vec<Method> {
 
 /// A policy's methods (see [`methods`]).
 fn policy_methods(unit: &Unit) -> Vec<Method> {
-    let commands: Vec<&str> = unit.commands.iter().map(|c| c.name()).collect();
+    let commands: Vec<&str> = unit
+        .commands
+        .iter()
+        .chain(&unit.sent_facts)
+        .map(|c| c.name())
+        .collect();
     let command = match commands.as_slice() {
         [] => "object".to_string(),
         _ => commands.join(" | "),
@@ -253,7 +259,12 @@ fn interface_imports(app: &PythonApp, unit: &Unit) -> String {
     }
     names.extend(component.events.iter().map(|e| e.name().to_string()));
     if !component.events.is_empty() {
-        names.extend(unit.commands.iter().map(|c| c.name().to_string()));
+        names.extend(
+            unit.commands
+                .iter()
+                .chain(&unit.sent_facts)
+                .map(|c| c.name().to_string()),
+        );
     }
     // A refusal method's: the refused command, its typed refusals, the
     // refused command's context and, translated, the fact.
@@ -305,8 +316,9 @@ fn duties(unit: &Unit) -> &'static str {
         }
         ComponentKind::Policy => {
             "each reaction its event's source root and ``PageContext`` too, returning \
-             the commands it sends, each with its target root (raising ``Bug`` for a \
-             defect),"
+             what it sends, each with its target root: a command, or a fact its target \
+             declares, which the generated dispatch sends in the arm the target \
+             declares (raising ``Bug`` for a defect),"
         }
         ComponentKind::Projector => {
             "each projection a coroutine, its event's ``PageContext`` too (the source \

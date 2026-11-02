@@ -282,7 +282,7 @@ fn test_a_policys_shared_types_are_declared_and_converted_once() {
 }
 
 #[test]
-fn test_a_policys_dispatch_addresses_each_command_to_its_target() {
+fn test_a_policys_dispatch_addresses_each_output_to_its_target() {
     let files = table_player();
     let dispatch = source(&files, "table_player_policy_angzarr.py");
     // One parameter too long for a line: black's split, a trailing comma.
@@ -299,7 +299,11 @@ fn test_a_policys_dispatch_addresses_each_command_to_its_target() {
             "dispatch = _az.PolicyDispatch(\"policy-table-player\", \"table\", \"player\")",
             "book = _t.CommandBook(cover=_t.Cover(domain=\"player\"))",
             "book.cover.root.value = root",
-            "return _commands(logic.turn_started(event, source, ctx))",
+            "return _outputs(logic.turn_started(event, source, ctx))",
+            // DecideMove is a command of the player's (decision 14.69).
+            "_COMMANDS = {_d.DecideMove: _from_decide_move,}",
+            "_SENT_FACTS = {}",
+            "book.page.command.payload.CopyFrom(_az.pack(to_wire(output)))",
             "dispatch.on_event(\"io.angzarr.examples.v1.TurnStarted\", _turn_started)",
         ],
     );
@@ -329,7 +333,8 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
         logic,
         &[
             "class BuyInLogic(Protocol):",
-            "def start_buy_in(self, cmd: StartBuyIn, state: BuyInState, ctx: CommandContext) -> BuyInStarted: ...",
+            // A fact the table's policy sends (ruling 9, decision 14.69).
+            "def start_buy_in(self, fact: StartBuyIn, state: BuyInState, ctx: CommandContext) -> BuyInStarted: ...",
             "def seat_confirmation_refused(self, fact: SeatConfirmationRefused, state: BuyInState, \
              ctx: CommandContext) -> BuyInSeatLost: ...",
         ],
@@ -522,7 +527,8 @@ fn test_the_spec_table_is_scaffolded() {
              -> BetPlaced | TableRefused: ...",
             "def confirm_seat(self, cmd: ConfirmSeat, state: TableState, ctx: CommandContext) \
              -> PlayerSeated | None | SeatNotConfirmable: ...",
-            "def release_seat(self, cmd: ReleaseSeat, state: TableState, ctx: CommandContext) \
+            // A fact: the buy-in's compensation (ruling 9, decision 14.69).
+            "def release_seat(self, fact: ReleaseSeat, state: TableState, ctx: CommandContext) \
              -> SeatReleased | None: ...",
             "def hit(self, cmd: Hit, state: TableState, ctx: CommandContext) \
              -> list[CardDealt | TurnStarted | DealerPlayed | RoundSettled] | TableRefused: ...",
@@ -772,10 +778,11 @@ fn test_a_map_converts_each_value_by_its_kind() {
     assert!(!domain.contains("class Timestamp"), "{domain}");
 }
 
-/// A policy whose target takes no command it can send types its
-/// reactions' commands as any object.
+/// A policy whose target takes facts only sends those facts, each as a
+/// Fact (decision 14.69): its reactions return them, and its dispatch
+/// sends none as a command.
 #[test]
-fn test_a_policy_whose_target_takes_facts_only_sends_any_object() {
+fn test_a_policy_whose_target_takes_facts_only_sends_its_facts() {
     const FILE: &str = "pyshop/v1/views.proto";
     let files = scaffold_python(
         &descriptors(&[FILE]),
@@ -785,7 +792,19 @@ fn test_a_policy_whose_target_takes_facts_only_sends_any_object() {
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
     let logic = source(&files, "/logic.py");
-    assert_has(logic, &["-> list[tuple[bytes, object]]: ..."]);
+    assert_has(logic, &["-> list[tuple[bytes, Tallied]]: ..."]);
+    let dispatch = source(&files, "pages_tally_policy_angzarr.py");
+    assert_has(
+        dispatch,
+        &[
+            "_COMMANDS = {}",
+            "_SENT_FACTS = {_d.Tallied: _from_tallied,}",
+            "to_wire = _COMMANDS.get(type(output))",
+            "wire = _SENT_FACTS[type(output)](output)",
+            "book.page.fact.payload.CopyFrom(_az.pack(wire))",
+        ],
+    );
+    assert_parses("pages_tally_policy_angzarr.py", dispatch);
 }
 
 /// A projector's descriptor names its sources in its dispatch's order
@@ -857,18 +876,18 @@ fn assert_parses(path: &str, source: &str) {
 }
 
 /// A domain whose policies send commands handles the pass-through
-/// refusal of each (decision 14.31, the coordinator's `CommandRefused`)
-/// in `on_refused_<command>`: the refused command and, where it refuses
-/// with types, its typed refusal or None, the state and the context,
-/// returning the events that record it.
+/// refusal (decision 14.31, the coordinator's `CommandRefused`) of each
+/// that declares a `refuses` type, and only those (decision 14.73), in
+/// `on_refused_<command>`: the refused command, its typed refusal or None,
+/// the state and the context, returning the events that record it.
+/// Deposit declares none: no handler, no registration.
 #[test]
-fn test_a_domain_handles_the_pass_through_refusal_of_each_command_its_policies_send() {
+fn test_a_domain_handles_the_pass_through_refusal_of_each_command_that_declares_refuses() {
     let files = buyin_python("buyin", &[]);
     let logic = source(&files, "/logic.py");
     assert_has(
         logic,
         &[
-            "def on_refused_deposit(self, command: Deposit, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
             "def on_refused_hold(self, command: Hold, refusal: InsufficientFunds | None, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
         ],
     );
@@ -877,7 +896,8 @@ fn test_a_domain_handles_the_pass_through_refusal_of_each_command_its_policies_s
         &["raise NotImplementedError  # TODO: record the refusal of Hold"],
     );
     let domain = source(&files, "/domain.py");
-    for plain in ["class Deposit:", "class Hold:", "class InsufficientFunds:"] {
+    assert!(!logic.contains("on_refused_deposit"), "{logic}");
+    for plain in ["class Hold:", "class InsufficientFunds:"] {
         assert!(domain.contains(plain), "{plain}:\n{domain}");
     }
     let dispatch = source(&files, "buy_in_angzarr.py");
@@ -892,23 +912,24 @@ fn test_a_domain_handles_the_pass_through_refusal_of_each_command_its_policies_s
             "flags = logic.on_refused_hold(command, typed, _to_buy_in_state(state), cctx)",
             "return _az.FactRecord(refused, tuple(_wire(flags)))",
             "if hasattr(logic, \"on_refused_hold\"): dispatch.on_refused(\"buyin.v1.Hold\", _on_refused_hold)",
-            "flags = logic.on_refused_deposit(command, _to_buy_in_state(state), cctx)",
-            "if hasattr(logic, \"on_refused_deposit\"): dispatch.on_refused(\"buyin.v1.Deposit\", _on_refused_deposit)",
         ],
     );
+    assert!(!dispatch.contains("buyin.v1.Deposit"), "{dispatch}");
     assert_parses("buy_in_angzarr.py", dispatch);
     assert_parses("logic.py", logic);
 }
 
 /// A command the refusal switch translates reaches its source as the
 /// policy's fact, never as `CommandRefused`: the source's logic gets no
-/// `on_refused_<command>` for it; every other command keeps its own.
+/// `on_refused_<command>` for it. Hold is the toy buy-in's one command
+/// declaring `refuses`, so none is left.
 #[test]
 fn test_translate_drops_the_sources_pass_through_of_the_command_it_translates() {
+    let untranslated = buyin_python("buyin", &[]);
+    assert!(source(&untranslated, "/logic.py").contains("def on_refused_hold("));
     let files = buyin_python("buyin", &[translate_hold()]);
     let logic = source(&files, "/logic.py");
-    assert!(!logic.contains("on_refused_hold"), "{logic}");
-    assert!(logic.contains("def on_refused_deposit("), "{logic}");
+    assert!(!logic.contains("on_refused_"), "{logic}");
 }
 
 /// The refusal switch set to translate (`--translate`, as the Rust

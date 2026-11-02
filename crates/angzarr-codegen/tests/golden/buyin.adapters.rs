@@ -124,11 +124,11 @@ impl BuyInWallet {
                 .into_iter()
                 .fold(
                     Commands::none(),
-                    |commands, (root, command)| {
+                    |commands, (root, output)| {
                         let root = Uuid { value: root.into() };
-                        match command {
-                            WalletCommand::Deposit(command) => commands.to(root, command),
-                            WalletCommand::Hold(command) => commands.to(root, command),
+                        match output {
+                            WalletOutput::Deposit(output) => commands.to(root, output),
+                            WalletOutput::Hold(output) => commands.to(root, output),
                         }
                     },
                 ),
@@ -157,15 +157,12 @@ impl WalletBuyIn {
                 .into_iter()
                 .fold(
                     Commands::none(),
-                    |commands, (root, command)| {
+                    |commands, (root, output)| {
                         let root = Uuid { value: root.into() };
-                        match command {
-                            BuyInCommand::StartBuyIn(command) => {
-                                commands.to(root, command)
-                            }
-                            BuyInCommand::RecordHeld(command) => {
-                                commands.to(root, command)
-                            }
+                        match output {
+                            BuyInOutput::StartBuyIn(output) => commands.to(root, output),
+                            BuyInOutput::RecordHeld(output) => commands.to(root, output),
+                            BuyInOutput::HoldLost(output) => commands.fact(root, output),
                         }
                     },
                 ),

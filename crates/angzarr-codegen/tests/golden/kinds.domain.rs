@@ -620,7 +620,7 @@ impl ::core::convert::From<Bug> for Failed<Rejection> {
         Failed::bug(&bug)
     }
 }
-/// A command of LedgerState, as a policy sends it.
+/// A command of LedgerState.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedgerStateCommand {
     Post(Post),
@@ -735,6 +735,64 @@ impl ::angzarr_embedded::Payload for LedgerStateCommand {
             .to_vec()
     }
 }
+/// What a policy sends LedgerState: its commands and facts, each in its arm.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LedgerStateOutput {
+    Post(Post),
+    Open(Open),
+    Four(Four),
+    Maybe(Maybe),
+    MaybeBoth(MaybeBoth),
+    Batch(Batch),
+    Raw(Raw),
+    Arrived(Arrived),
+    Swept(Swept),
+}
+impl From<Post> for LedgerStateOutput {
+    fn from(value: Post) -> Self {
+        LedgerStateOutput::Post(value)
+    }
+}
+impl From<Open> for LedgerStateOutput {
+    fn from(value: Open) -> Self {
+        LedgerStateOutput::Open(value)
+    }
+}
+impl From<Four> for LedgerStateOutput {
+    fn from(value: Four) -> Self {
+        LedgerStateOutput::Four(value)
+    }
+}
+impl From<Maybe> for LedgerStateOutput {
+    fn from(value: Maybe) -> Self {
+        LedgerStateOutput::Maybe(value)
+    }
+}
+impl From<MaybeBoth> for LedgerStateOutput {
+    fn from(value: MaybeBoth) -> Self {
+        LedgerStateOutput::MaybeBoth(value)
+    }
+}
+impl From<Batch> for LedgerStateOutput {
+    fn from(value: Batch) -> Self {
+        LedgerStateOutput::Batch(value)
+    }
+}
+impl From<Raw> for LedgerStateOutput {
+    fn from(value: Raw) -> Self {
+        LedgerStateOutput::Raw(value)
+    }
+}
+impl From<Arrived> for LedgerStateOutput {
+    fn from(value: Arrived) -> Self {
+        LedgerStateOutput::Arrived(value)
+    }
+}
+impl From<Swept> for LedgerStateOutput {
+    fn from(value: Swept) -> Self {
+        LedgerStateOutput::Swept(value)
+    }
+}
 /// An event of LedgerState, for a decision recording any number of them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedgerStateEvent {
@@ -811,7 +869,7 @@ impl ::angzarr_embedded::Payload for LedgerStateEvent {
             .to_vec()
     }
 }
-/// A command of AuditState, as a policy sends it.
+/// A command of AuditState.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuditStateCommand {
     Audit(Audit),
@@ -841,6 +899,16 @@ impl ::angzarr_embedded::Payload for AuditStateCommand {
     }
     fn type_urls() -> Vec<String> {
         [::angzarr_embedded::markup::type_url_of::<Audit>()].to_vec()
+    }
+}
+/// What a policy sends AuditState: its commands and facts, each in its arm.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuditStateOutput {
+    Audit(Audit),
+}
+impl From<Audit> for AuditStateOutput {
+    fn from(value: Audit) -> Self {
+        AuditStateOutput::Audit(value)
     }
 }
 /// An event of AuditState, for a decision recording any number of them.

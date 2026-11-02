@@ -18,7 +18,6 @@ from angzarr_player.domain import (
     MoveDecided,
     PlaceBet,
     PlayerState,
-    ReleaseSeat,
     RequestSeat,
     SeatNotConfirmable,
     Stand,
@@ -113,11 +112,6 @@ class PlayerLogicImpl(PlayerLogic):
         ctx: CommandContext,
     ) -> list[MoveDecided]:
         raise NotImplementedError  # TODO: record the refusal of ConfirmSeat
-
-    def on_refused_release_seat(
-        self, command: ReleaseSeat, state: PlayerState, ctx: CommandContext
-    ) -> list[MoveDecided]:
-        raise NotImplementedError  # TODO: record the refusal of ReleaseSeat
 
     def apply_move_decided(self, state: PlayerState, event: MoveDecided) -> PlayerState:
         raise NotImplementedError  # TODO: fold MoveDecided into the state

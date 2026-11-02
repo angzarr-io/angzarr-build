@@ -14,7 +14,7 @@ pub trait BuyInWallet {
         source: &[u8],
         event: &BuyInStarted,
         ctx: &PolicyContext,
-    ) -> Result<Vec<(Vec<u8>, WalletCommand)>, Bug>;
+    ) -> Result<Vec<(Vec<u8>, WalletOutput)>, Bug>;
 
     fn hold_refused(
         &self,
