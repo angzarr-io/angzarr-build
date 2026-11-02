@@ -127,6 +127,15 @@ fn test_the_interfaces_are_the_domain_layers() {
         );
     }
     golden("buyin.domain.rs", &layer);
+    // Each carries the allowance its handlers' `Failed` needs, so no crate
+    // implementing it does at the trait's include site.
+    assert_eq!(
+        layer
+            .matches("#[allow(clippy::result_large_err)]\npub trait ")
+            .count(),
+        4,
+        "{layer}"
+    );
 }
 
 /// A user file imports nothing from the runtime directly: its context and
