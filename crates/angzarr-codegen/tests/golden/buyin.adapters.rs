@@ -300,28 +300,26 @@ pub mod adapters {
             &self,
             refusal: &Refusal<Deposit>,
             ctx: &CommandContext,
-        ) -> ::core::result::Result<::core::option::Option<BuyInFact>, Bug> {
+        ) -> ::core::result::Result<BuyInFact, Bug> {
             crate::domain::BuyInWallet::deposit_refused(
-                    &self.0,
-                    refusal.command(),
-                    refusal.refusal::<DepositRefused>(),
-                    ctx,
-                )
-                .map(::core::option::Option::Some)
+                &self.0,
+                refusal.command(),
+                refusal.refusal::<DepositRefused>(),
+                ctx,
+            )
         }
         #[on_refused(Hold)]
         fn hold_refused(
             &self,
             refusal: &Refusal<Hold>,
             ctx: &CommandContext,
-        ) -> ::core::result::Result<::core::option::Option<BuyInFact>, Bug> {
+        ) -> ::core::result::Result<BuyInFact, Bug> {
             crate::domain::BuyInWallet::hold_refused(
-                    &self.0,
-                    refusal.command(),
-                    refusal.refusal::<InsufficientFunds>(),
-                    ctx,
-                )
-                .map(::core::option::Option::Some)
+                &self.0,
+                refusal.command(),
+                refusal.refusal::<InsufficientFunds>(),
+                ctx,
+            )
         }
     }
     /// `buyin.v1.WalletBuyInPolicy`, delegating to `crate::domain::WalletBuyIn`.
@@ -362,28 +360,26 @@ pub mod adapters {
             &self,
             refusal: &Refusal<StartBuyIn>,
             ctx: &CommandContext,
-        ) -> ::core::result::Result<::core::option::Option<WalletFact>, Bug> {
+        ) -> ::core::result::Result<WalletFact, Bug> {
             crate::domain::WalletBuyIn::start_buy_in_refused(
-                    &self.0,
-                    refusal.command(),
-                    refusal.refusal::<BuyInRefused>(),
-                    ctx,
-                )
-                .map(::core::option::Option::Some)
+                &self.0,
+                refusal.command(),
+                refusal.refusal::<BuyInRefused>(),
+                ctx,
+            )
         }
         #[on_refused(RecordHeld)]
         fn record_held_refused(
             &self,
             refusal: &Refusal<RecordHeld>,
             ctx: &CommandContext,
-        ) -> ::core::result::Result<::core::option::Option<WalletFact>, Bug> {
+        ) -> ::core::result::Result<WalletFact, Bug> {
             crate::domain::WalletBuyIn::record_held_refused(
-                    &self.0,
-                    refusal.command(),
-                    refusal.refusal::<BuyInRefused>(),
-                    ctx,
-                )
-                .map(::core::option::Option::Some)
+                &self.0,
+                refusal.command(),
+                refusal.refusal::<BuyInRefused>(),
+                ctx,
+            )
         }
     }
 }

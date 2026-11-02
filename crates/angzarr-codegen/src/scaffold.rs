@@ -1405,8 +1405,8 @@ fn policy_adapter(
                 &self,
                 refusal: &Refusal<#command>,
                 ctx: &CommandContext,
-            ) -> ::core::result::Result<::core::option::Option<#fact>, Bug> {
-                #interface::#m(&self.0, #args, ctx).map(::core::option::Option::Some)
+            ) -> ::core::result::Result<#fact, Bug> {
+                #interface::#m(&self.0, #args, ctx)
             }
         })
     });

@@ -498,19 +498,18 @@ pub mod adapters {
             &self,
             refusal: &Refusal<Audit>,
             ctx: &CommandContext,
-        ) -> ::core::result::Result<::core::option::Option<LedgerStateFact>, Bug> {
+        ) -> ::core::result::Result<LedgerStateFact, Bug> {
             crate::domain::LedgerAuditPolicy::audit_refused(
-                    &self.0,
-                    refusal.command(),
-                    refusal
-                        .refusal::<PostRefused>()
-                        .map(AuditRefuses::PostRefused)
-                        .or_else(|| {
-                            refusal.refusal::<Unreasoned>().map(AuditRefuses::Unreasoned)
-                        }),
-                    ctx,
-                )
-                .map(::core::option::Option::Some)
+                &self.0,
+                refusal.command(),
+                refusal
+                    .refusal::<PostRefused>()
+                    .map(AuditRefuses::PostRefused)
+                    .or_else(|| {
+                        refusal.refusal::<Unreasoned>().map(AuditRefuses::Unreasoned)
+                    }),
+                ctx,
+            )
         }
     }
 }
