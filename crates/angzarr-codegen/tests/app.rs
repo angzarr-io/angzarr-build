@@ -1070,3 +1070,20 @@ fn a_seed_in_a_language_with_no_launch_is_refused() {
         }))
     );
 }
+
+/// The protos' declaration warnings come with the lints and fail nothing: a
+/// process manager with a starting input (buy-in's) draws no warning that
+/// nothing starts it.
+#[test]
+fn a_process_manager_with_a_starting_input_is_not_warned_of() {
+    let buyin = "schema_version: 1\ncomponent:\n  - name: pmg-buyin\n    kind: domain\n    language: rust\n";
+    let linted = lint_app(buyin, &descriptors(BUYIN), BUYIN).unwrap();
+    assert!(
+        linted
+            .warnings
+            .iter()
+            .all(|w| angzarr_diagnostic::Diagnostic::code(w) != "angzarr-codegen-no-starting-input"),
+        "{:?}",
+        linted.warnings
+    );
+}
