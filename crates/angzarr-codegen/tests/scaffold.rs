@@ -410,8 +410,8 @@ fn test_adapters_wire_a_translating_refusal_callback_per_command() {
         ])
     );
     // The callback takes the refused command's context and answers the
-    // markup's Result of an Option, always Some: the interface's method
-    // reads the context and answers the source's fact, or a Bug.
+    // source's fact, never declining (the markup's non-declining form):
+    // the interface's method reads the context and answers it, or a Bug.
     let callback = methods(imp)[2];
     assert_eq!(
         callback
@@ -428,15 +428,15 @@ fn test_adapters_wire_a_translating_refusal_callback_per_command() {
     );
     assert_eq!(
         text(&callback.sig.output),
-        "->::core::result::Result<::core::option::Option<BuyInFact>,Bug>"
+        "->::core::result::Result<BuyInFact,Bug>"
     );
     assert_eq!(
         text(&callback.block),
-        "{crate::domain::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),ctx,).map(::core::option::Option::Some)}"
+        "{crate::domain::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),ctx,)}"
     );
     assert_eq!(
         text(&methods(imp)[1].block),
-        "{crate::domain::BuyInWallet::deposit_refused(&self.0,refusal.command(),refusal.refusal::<DepositRefused>(),ctx,).map(::core::option::Option::Some)}"
+        "{crate::domain::BuyInWallet::deposit_refused(&self.0,refusal.command(),refusal.refusal::<DepositRefused>(),ctx,)}"
     );
     // The wallet's policy to the buy-in: a callback per buy-in command.
     let other = inherent_impl(&file, "WalletBuyIn");
@@ -497,8 +497,7 @@ fn test_adapters_hand_a_refused_method_the_choice_of_several_refusal_types() {
         text(&audit.block),
         "{crate::domain::LedgerAuditPolicy::audit_refused(&self.0,refusal.command(),\
          refusal.refusal::<PostRefused>().map(AuditRefuses::PostRefused)\
-         .or_else(||{refusal.refusal::<Unreasoned>().map(AuditRefuses::Unreasoned)}),ctx,)\
-         .map(::core::option::Option::Some)}"
+         .or_else(||{refusal.refusal::<Unreasoned>().map(AuditRefuses::Unreasoned)}),ctx,)}"
     );
 }
 
