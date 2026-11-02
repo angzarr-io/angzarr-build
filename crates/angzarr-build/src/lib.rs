@@ -496,7 +496,11 @@ fn write_scaffold(
                 path,
                 notes: Notes::default(),
             });
-        } else if file.owner == Owner::Generated || stale {
+        } else if file.owner == Owner::Generated && !stale {
+            return Err(BuildError::GeneratedUnmarked {
+                path: path.display().to_string(),
+            });
+        } else if stale {
             writes.push((path.clone(), file.source));
             done.push(Scaffolded::Regenerated(path));
         } else {
@@ -518,10 +522,9 @@ fn write_scaffold(
         }
         std::fs::write(&path, source).map_err(|e| io(&path, &e))?;
     }
-    let _ = (
-        gen_dirs(root, &ours),
-        sweep as fn(&Path, &[PathBuf], &mut Vec<Scaffolded>) -> _,
-    );
+    for dir in gen_dirs(root, &ours) {
+        sweep(&dir, &ours, &mut done)?;
+    }
     Ok(done)
 }
 
