@@ -1716,6 +1716,7 @@ impl ::angzarr_embedded::markup::DomainMessage for Audited {
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
 /// event.
+#[allow(clippy::result_large_err)]
 pub trait LedgerState {
     fn post(&self, cmd: &Post, ctx: &Context) -> Result<Posted, Failed<PostRefuses>>;
 
@@ -1763,6 +1764,7 @@ pub trait LedgerState {
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
 /// event.
+#[allow(clippy::result_large_err)]
 pub trait AuditState {
     fn audit(&self, cmd: &Audit, ctx: &Context) -> Result<Audited, Failed<AuditRefuses>>;
 
@@ -1776,6 +1778,7 @@ pub trait AuditState {
 ///
 /// One async method per projected event, of any of its source domains
 /// (`ctx.stream()` says which), returning its `Bug` when the projection fails.
+#[allow(clippy::result_large_err)]
 pub trait LedgerView {
     fn posted(
         &mut self,
@@ -1802,6 +1805,7 @@ pub trait LedgerView {
 /// recorded. Each `<command>_refused` is optional: its default declines,
 /// passing the refusal through to the source; an implementation translating it
 /// answers one of the source's facts.
+#[allow(clippy::result_large_err)]
 pub trait LedgerAuditPolicy {
     fn noted(
         &self,

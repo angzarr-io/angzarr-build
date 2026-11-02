@@ -778,6 +778,7 @@ impl ::angzarr_embedded::markup::DomainMessage for BuyInFailed {
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
 /// event.
+#[allow(clippy::result_large_err)]
 pub trait Wallet {
     fn deposit(&self, cmd: &Deposit, ctx: &Context) -> Result<Deposited, Failed<Rejection>>;
 
@@ -795,6 +796,7 @@ pub trait Wallet {
 ///
 /// Each handler takes its input and its `Context`; each `apply_` folds an
 /// event.
+#[allow(clippy::result_large_err)]
 pub trait BuyIn {
     fn start_buy_in(
         &self,
@@ -825,6 +827,7 @@ pub trait BuyIn {
 /// recorded. Each `<command>_refused` is optional: its default declines,
 /// passing the refusal through to the source; an implementation translating it
 /// answers one of the source's facts.
+#[allow(clippy::result_large_err)]
 pub trait BuyInWallet {
     fn buy_in_started(
         &self,
@@ -865,6 +868,7 @@ pub trait BuyInWallet {
 /// recorded. Each `<command>_refused` is optional: its default declines,
 /// passing the refusal through to the source; an implementation translating it
 /// answers one of the source's facts.
+#[allow(clippy::result_large_err)]
 pub trait WalletBuyIn {
     fn held(
         &self,

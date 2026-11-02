@@ -498,7 +498,11 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
             out.push_str(&format!("/// {line}\n"));
         }
     }
-    out.push_str(&format!("pub trait {name} {{\n"));
+    // A domain's handlers fail with the generated layer's `Failed`, whose
+    // size is not the application's to choose.
+    out.push_str(&format!(
+        "#[allow(clippy::result_large_err)]\npub trait {name} {{\n"
+    ));
     let body: Vec<String> = methods
         .iter()
         .map(|m| match &m.refused {
