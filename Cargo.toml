@@ -17,6 +17,7 @@ angzarr-fmt = { path = "crates/angzarr-fmt" }
 angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "2be5a43d83fa35a9be1696b57aed3474971bf9cf" }
 # angzarr-embedded is pinned by full commit; bumps are deliberate commits.
 angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "171d3d62113f4bf35ad85af663bf6464ae0cf2d0" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "171d3d62113f4bf35ad85af663bf6464ae0cf2d0" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
 angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "2be5a43d83fa35a9be1696b57aed3474971bf9cf" }
 clap = { version = "4.5", features = ["derive"] }
