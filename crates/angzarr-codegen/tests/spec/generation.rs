@@ -350,11 +350,17 @@ fn returns_a_list(w: &mut Generator, message: String) {
     assert!(input.ends_with(&message), "{input}");
     let component = w.last_component.clone().expect("a component");
     let bare = component.rsplit('.').next().unwrap_or_default().to_string();
-    // Rust: the interface's list, each event a step of the markup.
+    // Rust: the interface's list, each event a step of the markup (the
+    // adapter's one helper of its domain's events).
     let body = handler_body(w, &input);
     assert!(
-        body.contains(&format!("|events:Vec<{bare}Event>|")),
+        body.contains("Self::emitted::<") || body.contains("Self::recorded("),
         "{body}"
+    );
+    let adapters = squeezed(&w.generated().adapters);
+    assert!(
+        adapters.contains(&format!("(events:Vec<{bare}Event>")),
+        "{adapters}"
     );
     // Python: the logic's signature returns a list.
     let files = w.python(&bare);
@@ -370,10 +376,14 @@ fn returns_a_list(w: &mut Generator, message: String) {
 #[then("it may return an empty list")]
 fn may_be_empty(w: &mut Generator) {
     let input = w.last_input.clone().expect("an input");
-    // An empty list folds to no event: the markup's `of(None)`.
+    // An empty list folds to no event: the markup's `of(None)`, in the
+    // helper the handler maps through.
     let body = handler_body(w, &input);
-    assert!(
-        body.contains("Emit::of(None::<") || body.contains("Record::of(None::<"),
-        "{body}"
-    );
+    let adapters = squeezed(&w.generated().adapters);
+    let empty = if body.contains("Self::recorded(") {
+        "Record::of(None::<"
+    } else {
+        "Emit::of(None::<"
+    };
+    assert!(adapters.contains(empty), "{empty} in {adapters}");
 }
