@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::Command;
 
-use crate::test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 /// A component's `ComponentOptions`.
 #[derive(Clone, Debug, Default)]

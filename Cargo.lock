@@ -25,6 +25,7 @@ dependencies = [
  "angzarr-diagnostic",
  "angzarr-fmt",
  "angzarr-proto",
+ "angzarr-test-dir",
  "prost-build",
  "syn 3.0.9",
 ]
@@ -40,6 +41,7 @@ dependencies = [
  "angzarr-fmt",
  "angzarr-proto",
  "angzarr-proto-transport-embedded",
+ "angzarr-test-dir",
  "clap",
  "serde",
  "serde_json",
@@ -53,6 +55,7 @@ dependencies = [
  "angzarr-embedded-host-config",
  "angzarr-fmt",
  "angzarr-proto",
+ "angzarr-test-dir",
  "cucumber",
  "prettyplease 0.3.0",
  "proc-macro2",
@@ -203,6 +206,11 @@ dependencies = [
  "sqlx",
  "tokio",
 ]
+
+[[package]]
+name = "angzarr-test-dir"
+version = "0.1.0"
+source = "git+https://github.com/angzarr-io/angzarr?rev=4a79bd64a4121ed78f82a8eca6ed445eefe20bf2#4a79bd64a4121ed78f82a8eca6ed445eefe20bf2"
 
 [[package]]
 name = "angzarr-yaml"

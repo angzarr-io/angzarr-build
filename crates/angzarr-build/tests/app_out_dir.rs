@@ -5,9 +5,7 @@
 
 use std::path::Path;
 
-#[path = "../../../test-support/test_dir.rs"]
-mod test_dir;
-use test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 #[test]
 fn test_app_reads_the_crates_config_and_writes_into_out_dir() {

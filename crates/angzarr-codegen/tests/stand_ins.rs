@@ -7,7 +7,7 @@
 mod common;
 
 use angzarr_codegen::stand_ins;
-use common::test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 use common::*;
 
 const PLAYER: &str = "io/angzarr/examples/v1/player.proto";

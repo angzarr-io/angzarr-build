@@ -9,7 +9,7 @@ mod common;
 use angzarr_codegen::register;
 use common::*;
 
-use common::test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 const GOLDEN: &str = include_str!("golden/buyin.register.rs");
 

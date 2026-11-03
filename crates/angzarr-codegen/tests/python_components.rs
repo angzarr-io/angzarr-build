@@ -14,7 +14,7 @@ use angzarr_codegen::{
 };
 use common::*;
 
-use common::test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 const LEDGER: &str = "io/angzarr/examples/v1/ledger.proto";
 const POLICIES: &str = "io/angzarr/examples/v1/policies.proto";

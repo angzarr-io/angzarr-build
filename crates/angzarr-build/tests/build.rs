@@ -6,9 +6,7 @@ use std::path::Path;
 
 use angzarr_build::{BuildError, markup_domain_into, wire_into};
 
-#[path = "../../../test-support/test_dir.rs"]
-mod test_dir;
-use test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 const SHOP: &str = "shop/v1/shop.proto";
 

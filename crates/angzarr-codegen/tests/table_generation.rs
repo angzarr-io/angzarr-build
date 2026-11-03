@@ -14,7 +14,7 @@ mod common;
 use angzarr_codegen::{Generated, adapters, markup_domain, register, scaffold};
 use common::*;
 
-use common::test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 const TABLE: &str = "io/angzarr/examples/v1/table.proto";
 const LEDGER: &str = "io/angzarr/examples/v1/ledger.proto";
