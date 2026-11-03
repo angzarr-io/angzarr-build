@@ -6,9 +6,7 @@
 
 use angzarr_build::{BuildError, ProtoInput, PythonApp, proto_gen_python};
 
-#[path = "../../../test-support/test_dir.rs"]
-mod test_dir;
-use test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 fn app() -> PythonApp {
     PythonApp {

@@ -10,9 +10,7 @@ use std::process::Command;
 
 use angzarr_build::{Existing, Scaffolded, Translate, scaffold_into};
 
-#[path = "../../../test-support/test_dir.rs"]
-mod test_dir;
-use test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 const BUYIN: &[&str] = &[
     "buyin/v1/wallet.proto",

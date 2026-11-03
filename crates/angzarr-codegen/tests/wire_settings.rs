@@ -11,7 +11,7 @@ use angzarr_diagnostic::code;
 use common::*;
 use quote::ToTokens;
 
-use common::test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 const WIRE: &str = "wire/v1/wire.proto";
 

@@ -8,9 +8,7 @@ use std::process::Command;
 
 use quote::ToTokens;
 
-#[path = "../../../../test-support/test_dir.rs"]
-pub mod test_dir;
-use test_dir::TestDir;
+use angzarr_test_dir::TestDir;
 
 /// The toy buy-in project: a wallet aggregate, a buy-in process manager,
 /// and a policy each way between them.
