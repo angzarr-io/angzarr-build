@@ -15,19 +15,18 @@ angzarr-codegen = { path = "crates/angzarr-codegen" }
 angzarr-fmt = { path = "crates/angzarr-fmt" }
 # angzarr core's localizable-error trait, pinned by full commit at the rev
 # angzarr-embedded's crates name; bumps are deliberate commits.
-angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "7225592247ae8d478dda64b5f154106b9b560b74" }
+angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "2681dab885c8a3f138a0964f4d6b628d2480963f" }
 # angzarr-embedded is pinned by full commit; bumps are deliberate commits.
-angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
+angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "71c8ebca3cfff5b7d4e1ae40c3fba25531820a05" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "71c8ebca3cfff5b7d4e1ae40c3fba25531820a05" }
 # angzarr's wire contract, pinned by full commit; bumps are deliberate commits.
-angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "7225592247ae8d478dda64b5f154106b9b560b74" }
+angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "2681dab885c8a3f138a0964f4d6b628d2480963f" }
 # The local-process transport's keys (a child's failures) and their English
 # (decision 14.64), at angzarr-proto's core rev.
-angzarr-proto-transport-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "7225592247ae8d478dda64b5f154106b9b560b74" }
+angzarr-proto-transport-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "2681dab885c8a3f138a0964f4d6b628d2480963f" }
 # The tests' scratch directories (angzarr core's one guard, std alone), a
-# dev-dependency only. No shared type, so it is pinned at the first core rev
-# that has it, ahead of the rev the crates above are.
-angzarr-test-dir = { git = "https://github.com/angzarr-io/angzarr", rev = "4a79bd64a4121ed78f82a8eca6ed445eefe20bf2" }
+# dev-dependency only, at the core rev the crates above are.
+angzarr-test-dir = { git = "https://github.com/angzarr-io/angzarr", rev = "2681dab885c8a3f138a0964f4d6b628d2480963f" }
 clap = { version = "4.5", features = ["derive"] }
 fluent-bundle = "0.15"
 fluent-syntax = "0.11"

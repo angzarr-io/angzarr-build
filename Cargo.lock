@@ -70,12 +70,12 @@ dependencies = [
 [[package]]
 name = "angzarr-diagnostic"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=7225592247ae8d478dda64b5f154106b9b560b74#7225592247ae8d478dda64b5f154106b9b560b74"
+source = "git+https://github.com/angzarr-io/angzarr?rev=2681dab885c8a3f138a0964f4d6b628d2480963f#2681dab885c8a3f138a0964f4d6b628d2480963f"
 
 [[package]]
 name = "angzarr-embedded"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=06c59a97ee9e98485435abbbb2b62bde3cd4faad#06c59a97ee9e98485435abbbb2b62bde3cd4faad"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=71c8ebca3cfff5b7d4e1ae40c3fba25531820a05#71c8ebca3cfff5b7d4e1ae40c3fba25531820a05"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-ports",
@@ -88,7 +88,7 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-host"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=06c59a97ee9e98485435abbbb2b62bde3cd4faad#06c59a97ee9e98485435abbbb2b62bde3cd4faad"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=71c8ebca3cfff5b7d4e1ae40c3fba25531820a05#71c8ebca3cfff5b7d4e1ae40c3fba25531820a05"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-embedded",
@@ -113,7 +113,7 @@ dependencies = [
 [[package]]
 name = "angzarr-embedded-host-config"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=06c59a97ee9e98485435abbbb2b62bde3cd4faad#06c59a97ee9e98485435abbbb2b62bde3cd4faad"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=71c8ebca3cfff5b7d4e1ae40c3fba25531820a05#71c8ebca3cfff5b7d4e1ae40c3fba25531820a05"
 dependencies = [
  "angzarr-yaml",
  "serde",
@@ -134,7 +134,7 @@ dependencies = [
 [[package]]
 name = "angzarr-ports"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=7225592247ae8d478dda64b5f154106b9b560b74#7225592247ae8d478dda64b5f154106b9b560b74"
+source = "git+https://github.com/angzarr-io/angzarr?rev=2681dab885c8a3f138a0964f4d6b628d2480963f#2681dab885c8a3f138a0964f4d6b628d2480963f"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-proto",
@@ -145,7 +145,7 @@ dependencies = [
 [[package]]
 name = "angzarr-proto"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=7225592247ae8d478dda64b5f154106b9b560b74#7225592247ae8d478dda64b5f154106b9b560b74"
+source = "git+https://github.com/angzarr-io/angzarr?rev=2681dab885c8a3f138a0964f4d6b628d2480963f#2681dab885c8a3f138a0964f4d6b628d2480963f"
 dependencies = [
  "bytes",
  "prost",
@@ -157,7 +157,7 @@ dependencies = [
 [[package]]
 name = "angzarr-proto-component"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=7225592247ae8d478dda64b5f154106b9b560b74#7225592247ae8d478dda64b5f154106b9b560b74"
+source = "git+https://github.com/angzarr-io/angzarr?rev=2681dab885c8a3f138a0964f4d6b628d2480963f#2681dab885c8a3f138a0964f4d6b628d2480963f"
 dependencies = [
  "angzarr-proto",
  "bytes",
@@ -172,7 +172,7 @@ dependencies = [
 [[package]]
 name = "angzarr-proto-transport-embedded"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=7225592247ae8d478dda64b5f154106b9b560b74#7225592247ae8d478dda64b5f154106b9b560b74"
+source = "git+https://github.com/angzarr-io/angzarr?rev=2681dab885c8a3f138a0964f4d6b628d2480963f#2681dab885c8a3f138a0964f4d6b628d2480963f"
 dependencies = [
  "angzarr-proto",
  "angzarr-proto-component",
@@ -183,7 +183,7 @@ dependencies = [
 [[package]]
 name = "angzarr-router"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-router?rev=f5d858273ed5258acddaff364da44a18b704e6b4#f5d858273ed5258acddaff364da44a18b704e6b4"
+source = "git+https://github.com/angzarr-io/angzarr-router?rev=e7c5cadc012b010c89eca586c921c880eaa38ac0#e7c5cadc012b010c89eca586c921c880eaa38ac0"
 dependencies = [
  "angzarr-ports",
  "angzarr-proto",
@@ -195,7 +195,7 @@ dependencies = [
 [[package]]
 name = "angzarr-store-sqlite"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=06c59a97ee9e98485435abbbb2b62bde3cd4faad#06c59a97ee9e98485435abbbb2b62bde3cd4faad"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=71c8ebca3cfff5b7d4e1ae40c3fba25531820a05#71c8ebca3cfff5b7d4e1ae40c3fba25531820a05"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-ports",
@@ -210,12 +210,12 @@ dependencies = [
 [[package]]
 name = "angzarr-test-dir"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=4a79bd64a4121ed78f82a8eca6ed445eefe20bf2#4a79bd64a4121ed78f82a8eca6ed445eefe20bf2"
+source = "git+https://github.com/angzarr-io/angzarr?rev=2681dab885c8a3f138a0964f4d6b628d2480963f#2681dab885c8a3f138a0964f4d6b628d2480963f"
 
 [[package]]
 name = "angzarr-yaml"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr?rev=7225592247ae8d478dda64b5f154106b9b560b74#7225592247ae8d478dda64b5f154106b9b560b74"
+source = "git+https://github.com/angzarr-io/angzarr?rev=2681dab885c8a3f138a0964f4d6b628d2480963f#2681dab885c8a3f138a0964f4d6b628d2480963f"
 dependencies = [
  "angzarr-diagnostic",
  "serde",
@@ -695,7 +695,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1986,7 +1986,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2554,7 +2554,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2564,7 +2564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3081,7 +3081,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
