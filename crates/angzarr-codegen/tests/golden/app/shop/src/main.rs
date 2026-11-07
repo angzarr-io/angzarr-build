@@ -9,7 +9,7 @@
 
 include!(concat!(env!("OUT_DIR"), "/angzarr-app.rs"));
 
-pub mod cart_impl;
+pub mod cart_state_impl;
 pub mod driver;
 
 /// Runs the application, then its driver, on tokio's runtime (the App is

@@ -99,7 +99,8 @@ message Refunded {
 }
 
 // The till's rejection codes: the reason, and an argument set only where
-// a code names one. OVER_LIMIT is refused OUT_OF_RANGE (decision 14.52).
+// a code names one. Whatever the reason, the refusal is refused under the
+// status its message declares (OUT_OF_RANGE), never one of its code's.
 message TillRefused {
   option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_OUT_OF_RANGE;
   enum Reason {

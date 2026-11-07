@@ -8,9 +8,9 @@ edition = "2024"
 publish = false
 
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "06c59a97ee9e98485435abbbb2b62bde3cd4faad" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e3e22db85b0bdb806a8a31267e1915a3a7cef809" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e3e22db85b0bdb806a8a31267e1915a3a7cef809" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "e3e22db85b0bdb806a8a31267e1915a3a7cef809" }
 prost = "0.14"
 # The App is async, on the caller's runtime: tokio's.
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

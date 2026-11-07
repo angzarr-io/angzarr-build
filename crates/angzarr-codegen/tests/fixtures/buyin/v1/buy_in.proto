@@ -45,7 +45,7 @@ message BuyInRefused {
   string reason = 1;
 }
 
-// The domestic fact BuyInWallet's translate callback hands the buy-in when
+// The domestic fact BuyInWallet's refusal callback hands the buy-in when
 // the wallet refuses a Hold: a fact, recorded, never refused.
 message HoldLost {
   option (io.angzarr.v1.fact) = {

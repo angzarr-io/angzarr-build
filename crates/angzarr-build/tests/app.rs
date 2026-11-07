@@ -173,13 +173,13 @@ fn main_is_written_once_with_the_in_process_implementations() {
     scaffold(&root, BUYIN, &seed());
     let main = read(&root, "src/main.rs");
     for module in [
-        "pub mod buy_in_impl;",
-        "pub mod wallet_impl;",
+        "pub mod buy_in_state_impl;",
+        "pub mod wallet_state_impl;",
         "pub mod driver;",
     ] {
         assert!(main.contains(module), "{module}:\n{main}");
     }
-    assert!(!main.contains("pub mod buy_in;"), "{main}");
+    assert!(!main.contains("pub mod buy_in_state;"), "{main}");
     assert!(
         main.contains("include!(concat!(env!(\"OUT_DIR\"), \"/angzarr-app.rs\"));"),
         "{main}"

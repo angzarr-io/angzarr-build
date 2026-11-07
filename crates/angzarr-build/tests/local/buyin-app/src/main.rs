@@ -5,7 +5,7 @@
 //! per fact the test checks. The App is async, on the caller's tokio runtime.
 
 use angzarr_embedded::markup::DomainMessage;
-use angzarr_embedded::v1::{CommandBook, Cover, Uuid};
+use angzarr_embedded::v1::{CommandBook, Cover, Uuid, event_page};
 use angzarr_embedded::{CommandBookExt, Domain, Payload, Sampled, Timestamp, pack};
 use angzarr_embedded_host::App;
 use buyin_app::domain::{Deposit, StartBuyIn};
@@ -47,8 +47,10 @@ async fn state<D: Domain<State = D> + Default>(app: &App, root: Uuid) -> D {
     let mut state = D::default();
     let stream = cover::<D>(root);
     for page in app.events(&stream).await.expect("the stream reads") {
-        let any = page.payload.clone().expect("an event page carries its event");
-        let event = D::Event::from_any(&any).expect("the event decodes");
+        let Some(event_page::Body::Event(any)) = page.body.as_ref() else {
+            continue;
+        };
+        let event = D::Event::from_any(any).expect("the event decodes");
         let at = angzarr_embedded::PageContext {
             cover: Some(&stream),
             sequence: page.sequence,
@@ -67,13 +69,13 @@ async fn main() {
         .expect("the app runs");
 
     // One command.
-    send::<adapters::Wallet, _>(&app, 1, root(1), Deposit { cents: 100 }).await;
-    let wallet = state::<adapters::Wallet>(&app, root(1)).await;
+    send::<adapters::WalletState, _>(&app, 1, root(1), Deposit { cents: 100 }).await;
+    let wallet = state::<adapters::WalletState>(&app, root(1)).await;
     println!("wallet balance={} held={}", wallet.balance(), wallet.held());
 
     // A policy step each way: BuyInStarted -> Hold on the wallet (BuyInWallet),
     // Held -> RecordHeld on the buy-in (WalletBuyIn).
-    send::<adapters::BuyIn, _>(
+    send::<adapters::BuyInState, _>(
         &app,
         2,
         root(10),
@@ -83,14 +85,14 @@ async fn main() {
         },
     )
     .await;
-    let wallet = state::<adapters::Wallet>(&app, root(1)).await;
+    let wallet = state::<adapters::WalletState>(&app, root(1)).await;
     println!("wallet balance={} held={}", wallet.balance(), wallet.held());
-    let buy_in = state::<adapters::BuyIn>(&app, root(10)).await;
+    let buy_in = state::<adapters::BuyInState>(&app, root(10)).await;
     println!("buyin held={} failed={}", buy_in.held(), buy_in.failed());
 
     // A refusal: the wallet refuses the Hold (InsufficientFunds), records
-    // nothing, and BuyInWallet's translate callback hands the buy-in HoldLost.
-    send::<adapters::BuyIn, _>(
+    // nothing, and BuyInWallet's refusal callback answers the buy-in with HoldLost.
+    send::<adapters::BuyInState, _>(
         &app,
         3,
         root(11),
@@ -100,8 +102,8 @@ async fn main() {
         },
     )
     .await;
-    let wallet = state::<adapters::Wallet>(&app, root(1)).await;
+    let wallet = state::<adapters::WalletState>(&app, root(1)).await;
     println!("wallet balance={} held={}", wallet.balance(), wallet.held());
-    let buy_in = state::<adapters::BuyIn>(&app, root(11)).await;
+    let buy_in = state::<adapters::BuyInState>(&app, root(11)).await;
     println!("buyin held={} failed={}", buy_in.held(), buy_in.failed());
 }

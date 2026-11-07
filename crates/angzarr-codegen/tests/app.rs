@@ -319,7 +319,7 @@ fn main_declares_only_the_in_process_components_implementations() {
     let files = app(&descriptors(BLACKJACK), BLACKJACK, &blackjack(), None, None).unwrap();
     let main = &file(&files, "src/main.rs").source;
     for module in [
-        "pub mod table_aggregate_impl;",
+        "pub mod table_state_impl;",
         "pub mod table_player_policy_impl;",
         "pub mod player_table_policy_impl;",
     ] {
@@ -327,7 +327,7 @@ fn main_declares_only_the_in_process_components_implementations() {
     }
     // The player is the Python child's; the wallet policy's target is
     // outside the application.
-    for absent in ["pub mod player_aggregate", "pub mod table_wallet_policy"] {
+    for absent in ["pub mod player_state", "pub mod table_wallet_policy"] {
         assert!(!main.contains(absent), "{absent}:\n{main}");
     }
 }
@@ -400,8 +400,8 @@ fn an_existing_config_is_the_input_the_generated_files_follow_not_the_seed() {
     assert_eq!(config.owner, Owner::User);
     assert_eq!(config.source, mine, "the config on disk is passed through");
     let main = &file(&files, "src/main.rs").source;
-    assert!(main.contains("pub mod player_aggregate_impl;"), "{main}");
-    assert!(!main.contains("pub mod table_aggregate_impl;"), "{main}");
+    assert!(main.contains("pub mod player_state_impl;"), "{main}");
+    assert!(!main.contains("pub mod table_state_impl;"), "{main}");
 }
 
 #[test]
@@ -896,45 +896,63 @@ fn a_projector_is_listed_when_its_sources_are_all_the_applications() {
         "io/angzarr/examples/v1/player.proto",
     ];
     let set = descriptors(WITH_LEDGER);
-    let listed = |seed: &AppSeed| {
-        let files = app(&set, WITH_LEDGER, seed, None, None).unwrap();
-        file(&files, "angzarr.yaml")
+    let listed = |name: &str, files: &[&str], seed: &AppSeed| {
+        let generated = app(&set, files, seed, None, None).unwrap();
+        file(&generated, "angzarr.yaml")
             .source
-            .contains("- name: projector-wallet-table-ledger\n    kind: projector\n")
+            .contains(&format!("- name: {name}\n    kind: projector\n"))
     };
-    assert!(listed(&seed("ledger")));
+    // The ledger is two projectors, each of one domain's events.
+    for name in ["projector-wallet-ledger", "projector-table-ledger"] {
+        assert!(listed(name, WITH_LEDGER, &seed("ledger")), "{name}");
+    }
     // A Python domain that is not one of its sources leaves it listed.
     let player = AppSeed {
         languages: vec![("player".to_string(), "python".to_string())],
         ..seed("ledger")
     };
-    assert!(listed(&player));
+    assert!(listed("projector-wallet-ledger", WITH_LEDGER, &player));
     // The wallet a Python child: the host records its events, so the
     // projector of it runs in process all the same.
     let python = AppSeed {
         languages: vec![("wallet".to_string(), "python".to_string())],
         ..seed("ledger")
     };
-    assert!(listed(&python));
+    assert!(listed("projector-wallet-ledger", WITH_LEDGER, &python));
     // A source no component of the application owns (the wallet's protos
-    // not generated) leaves it unlisted.
+    // not generated) leaves its projector unlisted, the other's not.
     let alone = [WITH_LEDGER[0], WITH_LEDGER[2]];
-    let files = app(&set, &alone, &seed("ledger"), None, None).unwrap();
-    assert!(
-        !file(&files, "angzarr.yaml")
-            .source
-            .contains("kind: projector"),
-        "{}",
-        file(&files, "angzarr.yaml").source
-    );
-    // A projector of no source is not listed.
+    assert!(!listed("projector-wallet-ledger", &alone, &seed("ledger")));
+    assert!(listed("projector-table-ledger", &alone, &seed("ledger")));
+    // A projector of one source, in an application of its one domain.
     const LONE: &[&str] = &["lone/v1/lone.proto"];
     let files = app(&descriptors(LONE), LONE, &seed("lone"), None, None).unwrap();
     assert!(
-        !file(&files, "angzarr.yaml").source.contains("projector"),
+        file(&files, "angzarr.yaml")
+            .source
+            .contains("- name: projector-slot-view\n    kind: projector\n"),
         "{}",
         file(&files, "angzarr.yaml").source
     );
+}
+
+#[test]
+fn a_projector_of_two_domains_is_listed_only_when_both_are_the_applications() {
+    const DUO: &[&str] = &[
+        "duo/v1/left.proto",
+        "duo/v1/right.proto",
+        "duo/v1/view.proto",
+    ];
+    let set = descriptors(DUO);
+    let listed = |name: &str, files: &[&str]| {
+        let generated = app(&set, files, &seed("duo"), None, None).unwrap();
+        file(&generated, "angzarr.yaml")
+            .source
+            .contains(&format!("- name: {name}\n    kind: projector\n"))
+    };
+    assert!(listed("projector-duo-view", DUO));
+    assert!(!listed("projector-duo-view", &[DUO[0], DUO[2]]));
+    assert!(!listed("projector-duo-view", &[DUO[1], DUO[2]]));
 }
 
 #[test]
@@ -1034,17 +1052,17 @@ fn a_seed_puts_a_projector_in_its_language() {
         "io/angzarr/examples/v1/ledger.proto",
     ];
     let seeded = AppSeed {
-        languages: vec![language("projector-wallet-table-ledger", "python")],
+        languages: vec![language("projector-wallet-ledger", "python")],
         ..seed("ledger")
     };
     let files = app(&descriptors(WITH_LEDGER), WITH_LEDGER, &seeded, None, None).unwrap();
     assert_eq!(
         entry(
             &file(&files, "angzarr.yaml").source,
-            "projector-wallet-table-ledger"
+            "projector-wallet-ledger"
         ),
-        "  - name: projector-wallet-table-ledger\n    kind: projector\n    language: python\n    \
-         dir: projector-wallet-table-ledger\n    entry: [angzarr-projector-wallet-table-ledger]"
+        "  - name: projector-wallet-ledger\n    kind: projector\n    language: python\n    \
+         dir: projector-wallet-ledger\n    entry: [angzarr-projector-wallet-ledger]"
     );
 }
 

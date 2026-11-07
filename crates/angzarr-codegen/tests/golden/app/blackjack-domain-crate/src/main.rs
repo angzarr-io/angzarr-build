@@ -11,8 +11,8 @@ include!(concat!(env!("OUT_DIR"), "/angzarr-app.rs"));
 
 pub mod driver;
 pub mod player_table_policy_impl;
-pub mod table_aggregate_impl;
 pub mod table_player_policy_impl;
+pub mod table_state_impl;
 
 /// Runs the application, then its driver, on tokio's runtime (the App is
 /// async, on the caller's). Dropping the application stops the children.

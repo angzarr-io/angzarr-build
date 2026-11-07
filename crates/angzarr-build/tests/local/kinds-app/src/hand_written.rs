@@ -7,7 +7,7 @@
 use angzarr_embedded::markup::{Commands, PolicyContext};
 use angzarr_embedded_macros::{on_event, policy};
 use angzarr_router::error::CodedError;
-use angzarr_embedded::angzarr_proto::v1 as pb;
+use angzarr_router::hpb;
 use angzarr_router::router::ProjectorHandler;
 
 /// Counts the ledger's events, a committed book at a time.
@@ -18,13 +18,14 @@ impl ProjectorHandler for Tally {
         "projector-tally"
     }
 
-    async fn dispatch(&self, events: &pb::EventBook) -> Result<pb::Projection, CodedError> {
+    async fn dispatch(&self, req: &hpb::ProjectRequest) -> Result<hpb::ProjectResponse, CodedError> {
+        let events = req.events.clone().unwrap_or_default();
         let domain = events
             .cover
             .as_ref()
             .map_or("", |cover| cover.domain.as_str());
         println!("tally: {} events from {domain}", events.pages.len());
-        Ok(pb::Projection::default())
+        Ok(hpb::ProjectResponse::default())
     }
 }
 

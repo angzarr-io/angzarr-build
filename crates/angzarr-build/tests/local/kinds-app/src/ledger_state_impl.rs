@@ -1,6 +1,6 @@
-//! LedgerStateImpl: the implementation of `LedgerState`, written once by
-//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
-//! methods it lacks, each `todo!()`.
+//! LedgerStateImpl: the implementation of `LedgerState`, the generated domain layer's
+//! interface, written once by `angzarr scaffold rust` and yours from then on:
+//! `--missing` adds the required methods it lacks, each `todo!()`.
 
 use crate::domain::*;
 
@@ -12,7 +12,11 @@ pub struct LedgerStateImpl {
 
 impl LedgerState for LedgerStateImpl {
     /// Always refused: over the limit, with every kind of arg set.
-    fn post(&self, _cmd: &Post, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<PostRefuses>> {
+    fn post(
+        &self,
+        _cmd: &Post,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<PostRefuses>> {
         Err(Failed::rejected(PostRefused {
             reason: PostRefusedReason::OverLimit,
             small: -1,
@@ -35,15 +39,32 @@ impl LedgerState for LedgerStateImpl {
         }))
     }
 
-    fn open(&self, _cmd: &Open, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    fn open(
+        &self,
+        _cmd: &Open,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         Ok(vec![Posted {}.into(), Noted {}.into()])
     }
 
-    fn four(&self, _cmd: &Four, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
-        Ok(vec![Posted {}.into(), Noted {}.into(), Cleared {}.into(), Closed {}.into()])
+    fn four(
+        &self,
+        _cmd: &Four,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
+        Ok(vec![
+            Posted {}.into(),
+            Noted {}.into(),
+            Cleared {}.into(),
+            Closed {}.into(),
+        ])
     }
 
-    fn maybe(&self, _cmd: &Maybe, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    fn maybe(
+        &self,
+        _cmd: &Maybe,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         Ok(Vec::new())
     }
 
@@ -51,7 +72,7 @@ impl LedgerState for LedgerStateImpl {
         &self,
         _cmd: &MaybeBoth,
         _ctx: &Context,
-    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         Ok(vec![Posted {}.into(), Noted {}.into()])
     }
 
@@ -63,23 +84,31 @@ impl LedgerState for LedgerStateImpl {
         Ok(vec![Noted {}.into(), Posted {}.into()])
     }
 
-    fn raw(&self, _cmd: &Raw, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    fn raw(
+        &self,
+        _cmd: &Raw,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         Ok(Vec::new())
     }
 
-    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Vec<LedgerStateEvent> {
-        Vec::new()
+    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug> {
+        Ok(Vec::new())
     }
 
-    fn swept(&self, _fact: &Swept, _ctx: &Context) -> Vec<LedgerStateEvent> {
-        vec![Closed {}.into()]
+    fn swept(&self, _fact: &Swept, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug> {
+        Ok(vec![Closed {}.into()])
     }
 
-    fn apply_posted(&mut self, _event: &Posted) {}
+    fn apply_posted(&mut self, _event: &Posted) {
+    }
 
-    fn apply_noted(&mut self, _event: &Noted) {}
+    fn apply_noted(&mut self, _event: &Noted) {
+    }
 
-    fn apply_cleared(&mut self, _event: &Cleared) {}
+    fn apply_cleared(&mut self, _event: &Cleared) {
+    }
 
-    fn apply_closed(&mut self, _event: &Closed) {}
+    fn apply_closed(&mut self, _event: &Closed) {
+    }
 }

@@ -1,6 +1,6 @@
-//! LedgerAuditPolicyImpl: the implementation of `LedgerAuditPolicy`, written once by
-//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
-//! methods it lacks, each `todo!()`.
+//! LedgerAuditPolicyImpl: the implementation of `LedgerAuditPolicy`, the generated domain layer's
+//! interface, written once by `angzarr scaffold rust` and yours from then on:
+//! `--missing` adds the required methods it lacks, each `todo!()`.
 
 use crate::domain::*;
 
@@ -20,11 +20,11 @@ impl LedgerAuditPolicy for LedgerAuditPolicyImpl {
 
     /// A refused Audit is the ledger's Arrived; the refusal, the choice of
     /// Audit's two types, is printed as it is handed over.
-    fn audit_refused(
+    fn refused(
         &self,
-        _command: &Audit,
-        refusal: Option<AuditRefuses>,
-        _ctx: &CommandContext,
+        _command: AuditStateCommand,
+        refusal: AuditStateRefusal,
+        _ctx: &Refused,
     ) -> Result<LedgerStateFact, Bug> {
         println!("audit refused: {refusal:?}");
         Ok(Arrived {}.into())

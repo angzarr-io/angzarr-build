@@ -1,6 +1,6 @@
-//! AuditStateImpl: the implementation of `AuditState`, written once by
-//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
-//! methods it lacks, each `todo!()`.
+//! AuditStateImpl: the implementation of `AuditState`, the generated domain layer's
+//! interface, written once by `angzarr scaffold rust` and yours from then on:
+//! `--missing` adds the required methods it lacks, each `todo!()`.
 
 use crate::domain::*;
 
@@ -13,7 +13,11 @@ pub struct AuditStateImpl {
 impl AuditState for AuditStateImpl {
     /// Audits every root but 2, which it refuses with one of its two
     /// refusal types: the policy that sent it translates the refusal.
-    fn audit(&self, _cmd: &Audit, ctx: &Context) -> Result<Vec<AuditStateEvent>, Failed<AuditRefuses>> {
+    fn audit(
+        &self,
+        _cmd: &Audit,
+        ctx: &Context,
+    ) -> Result<Vec<AuditStateEvent>, Failed<AuditRefuses>> {
         let root = ctx
             .command
             .cover

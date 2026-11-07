@@ -23,4 +23,11 @@ fn test_descriptors_writes_into_out_dir_with_the_crates_version() {
         "{source}"
     );
     assert!(source.contains("projector-audit-trail-view"), "{source}");
+    // The bytes: every component's `rules_version` (field 2, a string) is
+    // the version, not an empty one.
+    let version = env!("CARGO_PKG_VERSION");
+    let field = format!("\\x12\\x{:02X}{version}", version.len());
+    let components = source.matches("b\"\\n").count();
+    assert!(components > 1, "{source}");
+    assert_eq!(source.matches(&field).count(), components, "{source}");
 }

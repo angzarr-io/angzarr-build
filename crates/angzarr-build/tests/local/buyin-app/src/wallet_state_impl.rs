@@ -1,19 +1,19 @@
-//! WalletImpl: the scaffold of `Wallet`'s implementation, bodies written.
+//! WalletStateImpl: the scaffold of `WalletState`'s implementation, bodies written.
 
 use crate::domain::*;
 
 /// The state the `apply_` methods fold.
 #[derive(Clone, Debug, Default)]
-pub struct WalletImpl {
+pub struct WalletStateImpl {
     pub state: crate::wire::WalletState,
 }
 
-impl Wallet for WalletImpl {
+impl WalletState for WalletStateImpl {
     fn deposit(
         &self,
         cmd: &Deposit,
         _ctx: &Context,
-    ) -> Result<Vec<WalletEvent>, Failed<DepositRefused>> {
+    ) -> Result<Vec<WalletStateEvent>, Failed<DepositRefused>> {
         Ok(vec![Deposited { cents: cmd.cents }.into()])
     }
 
@@ -21,7 +21,7 @@ impl Wallet for WalletImpl {
         &self,
         cmd: &Hold,
         _ctx: &Context,
-    ) -> Result<Vec<WalletEvent>, Failed<InsufficientFunds>> {
+    ) -> Result<Vec<WalletStateEvent>, Failed<InsufficientFunds>> {
         let available = self.state.balance - self.state.held;
         if cmd.cents > available {
             return Err(InsufficientFunds {
@@ -29,22 +29,26 @@ impl Wallet for WalletImpl {
             }
             .into());
         }
-        Ok(vec![Held {
-            cents: cmd.cents,
-            buy_in: cmd.buy_in.clone(),
-        }
-        .into()])
+        Ok(vec![
+            Held {
+                cents: cmd.cents,
+                buy_in: cmd.buy_in.clone(),
+            }
+            .into(),
+        ])
     }
 
     fn record_buy_in_refused(
         &self,
         fact: &RecordBuyInRefused,
         _ctx: &Context,
-    ) -> Vec<WalletEvent> {
-        vec![BuyInRefusalRecorded {
-            reason: fact.reason.clone(),
-        }
-        .into()]
+    ) -> Result<Vec<WalletStateEvent>, Bug> {
+        Ok(vec![
+            BuyInRefusalRecorded {
+                reason: fact.reason.clone(),
+            }
+            .into(),
+        ])
     }
 
     fn apply_buy_in_refusal_recorded(&mut self, _event: &BuyInRefusalRecorded) {}
@@ -58,7 +62,7 @@ impl Wallet for WalletImpl {
     }
 }
 
-impl WalletImpl {
+impl WalletStateImpl {
     pub fn balance(&self) -> i64 {
         self.state.balance
     }

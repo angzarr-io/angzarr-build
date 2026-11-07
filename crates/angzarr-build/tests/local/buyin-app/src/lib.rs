@@ -17,7 +17,7 @@ pub mod descriptors {
 }
 include!(concat!(env!("OUT_DIR"), "/angzarr-register.rs"));
 
-pub mod buy_in_impl;
-pub mod buy_in_wallet_impl;
-pub mod wallet_buy_in_impl;
-pub mod wallet_impl;
+pub mod buy_in_state_impl;
+pub mod buy_in_wallet_policy_impl;
+pub mod wallet_buy_in_policy_impl;
+pub mod wallet_state_impl;

@@ -129,9 +129,10 @@ async fn audit_command(app: &App, n: u8) -> String {
     };
     let pages = app.events(&cover).await.expect("the stream reads");
     let meta = pages[0].meta.as_ref().expect("an event records its meta");
-    let Some(angzarr_embedded::v1::event_meta::Causation::CommandId(id)) = &meta.causation
+    let Some(angzarr_embedded::v1::event_meta::Causation::Command(cause)) = &meta.causation
     else {
         panic!("the event records its command id");
     };
+    let id = cause.command_id.as_ref().expect("a command cause names its command");
     id.value.iter().map(|b| format!("{b:02x}")).collect()
 }

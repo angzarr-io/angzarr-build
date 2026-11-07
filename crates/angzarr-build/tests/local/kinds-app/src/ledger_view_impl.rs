@@ -1,6 +1,6 @@
-//! LedgerViewImpl: the implementation of `LedgerView`, written once by
-//! `angzarr scaffold rust` and yours from then on: `--missing` adds the
-//! methods it lacks, each `todo!()`.
+//! LedgerViewImpl: the implementation of `LedgerView`, the generated domain layer's
+//! interface, written once by `angzarr scaffold rust` and yours from then on:
+//! `--missing` adds the required methods it lacks, each `todo!()`.
 
 use crate::domain::*;
 
