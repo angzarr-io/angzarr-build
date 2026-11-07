@@ -2,8 +2,8 @@ syntax = "proto3";
 package bad.v1;
 import "io/angzarr/v1/options.proto";
 
-// A refusal status marks a refusal's code (decision 14.52): on an enum
-// that is no refusal's nested Reason, generation fails.
+// A refusal message declaring no status, or REFUSAL_STATUS_UNSPECIFIED:
+// generation fails.
 message ThingState {
   option (io.angzarr.v1.component) = {
     component_name: "things"
@@ -11,19 +11,18 @@ message ThingState {
   };
 }
 
-enum Suit {
-  SUIT_UNSPECIFIED = 0;
-  SUIT_HEARTS = 1 [(io.angzarr.v1.refusal_status) = REFUSAL_STATUS_INVALID_ARGUMENT];
-}
-
 message Poke {
   option (io.angzarr.v1.command) = {
     component: "bad.v1.ThingState"
     emits: ["bad.v1.Poked"]
+    refuses: ["bad.v1.PokeRefused"]
   };
-  Suit suit = 1;
 }
 
 message Poked {
   option (io.angzarr.v1.event) = {component: "bad.v1.ThingState"};
+}
+
+message PokeRefused {
+
 }

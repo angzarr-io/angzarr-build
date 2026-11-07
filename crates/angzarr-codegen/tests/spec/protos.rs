@@ -31,7 +31,27 @@ pub struct Input {
     pub refuses: Vec<String>,
     /// Declared by `(fact)`, not `(command)`.
     pub fact: bool,
+    /// Declared by both options, `(command)` and `(fact)`.
+    pub both: bool,
 }
+
+/// What a scenario says of a message's `(refusal_status)` option.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum Status {
+    /// Nothing: a message some command's `refuses` names is written with
+    /// a valid status, so a scenario about something else is not refused
+    /// for lacking one; any other message carries none.
+    #[default]
+    Unsaid,
+    /// The scenario says it carries none.
+    Absent,
+    /// The scenario marks it (`REFUSAL_STATUS_NOT_FOUND`).
+    Marked(String),
+}
+
+/// The status a message no scenario marked is written with when a
+/// command's `refuses` names it.
+const DEFAULT_STATUS: &str = "REFUSAL_STATUS_FAILED_PRECONDITION";
 
 /// One message, with its options.
 #[derive(Clone, Debug, Default)]
@@ -40,12 +60,17 @@ pub struct Message {
     pub input: Option<Input>,
     /// Its `(event)` entries: the component, and the domain it names.
     pub events: Vec<(String, Option<String>)>,
+    /// Its `(refusal_status)`.
+    pub status: Status,
 }
 
 /// Every message a scenario declared, by full name.
 #[derive(Clone, Debug, Default)]
 pub struct Protos {
     pub messages: BTreeMap<String, Message>,
+    /// Files of the protos' include path every package file imports (the
+    /// framework's own, `io/angzarr/v1/types.proto`).
+    pub imports: Vec<String>,
 }
 
 /// A domain's package: its name with no `-`.
@@ -93,8 +118,15 @@ fn input_option(i: &Input) -> String {
     if !i.refuses.is_empty() {
         let _ = writeln!(out, "    refuses: {}", list(&i.refuses));
     }
-    let option = if i.fact { "fact" } else { "command" };
-    format!("  option (io.angzarr.v1.{option}) = {{\n{out}  }};\n")
+    let options: &[&str] = match (i.both, i.fact) {
+        (true, _) => &["command", "fact"],
+        (false, true) => &["fact"],
+        (false, false) => &["command"],
+    };
+    options
+        .iter()
+        .map(|option| format!("  option (io.angzarr.v1.{option}) = {{\n{out}  }};\n"))
+        .collect()
 }
 
 fn event_option((component, domain): &(String, Option<String>)) -> String {
@@ -105,8 +137,16 @@ fn event_option((component, domain): &(String, Option<String>)) -> String {
     format!("  option (io.angzarr.v1.event) = {{component: \"{component}\"{domain}}};\n")
 }
 
-fn message(name: &str, m: &Message) -> String {
+fn message(name: &str, m: &Message, refused: bool) -> String {
     let mut out = format!("message {name} {{\n");
+    let status = match &m.status {
+        Status::Marked(status) => Some(status.as_str()),
+        Status::Unsaid if refused => Some(DEFAULT_STATUS),
+        Status::Unsaid | Status::Absent => None,
+    };
+    if let Some(status) = status {
+        let _ = writeln!(out, "  option (io.angzarr.v1.refusal_status) = {status};");
+    }
     out += &m
         .component
         .as_ref()
@@ -128,17 +168,32 @@ impl Protos {
     /// Each package's file: its path and its text.
     pub fn files(&self) -> BTreeMap<String, String> {
         let mut files: BTreeMap<String, String> = BTreeMap::new();
+        let imports: String = self
+            .imports
+            .iter()
+            .map(|file| format!("import \"{file}\";\n"))
+            .collect();
         let mut text = |full: &str, body: String| {
             let (package, _) = full.rsplit_once('.').expect("a full name");
             let file = files.entry(format!("{package}.proto")).or_insert_with(|| {
-                format!("syntax = \"proto3\";\npackage {package};\nimport \"io/angzarr/v1/options.proto\";\n\n")
+                format!("syntax = \"proto3\";\npackage {package};\nimport \"io/angzarr/v1/options.proto\";\n{imports}\n")
             });
             file.push_str(&body);
         };
+        let refused: Vec<&String> = self
+            .messages
+            .values()
+            .filter_map(|m| m.input.as_ref())
+            .flat_map(|i| &i.refuses)
+            .collect();
         for (full, m) in &self.messages {
             text(
                 full,
-                message(full.rsplit_once('.').expect("a full name").1, m),
+                message(
+                    full.rsplit_once('.').expect("a full name").1,
+                    m,
+                    refused.contains(&full),
+                ),
             );
         }
         files

@@ -3,7 +3,7 @@
 
 use cucumber::given;
 
-use crate::protos::full;
+use crate::protos::{Status, full};
 use crate::world::Generator;
 
 /// `domain`'s aggregate, `<Domain>State`.
@@ -74,7 +74,28 @@ fn component_of_kind(w: &mut Generator, words: String, name: String) {
     let component = w.component(&name, kind, &name);
     if kind != "PROJECTOR" {
         component.domain = Some(name);
+    } else {
+        // A projector names an event (C-0855); the scenario's Given says
+        // none, so it is given one of the `order` domain, by override.
+        let projector = w.named(&name);
+        w.protos
+            .message("order.OrderPlaced")
+            .events
+            .push((projector, Some("order".to_string())));
     }
+}
+
+/// The amended reading of the projector Given of C-0716: the projector
+/// names its event.
+#[given(regex = r#"^a projector component "([\w-]+)" whose \(event\) entries name "([^"]+)"$"#)]
+fn projector_component_with_event(w: &mut Generator, name: String, event: String) {
+    w.component(&name, "PROJECTOR", &name);
+    let component = w.named(&name);
+    let domain = event.split('.').next().unwrap_or_default().to_string();
+    w.protos
+        .message(&full(&event))
+        .events
+        .push((component, Some(domain)));
 }
 
 #[given(
@@ -126,6 +147,15 @@ fn projector(w: &mut Generator, name: String, first: String, second: String) {
 fn starting_types(w: &mut Generator, name: String, listed: String) {
     let anchor = w.named(&name);
     let listed = full(&listed);
+    // A starting type is one of the process manager's own inputs (C-0860);
+    // where no message declares it yet, it is its command.
+    if w.protos
+        .messages
+        .get(&listed)
+        .is_none_or(|m| m.input.is_none())
+    {
+        w.input(&listed, &name);
+    }
     w.protos
         .message(&anchor)
         .component
@@ -219,4 +249,105 @@ fn command_listing(
 #[given(regex = r#"^the business binary is built as version "([^"]+)"$"#)]
 fn built_as(w: &mut Generator, version: String) {
     w.version = Some(version);
+}
+
+/// A policy or projector, in a package of its own, that no `(event)` entry
+/// names.
+#[given(
+    regex = r#"^(a policy with output_domain "([\w-]+)"|a projector) "([\w-]+)" that no \(event\) entry names$"#
+)]
+fn names_no_event(w: &mut Generator, _words: String, output: String, name: String) {
+    let (kind, package) = if output.is_empty() {
+        ("PROJECTOR", "projectors")
+    } else {
+        ("POLICY", "policies")
+    };
+    w.component(&name, kind, package).output_domain = Some(output).filter(|o| !o.is_empty());
+}
+
+/// `component` names each of `events`, whose owners are the aggregates of
+/// their packages' domains.
+#[given(regex = r#"^\(event\) entries naming "([\w-]+)" for "([^"]+)" and "([^"]+)"$"#)]
+fn event_entries(w: &mut Generator, component: String, first: String, second: String) {
+    w.consumed(&first, &component);
+    w.consumed(&second, &component);
+}
+
+/// An `(event)` entry with no override, folding or not as the component
+/// is.
+#[given(regex = r#"^an \(event\) entry for "([^"]+)" naming "([\w-]+)"$"#)]
+fn event_entry(w: &mut Generator, event: String, component: String) {
+    let component = w.named(&component);
+    w.protos
+        .message(&full(&event))
+        .events
+        .push((component, None));
+}
+
+/// An `(event)` entry naming a component by its anchor message's full
+/// name, whatever the set holds.
+#[given(regex = r#"^an \(event\) entry for "([^"]+)" naming the component "([^"]+)"$"#)]
+fn event_entry_for_component(w: &mut Generator, event: String, component: String) {
+    w.protos
+        .message(&full(&event))
+        .events
+        .push((component, None));
+}
+
+#[given(regex = r#"^no message "([^"]+)" is in the descriptor set being generated$"#)]
+fn no_message(w: &mut Generator, message: String) {
+    assert!(!w.protos.messages.contains_key(&message), "{message}");
+}
+
+#[given(regex = r#"^"([^"]+)" refuses with "([^"]+)"$"#)]
+fn refuses_with(w: &mut Generator, command: String, refusal: String) {
+    let input = w
+        .protos
+        .message(&full(&command))
+        .input
+        .as_mut()
+        .expect("a command");
+    input.refuses.push(full(&refusal));
+    w.protos.message(&full(&refusal));
+}
+
+#[given(
+    regex = r#"^the message "([^"]+)"(?:, which no command's refuses names,)? (carries no \(refusal_status\)|is marked \(refusal_status\) (\w+))$"#
+)]
+fn refusal_status(w: &mut Generator, message: String, said: String, status: String) {
+    w.protos.message(&full(&message)).status = if status.is_empty() {
+        assert!(said.starts_with("carries no"));
+        Status::Absent
+    } else {
+        Status::Marked(status)
+    };
+}
+
+/// The framework's own message, imported, marked as the scenario says.
+#[given(
+    regex = r#"^the descriptor set includes "io\.angzarr\.v1\.ExpectedSequenceMismatch", marked \(refusal_status\) (\w+)$"#
+)]
+fn includes_sequence_mismatch(w: &mut Generator, status: String) {
+    assert_eq!(status, "REFUSAL_STATUS_FAILED_PRECONDITION");
+    w.protos
+        .imports
+        .push("io/angzarr/v1/types.proto".to_string());
+}
+
+#[given(regex = r#"^no command's refuses names "([^"]+)"$"#)]
+fn no_command_refuses(w: &mut Generator, message: String) {
+    let refused = w
+        .protos
+        .messages
+        .values()
+        .filter_map(|m| m.input.as_ref())
+        .any(|i| i.refuses.contains(&message));
+    assert!(!refused, "{message}");
+}
+
+#[given(regex = r#"^the message "([^"]+)" carries \(command\) and \(fact\) naming "(\w+)"$"#)]
+fn carries_both(w: &mut Generator, message: String, component: String) {
+    let input = w.input(&message, &component);
+    input.fact = true;
+    input.both = true;
 }

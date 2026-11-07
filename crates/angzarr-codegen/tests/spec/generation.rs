@@ -43,6 +43,13 @@ fn linted(w: &mut Generator) {
     w.lint_protos();
 }
 
+/// Generating reads the declarations as a lint does; the one channel of
+/// warnings is the lint's.
+#[when("the protos are generated")]
+fn generated_protos(w: &mut Generator) {
+    w.lint_protos();
+}
+
 #[when("the component's descriptor is generated")]
 fn generate(w: &mut Generator) {
     w.generate();
@@ -129,10 +136,69 @@ fn error_naming(w: &mut Generator, name: String, rest: String) {
         Some(why(|m| matches!(m, MarkupError::UnknownRefusal { .. })))
     } else if rest.contains("its refuses type") {
         Some(why(|m| matches!(m, MarkupError::ForeignRefusal { .. })))
+    } else if rest.contains(": it names no event") {
+        Some(why(|m| matches!(m, MarkupError::NoEvent { .. })))
+    } else if rest.contains("its source domains") {
+        Some(why(|m| matches!(m, MarkupError::PolicySources { .. })))
+    } else if rest.contains("the override on its entry") {
+        Some(why(|m| matches!(m, MarkupError::OverrideOnOwned { .. })))
+    } else if rest.contains("its two stateful consumers") {
+        Some(why(|m| matches!(m, MarkupError::EventFoldedTwice { .. })))
+    } else if rest.contains("its starting type") {
+        Some(why(|m| {
+            matches!(m, MarkupError::StartingTypeNotInput { .. })
+        }))
+    } else if rest.contains("its (refusal_status)") {
+        // C-0862 (none declared) and C-0746 (declared where none is
+        // refused) word the same.
+        Some(why(|m| {
+            matches!(
+                m,
+                MarkupError::RefusalStatusMissing { .. }
+                    | MarkupError::RefusalStatusMisplaced { .. }
+            )
+        }))
+    } else if rest.contains("both its options") {
+        Some(why(|m| matches!(m, MarkupError::CommandAndFact { .. })))
+    } else if rest.contains("no fact to translate a refusal into") {
+        Some(why(|m| matches!(m, MarkupError::SourceTakesNoFact { .. })))
     } else {
         None
     };
     assert_ne!(expected, Some(false), "{error:?} is not the error of{rest}");
+}
+
+#[then(regex = r#"^lint reports no error naming "([^"]+)"$"#)]
+fn no_error_naming(w: &mut Generator, name: String) {
+    if let Some(Err(error)) = &w.outcome {
+        assert!(!names(error, &name), "{error:?} names {name}");
+    }
+}
+
+#[then(
+    regex = r#"^generation warns that consumer "([^"]+)" of "([^"]+)" is outside this generation and was skipped$"#
+)]
+fn warns_skipped(w: &mut Generator, consumer: String, event: String) {
+    let _ = w.generated();
+    let found = w.warnings.iter().any(|warning| {
+        matches!(warning, Warning::ConsumerSkipped { .. })
+            && warns_of(warning, &consumer)
+            && warns_of(warning, &event)
+    });
+    assert!(found, "no warning of {consumer}: {:?}", w.warnings);
+}
+
+#[then("no handler is generated for that entry")]
+fn no_handler(w: &mut Generator) {
+    // The consumer is no component of the generation: nothing is made for
+    // it (the Rust handlers themselves are the output generators').
+    let made = &w.generated().descriptors;
+    assert!(made.iter().all(|d| !d.component.contains("ShippingPolicy")));
+}
+
+#[then("generation exits with status 0")]
+fn generation_zero(w: &mut Generator) {
+    let _ = w.generated();
 }
 
 #[then(regex = r#"^lint reports no error for "([^"]+)"$"#)]

@@ -166,31 +166,35 @@ fn test_a_reasons_status_is_its_values_refusal_status() {
     }
 }
 
-/// The status option marks a refusal's code alone (C-0746): on any other
-/// enum's value, on a Reason's zero value, or on the Reason of a message
-/// no command refuses with, generation fails naming the value.
+/// Every refusal declares its status, and the option marks a refusal
+/// message alone (C-0862, C-0746): a message some command refuses with
+/// that declares none, or `REFUSAL_STATUS_UNSPECIFIED`, and a status on a
+/// message no command refuses with, generation fails naming the message.
 #[test]
-fn test_a_refusal_status_anywhere_but_a_refusals_code_is_refused() {
-    for (file, value) in [
+fn test_a_refusal_status_anywhere_but_a_refusals_message_is_refused() {
+    let missing = |refusal: &str| MarkupError::RefusalStatusMissing {
+        refusal: refusal.to_string(),
+    };
+    for (file, error) in [
         (
-            "bad/v1/refusal_status_elsewhere.proto",
-            "bad.v1.Suit.SUIT_HEARTS",
+            "bad/v1/refusal_status_missing.proto",
+            missing("bad.v1.PokeRefused"),
         ),
         (
-            "bad/v1/refusal_status_zero.proto",
-            "bad.v1.PokeRefused.Reason.REASON_UNSPECIFIED",
+            "bad/v1/refusal_status_unspecified.proto",
+            missing("bad.v1.PokeRefused"),
         ),
         (
             "bad/v1/refusal_status_unrefused.proto",
-            "bad.v1.Poked.Reason.REASON_GONE",
+            MarkupError::RefusalStatusMisplaced {
+                message: "bad.v1.Poked".to_string(),
+            },
         ),
     ] {
         assert_eq!(
             markup_domain(&descriptors(&[file]), &[file], &[("bad.v1", "crate::wire")])
                 .expect_err(file),
-            CodegenError::Markup(MarkupError::RefusalStatusMisplaced {
-                value: value.to_string()
-            }),
+            CodegenError::Markup(error),
             "{file}"
         );
     }

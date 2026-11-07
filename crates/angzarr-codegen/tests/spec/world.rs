@@ -156,7 +156,12 @@ impl Generator {
     pub fn lint_protos(&mut self) {
         let files = self.protos.files();
         let set = compile(&files);
-        let names: Vec<&str> = files.keys().map(String::as_str).collect();
+        // Linted: the scenario's files and the framework's it imports.
+        let names: Vec<&str> = files
+            .keys()
+            .map(String::as_str)
+            .chain(self.protos.imports.iter().map(String::as_str))
+            .collect();
         let version = self.version.clone().unwrap_or_else(|| VERSION.to_string());
         let outcome = warnings(&set, &names).map(|found| {
             self.warnings = found;

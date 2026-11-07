@@ -2,8 +2,8 @@ syntax = "proto3";
 package bad.v1;
 import "io/angzarr/v1/options.proto";
 
-// A refusal status on a refusal Reason's zero value, the absence of a
-// code (decision 14.52): generation fails.
+// A refusal message declaring no status, or REFUSAL_STATUS_UNSPECIFIED:
+// generation fails.
 message ThingState {
   option (io.angzarr.v1.component) = {
     component_name: "things"
@@ -24,9 +24,5 @@ message Poked {
 }
 
 message PokeRefused {
-  enum Reason {
-    REASON_UNSPECIFIED = 0 [(io.angzarr.v1.refusal_status) = REFUSAL_STATUS_NOT_FOUND];
-    REASON_GONE = 1;
-  }
-  Reason reason = 1;
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_UNSPECIFIED;
 }

@@ -29,6 +29,9 @@ pub enum Warning {
     /// A process manager listing no `starting_types`: it could never start
     /// an instance (C-0611).
     NoStartingInput { component: String },
+    /// An `(event)` entry naming a consumer outside this generation: a
+    /// reference to a component generated elsewhere, skipped (C-0858).
+    ConsumerSkipped { consumer: String, event: String },
 }
 
 impl fmt::Display for Warning {
@@ -45,6 +48,7 @@ impl Diagnostic for Warning {
             Warning::UnproducedSource { .. } => code!("unproduced-source"),
             Warning::Idle { .. } => code!("idle-component"),
             Warning::NoStartingInput { .. } => code!("no-starting-input"),
+            Warning::ConsumerSkipped { .. } => code!("consumer-skipped"),
         }
     }
 
@@ -56,6 +60,7 @@ impl Diagnostic for Warning {
             Warning::Idle { component } | Warning::NoStartingInput { component } => {
                 texts![component]
             }
+            Warning::ConsumerSkipped { consumer, event } => texts![consumer, event],
         }
     }
 }
@@ -123,6 +128,10 @@ pub(crate) fn samples() -> Vec<Warning> {
         },
         Warning::NoStartingInput {
             component: text("component"),
+        },
+        Warning::ConsumerSkipped {
+            consumer: text("consumer"),
+            event: text("event"),
         },
     ]
 }
