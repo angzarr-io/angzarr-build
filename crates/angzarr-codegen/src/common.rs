@@ -1,6 +1,6 @@
 //! The language-neutral rules every backend shares: how a proto name is
 //! cased and localised, and how a typed refusal is keyed (decision 14.50)
-//! and whether it carries a code status (decision 14.52). The Rust and the
+//! The Rust and the
 //! Python backends both depend on this module; neither depends on the
 //! other.
 
@@ -33,12 +33,6 @@ pub(crate) fn refusal_reason(message: &MessageDescriptor) -> Option<EnumDescript
         }
         _ => None,
     }
-}
-
-/// Whether a refusal of `input` is refused under its code's status
-/// (decision 14.52): one of its refuses types has a Reason.
-pub(crate) fn has_code_status(input: &crate::model::Input) -> bool {
-    input.refuses.iter().any(|r| refusal_reason(r).is_some())
 }
 
 /// The arm a policy sends one of its target's inputs in (decision 14.69):

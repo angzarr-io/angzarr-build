@@ -9,8 +9,7 @@
 pub mod adapters {
     #[allow(unused_imports)]
     use ::angzarr_embedded::markup::{
-        CommandContext, Commands, Context, Emit, Fails, PolicyContext, Record, Refusal,
-        Refuses, Report,
+        Commands, Context, Emit, FactEmit, Fails, PolicyContext, Refused, Refuses, Report,
     };
     use ::angzarr_embedded::v1::Uuid;
     #[allow(unused_imports)]
@@ -46,7 +45,7 @@ pub mod adapters {
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Post>>> {
             crate::domain::LedgerState::post(&self.0, &cmd, ctx)
                 .map(Self::emitted::<Failed<Refuses<Self, Post>>>)
-                .map_err(PostRefuses::with_code_status)
+                .map_err(PostRefuses::with_declared_status)
                 .map_err(PostRefuses::widen)
         }
         #[handles_cmd(Open)]
@@ -54,36 +53,36 @@ pub mod adapters {
             &self,
             cmd: Open,
             ctx: &Context,
-        ) -> Result<Emit<Self>, Failed<Rejection>> {
+        ) -> Result<Emit<Self>, Failed<Unrefusable>> {
             crate::domain::LedgerState::open(&self.0, &cmd, ctx)
-                .map(Self::emitted::<Failed<Rejection>>)
+                .map(Self::emitted::<Failed<Unrefusable>>)
         }
         #[handles_cmd(Four)]
         fn four(
             &self,
             cmd: Four,
             ctx: &Context,
-        ) -> Result<Emit<Self>, Failed<Rejection>> {
+        ) -> Result<Emit<Self>, Failed<Unrefusable>> {
             crate::domain::LedgerState::four(&self.0, &cmd, ctx)
-                .map(Self::emitted::<Failed<Rejection>>)
+                .map(Self::emitted::<Failed<Unrefusable>>)
         }
         #[handles_cmd(Maybe)]
         fn maybe(
             &self,
             cmd: Maybe,
             ctx: &Context,
-        ) -> Result<Emit<Self>, Failed<Rejection>> {
+        ) -> Result<Emit<Self>, Failed<Unrefusable>> {
             crate::domain::LedgerState::maybe(&self.0, &cmd, ctx)
-                .map(Self::emitted::<Failed<Rejection>>)
+                .map(Self::emitted::<Failed<Unrefusable>>)
         }
         #[handles_cmd(MaybeBoth)]
         fn maybe_both(
             &self,
             cmd: MaybeBoth,
             ctx: &Context,
-        ) -> Result<Emit<Self>, Failed<Rejection>> {
+        ) -> Result<Emit<Self>, Failed<Unrefusable>> {
             crate::domain::LedgerState::maybe_both(&self.0, &cmd, ctx)
-                .map(Self::emitted::<Failed<Rejection>>)
+                .map(Self::emitted::<Failed<Unrefusable>>)
         }
         #[handles_cmd(Batch, refuses(PostRefused))]
         fn batch(
@@ -93,21 +92,37 @@ pub mod adapters {
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Batch>>> {
             crate::domain::LedgerState::batch(&self.0, &cmd, ctx)
                 .map(Self::emitted::<Failed<Refuses<Self, Batch>>>)
-                .map_err(PostRefused::with_code_status)
+                .map_err(PostRefused::with_declared_status)
                 .map_err(Failed::widen)
         }
         #[handles_cmd(Raw)]
-        fn raw(&self, cmd: Raw, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+        fn raw(
+            &self,
+            cmd: Raw,
+            ctx: &Context,
+        ) -> Result<Emit<Self>, Failed<Unrefusable>> {
             crate::domain::LedgerState::raw(&self.0, &cmd, ctx)
-                .map(Self::emitted::<Failed<Rejection>>)
+                .map(Self::emitted::<Failed<Unrefusable>>)
         }
         #[handles_fact(Arrived)]
-        fn arrived(&self, fact: Arrived, ctx: &Context) -> Record<Self> {
-            Self::recorded(crate::domain::LedgerState::arrived(&self.0, &fact, ctx))
+        fn arrived(
+            &self,
+            fact: Arrived,
+            ctx: &Context,
+        ) -> Result<FactEmit<Self>, ::angzarr_embedded::markup::Bug> {
+            crate::domain::LedgerState::arrived(&self.0, &fact, ctx)
+                .map(Self::recorded)
+                .map_err(::angzarr_embedded::markup::Bug::from)
         }
         #[handles_fact(Swept)]
-        fn swept(&self, fact: Swept, ctx: &Context) -> Record<Self> {
-            Self::recorded(crate::domain::LedgerState::swept(&self.0, &fact, ctx))
+        fn swept(
+            &self,
+            fact: Swept,
+            ctx: &Context,
+        ) -> Result<FactEmit<Self>, ::angzarr_embedded::markup::Bug> {
+            crate::domain::LedgerState::swept(&self.0, &fact, ctx)
+                .map(Self::recorded)
+                .map_err(::angzarr_embedded::markup::Bug::from)
         }
         #[applies(Posted)]
         fn posted(&mut self, event: Posted) {
@@ -152,27 +167,10 @@ pub mod adapters {
                     },
                 )
         }
-        /// A fact's events, each a step of the markup's `Record`.
-        fn recorded(events: Vec<LedgerStateEvent>) -> Record<Self> {
-            events
-                .into_iter()
-                .fold(
-                    Record::of(None::<Posted>),
-                    |emit, event| match event {
-                        LedgerStateEvent::Posted(event) => {
-                            emit.then(move |_: &Self, _: &Context| event)
-                        }
-                        LedgerStateEvent::Noted(event) => {
-                            emit.then(move |_: &Self, _: &Context| event)
-                        }
-                        LedgerStateEvent::Cleared(event) => {
-                            emit.then(move |_: &Self, _: &Context| event)
-                        }
-                        LedgerStateEvent::Closed(event) => {
-                            emit.then(move |_: &Self, _: &Context| event)
-                        }
-                    },
-                )
+        /// A fact's events, as the router's `FactEmit`.
+        fn recorded(events: Vec<LedgerStateEvent>) -> FactEmit<Self> {
+            use ::angzarr_embedded::Payload as _;
+            FactEmit::of(events.iter().map(|event| event.to_any()))
         }
     }
     /// `kinds.v1.AuditState`, delegating to `crate::domain::AuditState`.
@@ -195,7 +193,7 @@ pub mod adapters {
         ) -> Result<Emit<Self>, Failed<Refuses<Self, Audit>>> {
             crate::domain::AuditState::audit(&self.0, &cmd, ctx)
                 .map(Self::emitted::<Failed<Refuses<Self, Audit>>>)
-                .map_err(AuditRefuses::with_code_status)
+                .map_err(AuditRefuses::with_declared_status)
                 .map_err(AuditRefuses::widen)
         }
         #[applies(Audited)]
@@ -280,23 +278,13 @@ pub mod adapters {
                     ),
             )
         }
-        #[on_refused(Audit)]
-        fn audit_refused(
+        #[on_refused]
+        fn refused(
             &self,
-            refusal: &Refusal<Audit>,
-            ctx: &CommandContext,
+            refused: &Refused,
         ) -> ::core::result::Result<LedgerStateFact, Bug> {
-            crate::domain::LedgerAuditPolicy::audit_refused(
-                &self.0,
-                refusal.command(),
-                refusal
-                    .refusal::<PostRefused>()
-                    .map(AuditRefuses::PostRefused)
-                    .or_else(|| {
-                        refusal.refusal::<Unreasoned>().map(AuditRefuses::Unreasoned)
-                    }),
-                ctx,
-            )
+            let (command, refusal) = AuditStateRefusal::read(refused)?;
+            crate::domain::LedgerAuditPolicy::refused(&self.0, command, refusal, refused)
         }
     }
 }

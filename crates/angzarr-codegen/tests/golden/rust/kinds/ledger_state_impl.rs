@@ -24,7 +24,7 @@ impl LedgerState for LedgerStateImpl {
         &self,
         _cmd: &Open,
         _ctx: &Context,
-    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         todo!()
     }
 
@@ -32,7 +32,7 @@ impl LedgerState for LedgerStateImpl {
         &self,
         _cmd: &Four,
         _ctx: &Context,
-    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         todo!()
     }
 
@@ -40,7 +40,7 @@ impl LedgerState for LedgerStateImpl {
         &self,
         _cmd: &Maybe,
         _ctx: &Context,
-    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         todo!()
     }
 
@@ -48,7 +48,7 @@ impl LedgerState for LedgerStateImpl {
         &self,
         _cmd: &MaybeBoth,
         _ctx: &Context,
-    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         todo!()
     }
 
@@ -60,15 +60,19 @@ impl LedgerState for LedgerStateImpl {
         todo!()
     }
 
-    fn raw(&self, _cmd: &Raw, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>> {
+    fn raw(
+        &self,
+        _cmd: &Raw,
+        _ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>> {
         todo!()
     }
 
-    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Vec<LedgerStateEvent> {
+    fn arrived(&self, _fact: &Arrived, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug> {
         todo!()
     }
 
-    fn swept(&self, _fact: &Swept, _ctx: &Context) -> Vec<LedgerStateEvent> {
+    fn swept(&self, _fact: &Swept, _ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug> {
         todo!()
     }
 

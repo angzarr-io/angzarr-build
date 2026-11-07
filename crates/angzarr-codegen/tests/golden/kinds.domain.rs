@@ -507,42 +507,6 @@ impl TryFrom<crate::wire::Audited> for Audited {
         Ok(Audited {})
     }
 }
-/// Why a command is rejected: a business "no", never a fault, the
-/// command refused under a business status (this one crosses as
-/// FAILED_PRECONDITION) and the issuing policy's refusal handler
-/// told. One of the two classes a handler fails
-/// with; the other is [`Bug`]. A diagnostic key and its args,
-/// never text.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Rejection {
-    pub key: &'static str,
-    pub args: Vec<(&'static str, String)>,
-}
-impl Rejection {
-    /// A rejection keyed `key`, with no args yet.
-    pub fn new(key: &'static str) -> Rejection {
-        Rejection { key, args: Vec::new() }
-    }
-    /// This rejection with the arg `name` set to `value`.
-    pub fn arg(mut self, name: &'static str, value: impl ToString) -> Rejection {
-        self.args.push((name, value.to_string()));
-        self
-    }
-}
-impl ::std::fmt::Display for Rejection {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        f.write_str(self.key)
-    }
-}
-impl ::std::error::Error for Rejection {}
-impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Rejection {
-    fn code(&self) -> &str {
-        self.key
-    }
-    fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
-        self.args.iter().map(|(name, value)| (*name, value.as_str().into())).collect()
-    }
-}
 /// What a command handler reads besides its command and state: the
 /// instant its events are recorded at, and the router's context of
 /// the input (its stream, sequences, resolution, conflict and
@@ -552,8 +516,12 @@ pub use ::angzarr_embedded::markup::Context;
 /// correlation and when it was recorded.
 pub use ::angzarr_embedded::markup::PolicyContext;
 /// The refused command's context, whole, as its target's handler
-/// was handed it: what a `<command>_refused` method reads.
+/// was handed it: what a fact's continuation step reads.
 pub use ::angzarr_embedded::markup::CommandContext;
+/// The refused answer a policy's refusal callback reads besides
+/// the refused command and the refusal: the status it travelled as,
+/// the delivery, the trigger and its metadata.
+pub use ::angzarr_embedded::markup::Refused;
 /// What a projector's handler reads besides the event: the stream
 /// it is from (its source domain and root), its sequence there and
 /// when it was recorded.
@@ -563,15 +531,16 @@ pub use ::angzarr_embedded::markup::ProjectionContext;
 /// it, and the rollback built from them.
 pub use ::angzarr_embedded::markup::Compensation;
 /// What a command handler fails with, one of four classes:
-/// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
-/// a [`BusinessStatus`], FAILED_PRECONDITION unless `with_status`
-/// says otherwise; `Failed::immediate(&bug)`, ABORTED under the
+/// `Failed::Rejected`, one of the command's typed refusals under
+/// a [`BusinessStatus`] (the one the refusal message declares);
+/// `Failed::immediate(&bug)`, ABORTED under the
 /// [`Bug`]'s key, "re-read and re-decide", back to a caller at
 /// once and re-run as a policy's step; `Failed::Bug`, a [`Bug`],
 /// dead-lettered at once; or `Failed::retryable_bug(status, &bug)`,
 /// a [`Bug`] under the [`RetryableStatus`] the handler picks,
 /// retried with capped backoff, then dead-lettered.
-/// `Err(rejection)?` and `Err(bug)?` both convert.
+/// `Err(refusal)?` and `Err(bug)?` both convert. A command that
+/// refuses nothing fails with `Failed<Unrefusable>`.
 ///
 /// The retryable statuses are not interchangeable: `Unavailable`
 /// means resend (the dependency is down for now);
@@ -579,10 +548,21 @@ pub use ::angzarr_embedded::markup::Compensation;
 /// since the work may have happened (a command is, by its
 /// `command_id`); `ResourceExhausted` means wait longer before
 /// resending (a quota or a capacity limit was hit).
-pub use ::angzarr_embedded::markup::{BusinessStatus, Failed, RetryableStatus};
-/// A bug: a defect, never a business answer. The other of the two
-/// classes a handler fails with; the first is [`Rejection`], a
-/// business "no". A command handler fails with it as
+pub use ::angzarr_embedded::markup::{
+    BusinessStatus, Failed, RetryableStatus, Unrefusable,
+};
+/// A typed refusal message: the status it is refused under, the
+/// `(refusal_status)` its message declares (there is no default).
+/// Every refusal message of the domain layer implements it; a
+/// generated adapter refuses under it, and a hand-written handler
+/// reads it for the same status.
+pub trait Refusal {
+    /// The business status the refusal is refused with.
+    const REFUSAL_STATUS: BusinessStatus;
+}
+/// A bug: a defect, never a business answer. The other class a
+/// handler fails with besides a typed refusal. A command handler
+/// fails with it as
 /// `Failed::Bug` (`Err(Bug::new("key").arg(..))?`), a policy as its
 /// `Err`, since a policy reacts to events the application's own
 /// domains recorded. A diagnostic key and its args, never text; it
@@ -619,9 +599,20 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Bug {
     }
 }
 /// A command handler's bug, as it fails: `Failed::Bug`.
-impl ::core::convert::From<Bug> for Failed<Rejection> {
+impl ::core::convert::From<Bug> for Failed<Unrefusable> {
     fn from(bug: Bug) -> Self {
         Failed::bug(&bug)
+    }
+}
+/// A fact handler's failure: the router's `Bug`, under this bug's
+/// key and args (a fact is never refused, so a bug is its one
+/// failure).
+impl ::core::convert::From<Bug> for ::angzarr_embedded::markup::Bug {
+    fn from(bug: Bug) -> Self {
+        ::angzarr_embedded::markup::Bug::coded(
+            bug.key,
+            bug.args.into_iter().map(|(name, value)| (name.to_string(), value)),
+        )
     }
 }
 /// A command of LedgerState.
@@ -841,6 +832,120 @@ where
         )
     }
 }
+/// A typed refusal of LedgerState's commands: one arm per refusal message they name. What a policy sending LedgerState is handed by its one refusal callback.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LedgerStateRefusal {
+    PostRefused(PostRefused),
+    Unreasoned(Unreasoned),
+    Listed(Listed),
+    Elsewhere(Elsewhere),
+    Mislabeled(Mislabeled),
+}
+impl From<PostRefused> for LedgerStateRefusal {
+    fn from(value: PostRefused) -> Self {
+        LedgerStateRefusal::PostRefused(value)
+    }
+}
+impl From<Unreasoned> for LedgerStateRefusal {
+    fn from(value: Unreasoned) -> Self {
+        LedgerStateRefusal::Unreasoned(value)
+    }
+}
+impl From<Listed> for LedgerStateRefusal {
+    fn from(value: Listed) -> Self {
+        LedgerStateRefusal::Listed(value)
+    }
+}
+impl From<Elsewhere> for LedgerStateRefusal {
+    fn from(value: Elsewhere) -> Self {
+        LedgerStateRefusal::Elsewhere(value)
+    }
+}
+impl From<Mislabeled> for LedgerStateRefusal {
+    fn from(value: Mislabeled) -> Self {
+        LedgerStateRefusal::Mislabeled(value)
+    }
+}
+impl ::angzarr_embedded::Payload for LedgerStateRefusal {
+    fn to_any(&self) -> ::angzarr_embedded::Any {
+        match self {
+            LedgerStateRefusal::PostRefused(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateRefusal::Unreasoned(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateRefusal::Listed(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateRefusal::Elsewhere(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            LedgerStateRefusal::Mislabeled(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+        }
+    }
+    fn from_any(
+        any: &::angzarr_embedded::Any,
+    ) -> Result<Self, ::angzarr_embedded::PayloadError> {
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            PostRefused,
+        >(any)? {
+            return Ok(LedgerStateRefusal::PostRefused(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            Unreasoned,
+        >(any)? {
+            return Ok(LedgerStateRefusal::Unreasoned(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<Listed>(any)? {
+            return Ok(LedgerStateRefusal::Listed(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            Elsewhere,
+        >(any)? {
+            return Ok(LedgerStateRefusal::Elsewhere(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            Mislabeled,
+        >(any)? {
+            return Ok(LedgerStateRefusal::Mislabeled(value));
+        }
+        Err(::angzarr_embedded::PayloadError::UnknownType {
+            type_url: any.type_url.clone(),
+        })
+    }
+    fn type_urls() -> Vec<String> {
+        [
+            ::angzarr_embedded::markup::type_url_of::<PostRefused>(),
+            ::angzarr_embedded::markup::type_url_of::<Unreasoned>(),
+            ::angzarr_embedded::markup::type_url_of::<Listed>(),
+            ::angzarr_embedded::markup::type_url_of::<Elsewhere>(),
+            ::angzarr_embedded::markup::type_url_of::<Mislabeled>(),
+        ]
+            .to_vec()
+    }
+}
+impl LedgerStateRefusal {
+    /// The command refused and the refusal it was refused with,
+    /// read from the answer a policy's refusal callback is handed.
+    /// A bug when the answer holds none: the kernel hands the
+    /// callback only a typed refusal of a command the domain decides.
+    pub fn read(
+        refused: &Refused,
+    ) -> Result<(LedgerStateCommand, LedgerStateRefusal), Bug> {
+        use ::angzarr_embedded::Payload as _;
+        let command = LedgerStateCommand::from_any(refused.command_payload())
+            .map_err(|_| Bug::new("refused-command-unknown"))?;
+        let object = refused
+            .refusal_object()
+            .ok_or_else(|| Bug::new("refusal-without-object"))?;
+        let refusal = LedgerStateRefusal::from_any(object)
+            .map_err(|_| Bug::new("refusal-unknown"))?;
+        Ok((command, refusal))
+    }
+}
 /// An event of LedgerState, for a decision recording any number of them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LedgerStateEvent {
@@ -965,6 +1070,77 @@ impl From<Audit> for AuditStateOutput {
         AuditStateOutput::Audit(value)
     }
 }
+/// A typed refusal of AuditState's commands: one arm per refusal message they name. What a policy sending AuditState is handed by its one refusal callback.
+#[derive(Clone, Debug, PartialEq)]
+pub enum AuditStateRefusal {
+    PostRefused(PostRefused),
+    Unreasoned(Unreasoned),
+}
+impl From<PostRefused> for AuditStateRefusal {
+    fn from(value: PostRefused) -> Self {
+        AuditStateRefusal::PostRefused(value)
+    }
+}
+impl From<Unreasoned> for AuditStateRefusal {
+    fn from(value: Unreasoned) -> Self {
+        AuditStateRefusal::Unreasoned(value)
+    }
+}
+impl ::angzarr_embedded::Payload for AuditStateRefusal {
+    fn to_any(&self) -> ::angzarr_embedded::Any {
+        match self {
+            AuditStateRefusal::PostRefused(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+            AuditStateRefusal::Unreasoned(value) => {
+                ::angzarr_embedded::markup::pack_message(value)
+            }
+        }
+    }
+    fn from_any(
+        any: &::angzarr_embedded::Any,
+    ) -> Result<Self, ::angzarr_embedded::PayloadError> {
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            PostRefused,
+        >(any)? {
+            return Ok(AuditStateRefusal::PostRefused(value));
+        }
+        if let Some(value) = ::angzarr_embedded::markup::decode_message::<
+            Unreasoned,
+        >(any)? {
+            return Ok(AuditStateRefusal::Unreasoned(value));
+        }
+        Err(::angzarr_embedded::PayloadError::UnknownType {
+            type_url: any.type_url.clone(),
+        })
+    }
+    fn type_urls() -> Vec<String> {
+        [
+            ::angzarr_embedded::markup::type_url_of::<PostRefused>(),
+            ::angzarr_embedded::markup::type_url_of::<Unreasoned>(),
+        ]
+            .to_vec()
+    }
+}
+impl AuditStateRefusal {
+    /// The command refused and the refusal it was refused with,
+    /// read from the answer a policy's refusal callback is handed.
+    /// A bug when the answer holds none: the kernel hands the
+    /// callback only a typed refusal of a command the domain decides.
+    pub fn read(
+        refused: &Refused,
+    ) -> Result<(AuditStateCommand, AuditStateRefusal), Bug> {
+        use ::angzarr_embedded::Payload as _;
+        let command = AuditStateCommand::from_any(refused.command_payload())
+            .map_err(|_| Bug::new("refused-command-unknown"))?;
+        let object = refused
+            .refusal_object()
+            .ok_or_else(|| Bug::new("refusal-without-object"))?;
+        let refusal = AuditStateRefusal::from_any(object)
+            .map_err(|_| Bug::new("refusal-unknown"))?;
+        Ok((command, refusal))
+    }
+}
 /// An event of AuditState, for a decision recording any number of them.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AuditStateEvent {
@@ -999,25 +1175,20 @@ impl ::angzarr_embedded::Payload for AuditStateEvent {
         [::angzarr_embedded::markup::type_url_of::<Audited>()].to_vec()
     }
 }
+impl Refusal for PostRefused {
+    const REFUSAL_STATUS: BusinessStatus = BusinessStatus::OutOfRange;
+}
 impl PostRefused {
-    /// The status this refusal is refused with (decision 14.52): its
-    /// reason's `refusal_status`, FAILED_PRECONDITION where unmarked.
-    pub fn status(&self) -> BusinessStatus {
-        match self.reason {
-            PostRefusedReason::Closed => BusinessStatus::FailedPrecondition,
-            PostRefusedReason::OverLimit => BusinessStatus::OutOfRange,
-        }
-    }
-    /// `failed`, its refusal under its code's status ([`Self::status`]),
-    /// whatever status it was given; any other failure unchanged.
-    /// What the generated adapter refuses with.
-    pub fn with_code_status(failed: Failed<PostRefused>) -> Failed<PostRefused> {
+    /// `failed`, its refusal under the status this message declares
+    /// ([`Refusal::REFUSAL_STATUS`]), whatever status it was given;
+    /// any other failure unchanged. What the generated adapter
+    /// refuses with.
+    pub fn with_declared_status(failed: Failed<PostRefused>) -> Failed<PostRefused> {
         match failed {
             Failed::Rejected { rejection, .. } => {
-                let status = rejection.status();
                 Failed::Rejected {
                     rejection,
-                    status,
+                    status: <PostRefused as Refusal>::REFUSAL_STATUS,
                 }
             }
             other => other,
@@ -1118,6 +1289,26 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for PostRefused {
         args
     }
 }
+impl Refusal for Unreasoned {
+    const REFUSAL_STATUS: BusinessStatus = BusinessStatus::FailedPrecondition;
+}
+impl Unreasoned {
+    /// `failed`, its refusal under the status this message declares
+    /// ([`Refusal::REFUSAL_STATUS`]), whatever status it was given;
+    /// any other failure unchanged. What the generated adapter
+    /// refuses with.
+    pub fn with_declared_status(failed: Failed<Unreasoned>) -> Failed<Unreasoned> {
+        match failed {
+            Failed::Rejected { rejection, .. } => {
+                Failed::Rejected {
+                    rejection,
+                    status: <Unreasoned as Refusal>::REFUSAL_STATUS,
+                }
+            }
+            other => other,
+        }
+    }
+}
 /// A bug of the handler refusing with this, as it fails:
 /// `Failed::Bug`.
 impl ::core::convert::From<Bug> for Failed<Unreasoned> {
@@ -1148,6 +1339,26 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Unreasoned {
         args
     }
 }
+impl Refusal for Listed {
+    const REFUSAL_STATUS: BusinessStatus = BusinessStatus::FailedPrecondition;
+}
+impl Listed {
+    /// `failed`, its refusal under the status this message declares
+    /// ([`Refusal::REFUSAL_STATUS`]), whatever status it was given;
+    /// any other failure unchanged. What the generated adapter
+    /// refuses with.
+    pub fn with_declared_status(failed: Failed<Listed>) -> Failed<Listed> {
+        match failed {
+            Failed::Rejected { rejection, .. } => {
+                Failed::Rejected {
+                    rejection,
+                    status: <Listed as Refusal>::REFUSAL_STATUS,
+                }
+            }
+            other => other,
+        }
+    }
+}
 /// A bug of the handler refusing with this, as it fails:
 /// `Failed::Bug`.
 impl ::core::convert::From<Bug> for Failed<Listed> {
@@ -1166,6 +1377,26 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Listed {
     }
     fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
         Vec::new()
+    }
+}
+impl Refusal for Elsewhere {
+    const REFUSAL_STATUS: BusinessStatus = BusinessStatus::FailedPrecondition;
+}
+impl Elsewhere {
+    /// `failed`, its refusal under the status this message declares
+    /// ([`Refusal::REFUSAL_STATUS`]), whatever status it was given;
+    /// any other failure unchanged. What the generated adapter
+    /// refuses with.
+    pub fn with_declared_status(failed: Failed<Elsewhere>) -> Failed<Elsewhere> {
+        match failed {
+            Failed::Rejected { rejection, .. } => {
+                Failed::Rejected {
+                    rejection,
+                    status: <Elsewhere as Refusal>::REFUSAL_STATUS,
+                }
+            }
+            other => other,
+        }
     }
 }
 /// A bug of the handler refusing with this, as it fails:
@@ -1196,6 +1427,26 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Elsewhere {
             ),
         ));
         args
+    }
+}
+impl Refusal for Mislabeled {
+    const REFUSAL_STATUS: BusinessStatus = BusinessStatus::FailedPrecondition;
+}
+impl Mislabeled {
+    /// `failed`, its refusal under the status this message declares
+    /// ([`Refusal::REFUSAL_STATUS`]), whatever status it was given;
+    /// any other failure unchanged. What the generated adapter
+    /// refuses with.
+    pub fn with_declared_status(failed: Failed<Mislabeled>) -> Failed<Mislabeled> {
+        match failed {
+            Failed::Rejected { rejection, .. } => {
+                Failed::Rejected {
+                    rejection,
+                    status: <Mislabeled as Refusal>::REFUSAL_STATUS,
+                }
+            }
+            other => other,
+        }
     }
 }
 /// A bug of the handler refusing with this, as it fails:
@@ -1229,19 +1480,21 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Mislabeled {
     }
 }
 impl PostRefuses {
-    /// `failed`, its refusal under the chosen type's code's status
-    /// (decision 14.52) when it has a Reason, else the status it was
-    /// given; any other failure unchanged. What the generated adapter
-    /// refuses with.
-    pub fn with_code_status(failed: Failed<PostRefuses>) -> Failed<PostRefuses> {
+    /// `failed`, its refusal under the status the chosen type
+    /// declares ([`Refusal::REFUSAL_STATUS`]), whatever status it
+    /// was given; any other failure unchanged. What the generated
+    /// adapter refuses with.
+    pub fn with_declared_status(failed: Failed<PostRefuses>) -> Failed<PostRefuses> {
         match failed {
-            Failed::Rejected { rejection, status } => {
+            Failed::Rejected { rejection, .. } => {
                 let status = match &rejection {
-                    PostRefuses::PostRefused(refusal) => refusal.status(),
-                    PostRefuses::Unreasoned(_) => status,
-                    PostRefuses::Listed(_) => status,
-                    PostRefuses::Elsewhere(_) => status,
-                    PostRefuses::Mislabeled(_) => status,
+                    PostRefuses::PostRefused(_) => {
+                        <PostRefused as Refusal>::REFUSAL_STATUS
+                    }
+                    PostRefuses::Unreasoned(_) => <Unreasoned as Refusal>::REFUSAL_STATUS,
+                    PostRefuses::Listed(_) => <Listed as Refusal>::REFUSAL_STATUS,
+                    PostRefuses::Elsewhere(_) => <Elsewhere as Refusal>::REFUSAL_STATUS,
+                    PostRefuses::Mislabeled(_) => <Mislabeled as Refusal>::REFUSAL_STATUS,
                 };
                 Failed::Rejected {
                     rejection,
@@ -1380,16 +1633,20 @@ impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for PostRefuses {
     }
 }
 impl AuditRefuses {
-    /// `failed`, its refusal under the chosen type's code's status
-    /// (decision 14.52) when it has a Reason, else the status it was
-    /// given; any other failure unchanged. What the generated adapter
-    /// refuses with.
-    pub fn with_code_status(failed: Failed<AuditRefuses>) -> Failed<AuditRefuses> {
+    /// `failed`, its refusal under the status the chosen type
+    /// declares ([`Refusal::REFUSAL_STATUS`]), whatever status it
+    /// was given; any other failure unchanged. What the generated
+    /// adapter refuses with.
+    pub fn with_declared_status(failed: Failed<AuditRefuses>) -> Failed<AuditRefuses> {
         match failed {
-            Failed::Rejected { rejection, status } => {
+            Failed::Rejected { rejection, .. } => {
                 let status = match &rejection {
-                    AuditRefuses::PostRefused(refusal) => refusal.status(),
-                    AuditRefuses::Unreasoned(_) => status,
+                    AuditRefuses::PostRefused(_) => {
+                        <PostRefused as Refusal>::REFUSAL_STATUS
+                    }
+                    AuditRefuses::Unreasoned(_) => {
+                        <Unreasoned as Refusal>::REFUSAL_STATUS
+                    }
                 };
                 Failed::Rejected {
                     rejection,
@@ -1736,17 +1993,21 @@ impl ::angzarr_embedded::markup::DomainMessage for Audited {
 pub trait LedgerState {
     fn post(&self, cmd: &Post, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<PostRefuses>>;
 
-    fn open(&self, cmd: &Open, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
+    fn open(&self, cmd: &Open, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;
 
-    fn four(&self, cmd: &Four, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
+    fn four(&self, cmd: &Four, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;
 
-    fn maybe(&self, cmd: &Maybe, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
+    fn maybe(
+        &self,
+        cmd: &Maybe,
+        ctx: &Context,
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;
 
     fn maybe_both(
         &self,
         cmd: &MaybeBoth,
         ctx: &Context,
-    ) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
+    ) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;
 
     fn batch(
         &self,
@@ -1754,11 +2015,11 @@ pub trait LedgerState {
         ctx: &Context,
     ) -> Result<Vec<LedgerStateEvent>, Failed<PostRefused>>;
 
-    fn raw(&self, cmd: &Raw, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;
+    fn raw(&self, cmd: &Raw, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;
 
-    fn arrived(&self, fact: &Arrived, ctx: &Context) -> Vec<LedgerStateEvent>;
+    fn arrived(&self, fact: &Arrived, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug>;
 
-    fn swept(&self, fact: &Swept, ctx: &Context) -> Vec<LedgerStateEvent>;
+    fn swept(&self, fact: &Swept, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug>;
 
     fn apply_posted(&mut self, event: &Posted);
 
@@ -1818,9 +2079,10 @@ pub trait LedgerView {
 /// returns what it sends its target, each with its target root: a command, or a
 /// fact the target declares, sent in the arm the target declares. Or its `Bug`:
 /// a defect, since a policy reacts to events the application's own domains
-/// recorded. Each `<command>_refused` answers the refusal of a command of its
-/// target with one of the source's facts (or a `Bug`, for a command it never
-/// sends): every command a policy sends has a refusal path.
+/// recorded. Its one `refused` callback, required when its target has a command
+/// that can refuse, takes the command refused and the refusal, a choice of the
+/// target's refusal messages (a missing arm does not compile), and answers one
+/// of the source's facts, or its `Bug`: it cannot decline.
 #[allow(clippy::result_large_err)]
 pub trait LedgerAuditPolicy {
     fn noted(
@@ -1830,10 +2092,10 @@ pub trait LedgerAuditPolicy {
         ctx: &PolicyContext,
     ) -> Result<Vec<(Vec<u8>, AuditStateOutput)>, Bug>;
 
-    fn audit_refused(
+    fn refused(
         &self,
-        command: &Audit,
-        refusal: Option<AuditRefuses>,
-        ctx: &CommandContext,
+        command: AuditStateCommand,
+        refusal: AuditStateRefusal,
+        ctx: &Refused,
     ) -> Result<LedgerStateFact, Bug>;
 }

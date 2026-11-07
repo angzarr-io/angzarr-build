@@ -29,8 +29,8 @@ fn test_names_are_snake_cased_at_each_word_an_acronym_and_a_digit() {
     let files = files();
     let interface = &files
         .iter()
-        .find(|f| f.path == "order_book_impl.rs")
-        .unwrap_or_else(|| panic!("no order_book_impl.rs: {files:#?}"))
+        .find(|f| f.path == "order_book_state_impl.rs")
+        .unwrap_or_else(|| panic!("no order_book_state_impl.rs: {files:#?}"))
         .source;
     for expected in [
         "fn assign_tracking_id(",
@@ -92,7 +92,7 @@ fn test_adapters_fold_a_decision_and_a_fact_of_several_events() {
     let flat = source.replace([' ', '\n'], "");
     for expected in [
         "Emit::of(None::<TrackingIDAssigned>)",
-        "Record::of(None::<TrackingIDAssigned>)",
+        "FactEmit::of(events.iter().map(|event|event.to_any()))",
     ] {
         assert!(flat.contains(expected), "{expected}:\n{source}");
     }

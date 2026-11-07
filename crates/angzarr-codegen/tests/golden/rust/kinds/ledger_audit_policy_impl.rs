@@ -18,11 +18,11 @@ impl LedgerAuditPolicy for LedgerAuditPolicyImpl {
         todo!()
     }
 
-    fn audit_refused(
+    fn refused(
         &self,
-        _command: &Audit,
-        _refusal: Option<AuditRefuses>,
-        _ctx: &CommandContext,
+        _command: AuditStateCommand,
+        _refusal: AuditStateRefusal,
+        _ctx: &Refused,
     ) -> Result<LedgerStateFact, Bug> {
         todo!()
     }

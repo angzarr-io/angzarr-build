@@ -246,15 +246,17 @@ pub(crate) fn build_markup(
 /// domain type may take: a handler's `Context`, a policy reaction's
 /// `PolicyContext`, a refused command's `CommandContext`, a projector's
 /// `ProjectionContext`, the two classes
-/// a handler fails with, the business `Rejection` and the defect `Bug`, and
-/// Rust's `Failed` of either, with its `BusinessStatus` and its
+/// a handler fails with, the defect `Bug`, the typed `Refusal` and the refused answer
+/// `Refused`, and Rust's `Failed` of a refusal or of `Unrefusable`, with its `BusinessStatus` and its
 /// `RetryableStatus`.
 pub(crate) const RESERVED: &[&str] = &[
     "Context",
     "PolicyContext",
     "CommandContext",
     "ProjectionContext",
-    "Rejection",
+    "Refused",
+    "Refusal",
+    "Unrefusable",
     "Bug",
     "Failed",
     "BusinessStatus",
@@ -771,6 +773,20 @@ pub(crate) fn refusal_status(value: &EnumValueDescriptor) -> i32 {
         return 0;
     };
     let options = value.options();
+    if !options.has_extension(&ext) {
+        return 0;
+    }
+    options.get_extension(&ext).as_enum_number().unwrap_or(0)
+}
+
+/// The status a refusal message declares (`(refusal_status)`), its
+/// `google.rpc.Code` number: 0 where it declares none, or where the set's
+/// options.proto has no `refusal_status`.
+pub(crate) fn message_status(message: &MessageDescriptor) -> i32 {
+    let Some(ext) = message.parent_pool().get_extension_by_name(REFUSAL_STATUS) else {
+        return 0;
+    };
+    let options = message.options();
     if !options.has_extension(&ext) {
         return 0;
     }

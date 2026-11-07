@@ -28,20 +28,24 @@ fn interface() -> String {
 fn test_every_handler_returns_a_list_of_its_components_events() {
     let source = interface();
     for expected in [
-        "fn open(&self, cmd: &Open, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;",
-        "fn four(&self, cmd: &Four, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;",
-        "fn maybe(&self, cmd: &Maybe, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;",
+        "fn open(&self, cmd: &Open, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;",
+        "fn four(&self, cmd: &Four, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;",
+        "fn maybe(&self, cmd: &Maybe, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;",
         "    ) -> Result<Vec<LedgerStateEvent>, Failed<PostRefused>>;",
-        "fn raw(&self, cmd: &Raw, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Rejection>>;",
-        "fn arrived(&self, fact: &Arrived, ctx: &Context) -> Vec<LedgerStateEvent>;",
-        "fn swept(&self, fact: &Swept, ctx: &Context) -> Vec<LedgerStateEvent>;",
+        "fn raw(&self, cmd: &Raw, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Failed<Unrefusable>>;",
+        "fn arrived(&self, fact: &Arrived, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug>;",
+        "fn swept(&self, fact: &Swept, ctx: &Context) -> Result<Vec<LedgerStateEvent>, Bug>;",
     ] {
-        assert!(source.contains(expected), "{expected}:\n{source}");
+        let flat = |text: &str| text.replace([' ', '\n'], "").replace(",)", ")");
+        assert!(
+            flat(&source).contains(&flat(expected)),
+            "{expected}:\n{source}"
+        );
     }
     for shape in [
         "-> Option<",
         "-> Result<Option<",
-        "-> Result<(",
+        "-> Result<(Posted",
         "-> (",
         "Result<Posted,",
     ] {
@@ -57,22 +61,21 @@ fn test_the_adapter_hands_the_markup_a_step_per_event() {
         // One helper per domain, not a fold per handler: each event a step
         // of the markup, a command's returning the handler's own failure.
         "fnemitted<E:Fails<Self>+'static>(events:Vec<LedgerStateEvent>",
-        "fnrecorded(events:Vec<LedgerStateEvent>)->Record<Self>{",
+        "fnrecorded(events:Vec<LedgerStateEvent>)->FactEmit<Self>{",
         "Ok::<_,E>(event)",
-        "LedgerStateEvent::Noted(event)=>{emit.then(move|_:&Self,_:&Context|event)}",
+        "FactEmit::of(events.iter().map(|event|event.to_any()))",
         // An empty list is no event.
         "events.into_iter().fold(Emit::of(None::<Posted>),",
-        "events.into_iter().fold(Record::of(None::<Posted>),",
         // Each handler names its failure, or records.
         ".map(Self::emitted::<Failed<Refuses<Self,Batch>>>)",
-        ".map(Self::emitted::<Failed<Rejection>>)",
-        "Self::recorded(crate::domain::LedgerState::arrived(&self.0,&fact,ctx))",
+        ".map(Self::emitted::<Failed<Unrefusable>>)",
+        "crate::domain::LedgerState::arrived(&self.0,&fact,ctx).map(Self::recorded)",
     ] {
         assert!(flat.contains(expected), "{expected}:\n{source}");
     }
     assert_eq!(
         flat.matches(".fold(").count(),
-        4,
-        "one fold per helper:\n{source}"
+        3,
+        "one fold per helper (a command's), and the policy's two:\n{source}"
     );
 }

@@ -35,3 +35,27 @@ fn test_a_fact_that_does_not_start_is_not_marked_starts() {
         "{source}"
     );
 }
+
+/// The process manager lists its starting types as the macro's
+/// `starting_types`, which cross-checks them against the handlers marked
+/// `starts` (an input listed and unmarked, or marked and unlisted, does not
+/// compile); an aggregate has no such argument.
+#[test]
+fn test_a_process_manager_lists_its_starting_types() {
+    let source = adapter();
+    assert!(
+        source.contains("#[process_manager(domain=\"intake\",command=IntakeStateCommand,event=IntakeStateEvent,starting_types=[StartIntake])]"),
+        "{source}"
+    );
+    let buyin = adapters(&descriptors(BUYIN), BUYIN, &[])
+        .unwrap()
+        .replace([' ', '\n'], "");
+    assert!(buyin.contains("starting_types=[StartBuyIn])]"), "{buyin}");
+    assert!(
+        buyin.contains(
+            "#[aggregate(domain=\"wallet\",command=WalletStateCommand,event=WalletStateEvent)]"
+        ),
+        "{buyin}"
+    );
+    assert_eq!(buyin.matches("starting_types").count(), 1, "{buyin}");
+}

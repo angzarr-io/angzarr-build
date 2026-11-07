@@ -11,7 +11,10 @@ use common::*;
 
 use angzarr_test_dir::TestDir;
 
-const GOLDEN: &str = include_str!("golden/buyin.register.rs");
+const GOLDEN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/golden/buyin.register.rs"
+);
 
 fn buyin_register() -> String {
     register(&descriptors(BUYIN), BUYIN, &[]).unwrap()
@@ -19,7 +22,13 @@ fn buyin_register() -> String {
 
 #[test]
 fn test_register_matches_the_golden_file() {
-    assert_eq!(buyin_register(), GOLDEN);
+    let actual = buyin_register();
+    // `ANGZARR_BLESS=1` rewrites the golden file; review the diff.
+    if std::env::var_os("ANGZARR_BLESS").is_some() {
+        std::fs::write(GOLDEN, &actual).unwrap();
+        return;
+    }
+    assert_eq!(actual, std::fs::read_to_string(GOLDEN).unwrap());
 }
 
 /// Each registration in `register`'s body, as text without spacing.
@@ -52,10 +61,10 @@ fn test_register_registers_every_component_once_by_its_kind() {
     assert_eq!(
         registrations(&buyin_register()),
         [
-            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default)?;",
-            "registry.process_manager::<crate::adapters::BuyIn>(crate::adapters::BuyIn::default)?;",
-            "registry.policy(crate::adapters::BuyInWallet::default())?;",
-            "registry.policy(crate::adapters::WalletBuyIn::default())?;",
+            "registry.aggregate::<crate::adapters::WalletState,>(crate::adapters::WalletState::default)?;",
+            "registry.process_manager::<crate::adapters::BuyInState,>(crate::adapters::BuyInState::default)?;",
+            "registry.policy(crate::adapters::BuyInWalletPolicy::default())?;",
+            "registry.policy(crate::adapters::WalletBuyInPolicy::default())?;",
         ]
     );
 }
@@ -66,7 +75,7 @@ fn test_register_of_one_aggregate_registers_it_alone() {
     let source = register(&descriptors(&[SHOP]), &[SHOP], &[]).unwrap();
     assert_eq!(
         registrations(&source),
-        ["registry.aggregate::<crate::adapters::Cart>(crate::adapters::Cart::default)?;"]
+        ["registry.aggregate::<crate::adapters::CartState>(crate::adapters::CartState::default)?;"]
     );
 }
 
@@ -76,9 +85,9 @@ fn test_register_leaves_a_remote_domain_to_the_host_and_keeps_its_policies() {
     assert_eq!(
         registrations(&source),
         [
-            "registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default)?;",
-            "registry.policy(crate::adapters::BuyInWallet::default())?;",
-            "registry.policy(crate::adapters::WalletBuyIn::default())?;",
+            "registry.aggregate::<crate::adapters::WalletState,>(crate::adapters::WalletState::default)?;",
+            "registry.policy(crate::adapters::BuyInWalletPolicy::default())?;",
+            "registry.policy(crate::adapters::WalletBuyInPolicy::default())?;",
         ]
     );
 }
@@ -97,7 +106,7 @@ fn test_register_leaves_out_a_policy_whose_domain_is_not_in_the_files() {
     assert_eq!(
         registrations(&source),
         [
-            "registry.aggregate::<crate::adapters::TableAggregate,>(crate::adapters::TableAggregate::default)?;",
+            "registry.aggregate::<crate::adapters::TableState>(crate::adapters::TableState::default)?;",
             "registry.policy(crate::adapters::TablePlayerPolicy::default())?;",
             "registry.policy(crate::adapters::PlayerTablePolicy::default())?;",
         ]

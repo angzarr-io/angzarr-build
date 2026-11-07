@@ -79,30 +79,30 @@ fn test_scaffold_writes_an_implementation_per_component_and_reports_the_old_inte
     assert_eq!(
         placed,
         [
-            at("buyin.v1.BuyInState", "buy_in.rs", Owner::Obsolete),
-            at("buyin.v1.BuyInState", "buy_in_impl.rs", Owner::User),
+            at("buyin.v1.BuyInState", "buy_in_state.rs", Owner::Obsolete),
+            at("buyin.v1.BuyInState", "buy_in_state_impl.rs", Owner::User),
             at(
                 "buyin.v1.BuyInWalletPolicy",
-                "buy_in_wallet.rs",
+                "buy_in_wallet_policy.rs",
                 Owner::Obsolete
             ),
             at(
                 "buyin.v1.BuyInWalletPolicy",
-                "buy_in_wallet_impl.rs",
+                "buy_in_wallet_policy_impl.rs",
                 Owner::User
             ),
             at(
                 "buyin.v1.WalletBuyInPolicy",
-                "wallet_buy_in.rs",
+                "wallet_buy_in_policy.rs",
                 Owner::Obsolete
             ),
             at(
                 "buyin.v1.WalletBuyInPolicy",
-                "wallet_buy_in_impl.rs",
+                "wallet_buy_in_policy_impl.rs",
                 Owner::User
             ),
-            at("buyin.v1.WalletState", "wallet.rs", Owner::Obsolete),
-            at("buyin.v1.WalletState", "wallet_impl.rs", Owner::User),
+            at("buyin.v1.WalletState", "wallet_state.rs", Owner::Obsolete),
+            at("buyin.v1.WalletState", "wallet_state_impl.rs", Owner::User),
         ]
     );
 }
@@ -120,7 +120,12 @@ fn test_scaffold_matches_the_golden_files() {
 #[test]
 fn test_the_interfaces_are_the_domain_layers() {
     let layer = buyin_layer();
-    for name in ["BuyIn", "Wallet", "BuyInWallet", "WalletBuyIn"] {
+    for name in [
+        "BuyInState",
+        "WalletState",
+        "BuyInWalletPolicy",
+        "WalletBuyInPolicy",
+    ] {
         assert!(
             layer.contains(&format!("pub trait {name} {{")),
             "{name}:\n{layer}"
@@ -170,6 +175,21 @@ fn test_the_users_files_import_nothing_from_the_runtime_directly() {
     }
 }
 
+/// `text` without whitespace, and without the trailing comma rustfmt puts
+/// before a closing parenthesis: signatures compare whatever way they wrap.
+fn flat(text: &str) -> String {
+    text.replace([' ', '\n'], "").replace(",)", ")")
+}
+
+/// The interface of the policy `name`, from its trait to the next.
+fn policy_trait<'a>(source: &'a str, name: &str) -> &'a str {
+    let start = source
+        .find(&format!("pub trait {name} {{"))
+        .unwrap_or_else(|| panic!("no trait {name}:\n{source}"));
+    let rest = &source[start..];
+    &rest[..rest.find("\n}\n").map_or(rest.len(), |end| end + 3)]
+}
+
 #[test]
 fn test_every_implementation_body_is_todo_and_every_parameter_unused() {
     for f in buyin(&[translate_hold()])
@@ -200,59 +220,131 @@ fn test_every_implementation_body_is_todo_and_every_parameter_unused() {
 fn test_an_interface_takes_a_fact_as_fact_and_a_command_as_cmd() {
     let source = buyin_layer();
     assert!(
-        source.contains("fn hold_lost(&self, fact: &HoldLost, ctx: &Context) -> Vec<BuyInEvent>;"),
-        "a fact's decision is infallible:\n{source}"
+        flat(&source).contains(&flat(
+            "fn hold_lost(&self, fact: &HoldLost, ctx: &Context) -> Result<Vec<BuyInStateEvent>, Bug>;"
+        )),
+        "a fact fails only with a Bug:\n{source}"
     );
     assert!(
-        source.contains(
-            "    fn record_held(\n        &self,\n        cmd: &RecordHeld,\n        ctx: &Context,\n    ) -> Result<Vec<BuyInEvent>, Failed<BuyInRefused>>;"
-        ),
+        flat(&source).contains(&flat(
+            "fn record_held(&self, cmd: &RecordHeld, ctx: &Context) -> Result<Vec<BuyInStateEvent>, Failed<BuyInRefused>>;"
+        )),
         "{source}"
     );
 }
 
-/// A policy whose source takes facts has a required `<command>_refused`
-/// per command of its target, answering one of the source's facts or a
-/// Bug, never declining (decision 14.76; C-0612).
+/// A policy whose target has a command that can refuse, and whose source
+/// takes facts, has ONE required `refused` callback: the command refused
+/// (the target's command choice), the refusal (the target's refusal choice,
+/// one arm per refusal message its commands name) and the refused answer,
+/// answering one of the source's facts or a Bug, never declining
+/// (decisions 14.89, 14.99; C-0612).
 #[test]
-fn test_a_policys_interface_requires_each_refusal_callback() {
+fn test_a_policys_interface_requires_its_one_refusal_callback() {
     let source = buyin_layer();
+    let buy_in_wallet = policy_trait(&source, "BuyInWalletPolicy");
     assert!(
-        source.contains(
-            "    fn hold_refused(\n        &self,\n        command: &Hold,\n        refusal: Option<InsufficientFunds>,\n        ctx: &CommandContext,\n    ) -> Result<BuyInFact, Bug>;"
-        ),
-        "{source}"
+        flat(buy_in_wallet).contains(&flat(
+            "fn refused(&self, command: WalletStateCommand, refusal: WalletStateRefusal, ctx: &Refused) -> Result<BuyInStateFact, Bug>;"
+        )),
+        "{buy_in_wallet}"
     );
     assert!(!source.contains("Ok(None)"), "{source}");
-    let wallet_buy_in = &source[source.find("pub trait WalletBuyIn").unwrap()..];
-    for callback in ["fn start_buy_in_refused(", "fn record_held_refused("] {
-        assert!(
-            wallet_buy_in.contains(callback),
-            "{callback}:\n{wallet_buy_in}"
-        );
+    // One callback, not one per command.
+    for policy in ["BuyInWalletPolicy", "WalletBuyInPolicy"] {
+        let interface = policy_trait(&source, policy);
+        assert_eq!(interface.matches("fn refused(").count(), 1, "{interface}");
+        assert!(!interface.contains("_refused("), "{interface}");
     }
+    let wallet_buy_in = policy_trait(&source, "WalletBuyInPolicy");
     assert!(
-        wallet_buy_in.contains(") -> Result<WalletFact, Bug>;"),
+        flat(wallet_buy_in).contains(&flat(
+            "fn refused(&self, command: BuyInStateCommand, refusal: BuyInStateRefusal, ctx: &Refused) -> Result<WalletStateFact, Bug>;"
+        )),
         "{wallet_buy_in}"
     );
 }
 
-/// The implementation is created with every refusal callback, each a
-/// `todo!()`: none is optional (decision 14.76).
+/// The refusal a policy is handed is a choice with one arm per refusal
+/// message its target's commands name, each once (typed only, decision
+/// 14.95); a callback matching it is exhaustive, so a missing arm does not
+/// compile. A target none of whose commands can refuse has no choice.
 #[test]
-fn test_scaffold_writes_a_refused_method_for_each_command_of_the_target() {
-    let files = buyin(&[]);
-    let implementation = file_at(&files, "buy_in_wallet_impl.rs");
-    let source = &implementation.source;
+fn test_the_refusal_choice_has_one_arm_per_refusal_message_of_the_target() {
+    let source = buyin_layer();
+    let file = syn::parse_file(&source).unwrap();
+    let arms = |name: &str| -> Vec<String> {
+        file.items
+            .iter()
+            .find_map(|i| match i {
+                syn::Item::Enum(e) if e.ident == name => {
+                    Some(e.variants.iter().map(|v| v.ident.to_string()).collect())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no enum {name}:\n{source}"))
+    };
+    // Deposit refuses DepositRefused, Hold InsufficientFunds.
+    assert_eq!(
+        arms("WalletStateRefusal"),
+        ["DepositRefused", "InsufficientFunds"]
+    );
+    // StartBuyIn and RecordHeld both refuse BuyInRefused: one arm.
+    assert_eq!(arms("BuyInStateRefusal"), ["BuyInRefused"]);
+    // A choice built of its types and read from the refused answer.
     assert!(
-        source.contains(
-            "    fn hold_refused(\n        &self,\n        _command: &Hold,\n        _refusal: Option<InsufficientFunds>,\n        _ctx: &CommandContext,\n    ) -> Result<BuyInFact, Bug> {\n        todo!()\n    }"
-        ),
+        flat(&source).contains(&flat(
+            "pub fn read(refused: &Refused) -> Result<(WalletStateCommand, WalletStateRefusal), Bug>"
+        )),
         "{source}"
     );
-    assert!(source.contains("fn deposit_refused("), "{source}");
+}
+
+/// The implementation is created with its one refusal callback, a
+/// `todo!()`: it is required, never optional (decisions 14.89, 14.99).
+#[test]
+fn test_scaffold_writes_the_one_refused_method_of_the_policy() {
+    let files = buyin(&[]);
+    let implementation = file_at(&files, "buy_in_wallet_policy_impl.rs");
+    let source = &implementation.source;
+    assert!(
+        flat(source).contains(&flat(
+            "fn refused(&self, _command: WalletStateCommand, _refusal: WalletStateRefusal, _ctx: &Refused) -> Result<BuyInStateFact, Bug> { todo!() }"
+        )),
+        "{source}"
+    );
+    assert_eq!(source.matches("fn refused(").count(), 1, "{source}");
     assert!(implementation.optional.is_empty());
     assert!(implementation.selected.is_empty());
+}
+
+/// A target that cannot refuse needs no path (C-0861): no refusal choice,
+/// no callback in the policy's interface, nor `#[on_refused]` in its
+/// adapter; a target that can has both.
+#[test]
+fn test_a_target_that_cannot_refuse_has_no_refusal_choice_or_callback() {
+    const UNREFUSED: &[&str] = &["unrefused/v1/unrefused.proto"];
+    let source = layer(UNREFUSED, "unrefused.v1");
+    assert!(
+        source.contains("pub trait OrderToInventoryPolicy {"),
+        "{source}"
+    );
+    assert!(!source.contains("StateRefusal"), "{source}");
+    assert!(!source.contains("fn refused("), "{source}");
+    assert!(!source.contains("fn read("), "{source}");
+    let adapters = adapters(&descriptors(UNREFUSED), UNREFUSED, &[]).unwrap();
+    assert!(!adapters.contains("on_refused"), "{adapters}");
+    assert!(!adapters.contains("Refused"), "{adapters}");
+    let files = scaffold(&descriptors(UNREFUSED), UNREFUSED, &[]).unwrap();
+    let implementation = &file_at(&files, "order_to_inventory_policy_impl.rs").source;
+    assert!(!implementation.contains("fn refused("), "{implementation}");
+    // The contrast: the buy-in policies' targets refuse.
+    let buyin = adapters_of_buyin();
+    assert_eq!(buyin.matches("#[on_refused]").count(), 2, "{buyin}");
+}
+
+fn adapters_of_buyin() -> String {
+    adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap()
 }
 
 #[test]
@@ -329,33 +421,33 @@ fn test_an_interface_of_one_file_finds_its_policies_owners_and_events_elsewhere(
     assert!(player_table.contains("fn move_decided("), "{player_table}");
     // What it sends the table: its outputs, commands and facts alike
     // (decision 14.69).
-    assert!(
-        player_table.contains("TableAggregateOutput"),
-        "{player_table}"
-    );
+    assert!(player_table.contains("TableStateOutput"), "{player_table}");
 }
 
 #[test]
 fn test_a_decision_returns_a_list_of_its_events() {
     const TABLE: &str = "io/angzarr/examples/v1/table.proto";
     let source = layer(BLACKJACK, "io.angzarr.examples.v1");
-    let table = &source[source.find("pub trait TableAggregate").unwrap()..];
+    let table = &source[source.find("pub trait TableState").unwrap()..];
     // Decision 14.75: every handling returns a list of the table's events
-    // (C-0797), and the table refuses with TableRefused.
+    // (C-0797), and the table refuses with the choice of its command's refusal types.
     for expected in [
-        "        cmd: &PlaceBet,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
-        "        cmd: &Hit,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
-        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
-        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<TableRefused>>;",
-        "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<Vec<TableAggregateEvent>, Failed<SeatNotConfirmable>>;",
+        "        cmd: &PlaceBet,\n        ctx: &Context,\n    ) -> Result<Vec<TableStateEvent>, Failed<PlaceBetRefuses>>;",
+        "        cmd: &Hit,\n        ctx: &Context,\n    ) -> Result<Vec<TableStateEvent>, Failed<HitRefuses>>;",
+        "        cmd: &CreateTable,\n        ctx: &Context,\n    ) -> Result<Vec<TableStateEvent>, Failed<CreateTableRefuses>>;",
+        "        cmd: &DealRound,\n        ctx: &Context,\n    ) -> Result<Vec<TableStateEvent>, Failed<DealRoundRefuses>>;",
+        "        cmd: &ConfirmSeat,\n        ctx: &Context,\n    ) -> Result<Vec<TableStateEvent>, Failed<SeatNotConfirmable>>;",
         // ReleaseSeat is a fact (ruling 9, decision 14.69): recorded, never
         // refused.
-        "fn release_seat(&self, fact: &ReleaseSeat, ctx: &Context) -> Vec<TableAggregateEvent>;",
+        "fn release_seat(&self, fact: &ReleaseSeat, ctx: &Context) -> Result<Vec<TableStateEvent>, Bug>;",
     ] {
-        assert!(table.contains(expected), "{expected}:\n{table}");
+        assert!(
+            flat(table).contains(&flat(expected)),
+            "{expected}:\n{table}"
+        );
     }
     let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
-    let state = &file_at(&files, "table_aggregate_impl.rs").source;
+    let state = &file_at(&files, "table_state_impl.rs").source;
     assert!(
         state.contains("pub state: crate::wire::TableState,"),
         "{state}"
@@ -374,34 +466,29 @@ fn test_adapters_match_the_golden_file() {
 fn test_adapters_name_each_policy_by_its_domains() {
     let source = adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap();
     for name in [
-        "#[policy(name = \"policy-buyin-wallet\", source = BuyIn, target = Wallet)]",
-        "#[policy(name = \"policy-wallet-buyin\", source = Wallet, target = BuyIn)]",
+        "#[policy(name = \"policy-buyin-wallet\", source = BuyInState, target = WalletState)]",
+        "#[policy(name = \"policy-wallet-buyin\", source = WalletState, target = BuyInState)]",
     ] {
         assert!(source.contains(name), "{name}:\n{source}");
     }
 }
 
-/// A policy whose source takes facts has a refusal callback per command of
-/// its target, each delegating to its interface's required
-/// `<command>_refused`, whose fact the markup always gets: the generated
-/// policy never declines (decision 14.76).
+/// A policy whose target has a command that can refuse, and whose source
+/// takes facts, has ONE refusal callback, delegating to its interface's
+/// required `refused`: it reads the command refused and the refusal as the
+/// target's choices from the refused answer and hands them on, and the
+/// markup always gets a fact: the generated policy never declines
+/// (decisions 14.89, 14.99).
 #[test]
-fn test_adapters_wire_a_translating_refusal_callback_per_command() {
+fn test_adapters_wire_the_one_translating_refusal_callback() {
     let source = adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap();
     let file = parse_adapters(&source);
-    let imp = inherent_impl(&file, "BuyInWallet");
+    let imp = inherent_impl(&file, "BuyInWalletPolicy");
     assert_eq!(
         markers(imp),
-        s(&[
-            ("on_event", "BuyInStarted"),
-            ("on_refused", "Deposit"),
-            ("on_refused", "Hold"),
-        ])
+        s(&[("on_event", "BuyInStarted"), ("on_refused", "")])
     );
-    // The callback takes the refused command's context and answers the
-    // source's fact, never declining (the markup's non-declining form):
-    // the interface's method reads the context and answers it, or a Bug.
-    let callback = methods(imp)[2];
+    let callback = methods(imp)[1];
     assert_eq!(
         callback
             .sig
@@ -413,98 +500,128 @@ fn test_adapters_wire_a_translating_refusal_callback_per_command() {
                 syn::FnArg::Receiver(_) => String::new(),
             })
             .collect::<Vec<_>>(),
-        ["&Refusal<Hold>", "&CommandContext"]
+        ["&Refused"]
     );
     assert_eq!(
         text(&callback.sig.output),
-        "->::core::result::Result<BuyInFact,Bug>"
+        "->::core::result::Result<BuyInStateFact,Bug>"
     );
     assert_eq!(
         text(&callback.block),
-        "{crate::domain::BuyInWallet::hold_refused(&self.0,refusal.command(),refusal.refusal::<InsufficientFunds>(),ctx,)}"
+        "{let(command,refusal)=WalletStateRefusal::read(refused)?;\
+         crate::domain::BuyInWalletPolicy::refused(&self.0,command,refusal,refused)}"
     );
-    assert_eq!(
-        text(&methods(imp)[1].block),
-        "{crate::domain::BuyInWallet::deposit_refused(&self.0,refusal.command(),refusal.refusal::<DepositRefused>(),ctx,)}"
-    );
-    // The wallet's policy to the buy-in: a callback per buy-in command.
-    let other = inherent_impl(&file, "WalletBuyIn");
+    // The wallet's policy to the buy-in: its own one callback.
+    let other = inherent_impl(&file, "WalletBuyInPolicy");
     assert_eq!(
         markers(other),
-        s(&[
-            ("on_event", "Held"),
-            ("on_refused", "StartBuyIn"),
-            ("on_refused", "RecordHeld"),
-        ])
+        s(&[("on_event", "Held"), ("on_refused", "")])
     );
-}
-
-/// The kinds fixture's policy translating Audit, which refuses two types,
-/// into the ledger's Arrived.
-fn translate_audit() -> Translate {
-    Translate {
-        policy: "kinds.v1.LedgerAuditPolicy".to_string(),
-        command: "kinds.v1.Audit".to_string(),
-        fact: "kinds.v1.Arrived".to_string(),
-    }
+    assert!(
+        text(&methods(other)[1].block).contains("BuyInStateRefusal::read(refused)"),
+        "{}",
+        text(&methods(other)[1].block)
+    );
 }
 
 const KINDS: &[&str] = &["kinds/v1/kinds.proto"];
 
-/// A command refusing several types is refused with one of them: the
-/// `<command>_refused` method takes the domain layer's choice of them, as
-/// the command's handler refuses with it, not one type or none.
+/// The audit domain's commands refuse two types between them (Audit:
+/// PostRefused and Unreasoned): the policy's refusal is the choice of
+/// exactly those, in command order, whatever command refused.
 #[test]
-fn test_a_refused_method_takes_the_choice_of_a_command_refusing_several_types() {
+fn test_a_refused_method_takes_the_choice_of_the_targets_refusals() {
     let source = layer(KINDS, "kinds.v1");
     assert!(
-        source.contains(
-            "    fn audit_refused(\n        &self,\n        command: &Audit,\n        refusal: Option<AuditRefuses>,\n        ctx: &CommandContext,\n    ) -> Result<LedgerStateFact, Bug>;"
-        ),
+        flat(&source).contains(&flat(
+            "fn refused(&self, command: AuditStateCommand, refusal: AuditStateRefusal, ctx: &Refused) -> Result<LedgerStateFact, Bug>;"
+        )),
         "{source}"
     );
-    let files = scaffold(&descriptors(KINDS), KINDS, &[translate_audit()]).unwrap();
+    let file = syn::parse_file(&source).unwrap();
+    let arms: Vec<String> = file
+        .items
+        .iter()
+        .find_map(|i| match i {
+            syn::Item::Enum(e) if e.ident == "AuditStateRefusal" => {
+                Some(e.variants.iter().map(|v| v.ident.to_string()).collect())
+            }
+            _ => None,
+        })
+        .expect("the audit state's refusal choice");
+    assert_eq!(arms, ["PostRefused", "Unreasoned"]);
+    let files = scaffold(&descriptors(KINDS), KINDS, &[]).unwrap();
     let source = &file_at(&files, "ledger_audit_policy_impl.rs").source;
-    assert!(
-        source.contains("_refusal: Option<AuditRefuses>,"),
-        "{source}"
-    );
+    assert!(source.contains("_refusal: AuditStateRefusal,"), "{source}");
 }
 
-/// The adapter hands that method the refusal as the choice: each of the
-/// command's refusal types tried in turn, the one it is chosen.
-#[test]
-fn test_adapters_hand_a_refused_method_the_choice_of_several_refusal_types() {
-    let source = adapters(&descriptors(KINDS), KINDS, &[]).unwrap();
-    let file = parse_adapters(&source);
-    let imp = inherent_impl(&file, "LedgerAuditPolicy");
-    let audit = methods(imp)
-        .into_iter()
-        .find(|m| m.sig.ident == "audit_refused")
-        .expect("the Audit callback");
-    assert_eq!(
-        text(&audit.block),
-        "{crate::domain::LedgerAuditPolicy::audit_refused(&self.0,refusal.command(),\
-         refusal.refusal::<PostRefused>().map(AuditRefuses::PostRefused)\
-         .or_else(||{refusal.refusal::<Unreasoned>().map(AuditRefuses::Unreasoned)}),ctx,)}"
-    );
-}
-
-/// A fact handler's adapter hands the interface its context too, with no
-/// Result: a fact is recorded, never refused.
+/// A fact handler's adapter hands the interface its context too: the
+/// router's `FactEmit`, its one failure a Bug, never a refusal.
 #[test]
 fn test_adapters_forward_a_fact_handlers_context() {
     let source = adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap();
     let file = parse_adapters(&source);
-    let buy_in = inherent_impl(&file, "BuyIn");
+    let buy_in = inherent_impl(&file, "BuyInState");
     let fact = methods(buy_in)
         .into_iter()
         .find(|m| m.sig.ident == "hold_lost")
         .expect("the HoldLost handler");
-    assert!(
-        text(&fact.block).contains("crate::domain::BuyIn::hold_lost(&self.0,&fact,ctx)"),
-        "{}",
-        text(&fact.block)
+    assert_eq!(
+        text(&fact.block),
+        "{crate::domain::BuyInState::hold_lost(&self.0,&fact,ctx).map(Self::recorded).map_err(::angzarr_embedded::markup::Bug::from)}"
+    );
+    assert_eq!(
+        text(&fact.sig.output),
+        "->Result<FactEmit<Self>,::angzarr_embedded::markup::Bug>"
+    );
+}
+
+/// The attribute and the signature follow the message's option (C-0648):
+/// a command is `#[handles_cmd]`, returning the markup's `Emit` and failing
+/// with its refusals (`Refuses<Self, Cmd>`, in a `Failed` so it can still be
+/// a bug) or, refusing nothing, with `Failed<Unrefusable>`; a fact is
+/// `#[handles_fact]`, returning the router's `FactEmit` and failing only
+/// with its `Bug`, with no `refuses` or `starts` it does not declare.
+#[test]
+fn test_each_handler_is_marked_and_typed_by_its_messages_option() {
+    let source = adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap();
+    let file = parse_adapters(&source);
+    let buy_in = inherent_impl(&file, "BuyInState");
+    assert_eq!(
+        markers(buy_in)
+            .into_iter()
+            .filter(|(name, _)| name.starts_with("handles_"))
+            .collect::<Vec<_>>(),
+        s(&[
+            ("handles_cmd", "StartBuyIn,starts,refuses(BuyInRefused)"),
+            ("handles_cmd", "RecordHeld,refuses(BuyInRefused)"),
+            ("handles_fact", "HoldLost"),
+        ])
+    );
+    assert_eq!(
+        signatures(buy_in)[..3],
+        [
+            "fnstart_buy_in(&self,cmd:StartBuyIn,ctx:&Context,)->Result<Emit<Self>,Failed<Refuses<Self,StartBuyIn>>>",
+            "fnrecord_held(&self,cmd:RecordHeld,ctx:&Context,)->Result<Emit<Self>,Failed<Refuses<Self,RecordHeld>>>",
+            "fnhold_lost(&self,fact:HoldLost,ctx:&Context,)->Result<FactEmit<Self>,::angzarr_embedded::markup::Bug>",
+        ]
+    );
+    // A command that refuses nothing cannot refuse: it fails with
+    // `Failed<Unrefusable>` and lists no `refuses`.
+    let kinds = adapters(&descriptors(KINDS), KINDS, &[]).unwrap();
+    let kinds = parse_adapters(&kinds);
+    let ledger = inherent_impl(&kinds, "LedgerState");
+    let open = methods(ledger)
+        .into_iter()
+        .find(|m| m.sig.ident == "open")
+        .expect("the Open handler");
+    assert_eq!(
+        text(&open.sig.output),
+        "->Result<Emit<Self>,Failed<Unrefusable>>"
+    );
+    assert_eq!(
+        attribute(&open.attrs[0]),
+        ("handles_cmd".to_string(), "Open".to_string())
     );
 }
 
@@ -514,20 +631,20 @@ fn test_adapters_forward_a_fact_handlers_context() {
 fn test_adapters_forward_each_handlers_context() {
     let source = adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap();
     let file = parse_adapters(&source);
-    let wallet = inherent_impl(&file, "Wallet");
+    let wallet = inherent_impl(&file, "WalletState");
     assert_eq!(
         text(&methods(wallet)[0].block),
-        "{crate::domain::Wallet::deposit(&self.0,&cmd,ctx).map(Self::emitted::<Failed<Refuses<Self,Deposit>>>).map_err(Failed::widen)}"
+        "{crate::domain::WalletState::deposit(&self.0,&cmd,ctx).map(Self::emitted::<Failed<Refuses<Self,Deposit>>>).map_err(DepositRefused::with_declared_status).map_err(Failed::widen)}"
     );
-    let policy = inherent_impl(&file, "BuyInWallet");
+    let policy = inherent_impl(&file, "BuyInWalletPolicy");
     let reaction = methods(policy)[0];
     assert_eq!(
         text(&reaction.sig.output),
-        "->::core::result::Result<Commands<Wallet>,Bug>"
+        "->::core::result::Result<Commands<WalletState>,Bug>"
     );
     assert!(
         text(&reaction.block).starts_with(
-            "{letorders=crate::domain::BuyInWallet::buy_in_started(&self.0,&ctx.source_root().value,event,ctx,)?;"
+            "{letorders=crate::domain::BuyInWalletPolicy::buy_in_started(&self.0,&ctx.source_root().value,event,ctx,)?;"
         ),
         "{}",
         text(&reaction.block)
@@ -542,7 +659,7 @@ fn test_an_interface_gives_a_policy_reaction_its_context_and_a_result() {
     let source = buyin_layer();
     assert!(
         source.contains(
-            "    fn buy_in_started(\n        &self,\n        source: &[u8],\n        event: &BuyInStarted,\n        ctx: &PolicyContext,\n    ) -> Result<Vec<(Vec<u8>, WalletOutput)>, Bug>;"
+            "    fn buy_in_started(\n        &self,\n        source: &[u8],\n        event: &BuyInStarted,\n        ctx: &PolicyContext,\n    ) -> Result<Vec<(Vec<u8>, WalletStateOutput)>, Bug>;"
         ),
         "{source}"
     );
@@ -595,7 +712,7 @@ fn test_adapters_name_a_remote_domain_by_its_commands_and_events() {
         .items
         .iter()
         .filter_map(|i| match i {
-            syn::Item::Impl(imp) if text(&imp.self_ty) == "BuyIn" => Some(imp),
+            syn::Item::Impl(imp) if text(&imp.self_ty) == "BuyInState" => Some(imp),
             _ => None,
         })
         .collect();
@@ -646,7 +763,7 @@ fn test_adapters_name_a_remote_domain_by_its_commands_and_events() {
         ),
         "{events}"
     );
-    assert!(!source.contains("crate::buy_in_impl::"), "{source}");
+    assert!(!source.contains("crate::buy_in_state_impl::"), "{source}");
     assert!(!source.contains("unreachable!"), "{source}");
 }
 
@@ -695,23 +812,23 @@ const USER_WALLET_IMPL: &str = r#"//! The wallet, mine.
 use crate::domain::*;
 
 #[derive(Clone, Debug, Default)]
-pub struct WalletImpl {
+pub struct WalletStateImpl {
     pub state: crate::wire::WalletState,
 }
 
-impl Wallet for WalletImpl {
+impl WalletState for WalletStateImpl {
     /// The user's own doc, which `--missing` must keep byte for byte.
-    fn deposit(&self, cmd: &Deposit, _ctx: &Context) -> Result<Vec<WalletEvent>, Failed<DepositRefused>> {
+    fn deposit(&self, cmd: &Deposit, _ctx: &Context) -> Result<Vec<WalletStateEvent>, Failed<DepositRefused>> {
         Ok(vec![Deposited { cents: cmd.cents }.into()]) // USER-WRITTEN
     }
 
-    fn record_buy_in_refused(&self, _fact: &RecordBuyInRefused, _ctx: &Context) -> Vec<WalletEvent> {
-        Vec::new()
+    fn record_buy_in_refused(&self, _fact: &RecordBuyInRefused, _ctx: &Context) -> Result<Vec<WalletStateEvent>, Bug> {
+        Ok(Vec::new())
     }
 
     fn apply_buy_in_refusal_recorded(&mut self, _event: &BuyInRefusalRecorded) {}
 
-    fn withdraw(&self, cmd: &Withdraw, _ctx: &Context) -> Result<Deposited, Failed<Rejection>> {
+    fn withdraw(&self, cmd: &Withdraw, _ctx: &Context) -> Result<Deposited, Failed<Unrefusable>> {
         todo!()
     }
 
@@ -725,7 +842,7 @@ impl Wallet for WalletImpl {
 fn test_complete_adds_only_the_absent_required_methods_to_the_implementation() {
     let files = buyin(&[]);
     let completion = complete(
-        file_at(&files, "wallet_impl.rs"),
+        file_at(&files, "wallet_state_impl.rs"),
         USER_WALLET_IMPL,
         Existing::Complete,
     )
@@ -733,7 +850,7 @@ fn test_complete_adds_only_the_absent_required_methods_to_the_implementation() {
     let expected = USER_WALLET_IMPL.replace(
         "        self.state.balance += event.cents;\n    }\n}",
         "        self.state.balance += event.cents;\n    }\n\n    \
-         fn hold(\n        &self,\n        _cmd: &Hold,\n        _ctx: &Context,\n    ) -> Result<Vec<WalletEvent>, Failed<InsufficientFunds>> {\n        todo!()\n    }\n\n    \
+         fn hold(\n        &self,\n        _cmd: &Hold,\n        _ctx: &Context,\n    ) -> Result<Vec<WalletStateEvent>, Failed<InsufficientFunds>> {\n        todo!()\n    }\n\n    \
          fn apply_held(&mut self, _event: &Held) {\n        todo!()\n    }\n}",
     );
     assert_eq!(completion.completed, Some(expected));
@@ -752,7 +869,7 @@ fn test_complete_adds_only_the_absent_required_methods_to_the_implementation() {
 fn test_complete_of_a_kept_file_reports_what_it_lacks_and_what_is_obsolete() {
     let files = buyin(&[]);
     let completion = complete(
-        file_at(&files, "wallet_impl.rs"),
+        file_at(&files, "wallet_state_impl.rs"),
         USER_WALLET_IMPL,
         Existing::Keep,
     )
@@ -768,32 +885,32 @@ fn test_complete_of_a_kept_file_reports_what_it_lacks_and_what_is_obsolete() {
     );
 }
 
-/// A policy's refusal callback is required (decision 14.76): `--missing`
+/// A policy's refusal callback is required (decisions 14.89, 14.99): `--missing`
 /// adds one an existing implementation lacks, as any required method, and
 /// a kept file reports it.
 #[test]
 fn test_complete_adds_a_missing_refused_method() {
     let plain = buyin(&[]);
-    let path = "buy_in_wallet_impl.rs";
+    let path = "buy_in_wallet_policy_impl.rs";
     let fresh = file_at(&plain, path);
-    let start = fresh.source.find("    fn hold_refused(").unwrap();
+    let start = fresh.source.find("    fn refused(").unwrap();
     let end = start + fresh.source[start..].find("    }\n").unwrap() + "    }\n".len();
     let mine = format!("{}{}", &fresh.source[..start], &fresh.source[end..]);
     let kept = complete(fresh, &mine, Existing::Keep).unwrap();
     assert_eq!(kept.completed, None);
-    assert_eq!(kept.notes.lacks, ["hold_refused"]);
+    assert_eq!(kept.notes.lacks, ["refused"]);
     assert!(kept.notes.optional.is_empty());
     let completed = complete(fresh, &mine, Existing::Complete)
         .unwrap()
         .completed
         .expect("the required callback is added");
-    assert!(completed.contains("fn hold_refused("), "{completed}");
+    assert!(completed.contains("fn refused("), "{completed}");
 }
 
 #[test]
 fn test_complete_refuses_a_command_taken_as_a_fact() {
     let files = buyin(&[]);
-    let fresh = file_at(&files, "buy_in_impl.rs");
+    let fresh = file_at(&files, "buy_in_state_impl.rs");
     let as_fact = fresh
         .source
         .replace("_cmd: &RecordHeld", "_fact: &RecordHeld");
@@ -801,7 +918,7 @@ fn test_complete_refuses_a_command_taken_as_a_fact() {
     assert_eq!(
         complete(fresh, &as_fact, Existing::Keep),
         Err(CodegenError::Use(UseError::InputMismatch {
-            path: "buy_in_impl.rs".to_string(),
+            path: "buy_in_state_impl.rs".to_string(),
             message: "buyin.v1.RecordHeld".to_string(),
             expected: "cmd".to_string(),
             found: "fact".to_string(),
@@ -814,12 +931,12 @@ fn test_complete_refuses_a_file_without_the_components_impl() {
     let files = buyin(&[]);
     assert_eq!(
         complete(
-            file_at(&files, "wallet_impl.rs"),
+            file_at(&files, "wallet_state_impl.rs"),
             "//! Not the wallet any more.\n",
             Existing::Keep
         ),
         Err(CodegenError::Use(UseError::ScaffoldImplNotFound {
-            path: "wallet_impl.rs".to_string(),
+            path: "wallet_state_impl.rs".to_string(),
             component: "buyin.v1.WalletState".to_string(),
         }))
     );
@@ -833,13 +950,17 @@ fn test_complete_inserts_before_a_closing_brace_that_ends_a_line() {
         "        self.state.balance += event.cents;\n    } }\n",
     );
     assert_ne!(user, USER_WALLET_IMPL);
-    let completed = complete(file_at(&files, "wallet_impl.rs"), &user, Existing::Complete)
-        .unwrap()
-        .completed
-        .expect("hold and apply_held are absent");
+    let completed = complete(
+        file_at(&files, "wallet_state_impl.rs"),
+        &user,
+        Existing::Complete,
+    )
+    .unwrap()
+    .completed
+    .expect("hold and apply_held are absent");
     assert!(
         completed.ends_with(
-            "    } \n\n    fn hold(\n        &self,\n        _cmd: &Hold,\n        _ctx: &Context,\n    ) -> Result<Vec<WalletEvent>, Failed<InsufficientFunds>> {\n        todo!()\n    }\n\n    \
+            "    } \n\n    fn hold(\n        &self,\n        _cmd: &Hold,\n        _ctx: &Context,\n    ) -> Result<Vec<WalletStateEvent>, Failed<InsufficientFunds>> {\n        todo!()\n    }\n\n    \
              fn apply_held(&mut self, _event: &Held) {\n        todo!()\n    }\n}\n"
         ),
         "{completed}"
@@ -849,7 +970,7 @@ fn test_complete_inserts_before_a_closing_brace_that_ends_a_line() {
 #[test]
 fn test_complete_takes_a_method_naming_its_event_otherwise_as_present() {
     let files = buyin(&[]);
-    let fresh = file_at(&files, "wallet_impl.rs");
+    let fresh = file_at(&files, "wallet_state_impl.rs");
     let renamed = fresh
         .source
         .replace("_event: &Deposited", "deposited: &Deposited");

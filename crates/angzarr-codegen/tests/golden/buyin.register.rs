@@ -7,9 +7,15 @@
 pub fn register(
     registry: &mut ::angzarr_embedded::Registry,
 ) -> ::core::result::Result<(), ::angzarr_embedded::Misconfigured> {
-    registry.aggregate::<crate::adapters::Wallet>(crate::adapters::Wallet::default)?;
-    registry.process_manager::<crate::adapters::BuyIn>(crate::adapters::BuyIn::default)?;
-    registry.policy(crate::adapters::BuyInWallet::default())?;
-    registry.policy(crate::adapters::WalletBuyIn::default())?;
+    registry
+        .aggregate::<
+            crate::adapters::WalletState,
+        >(crate::adapters::WalletState::default)?;
+    registry
+        .process_manager::<
+            crate::adapters::BuyInState,
+        >(crate::adapters::BuyInState::default)?;
+    registry.policy(crate::adapters::BuyInWalletPolicy::default())?;
+    registry.policy(crate::adapters::WalletBuyInPolicy::default())?;
     ::core::result::Result::Ok(())
 }

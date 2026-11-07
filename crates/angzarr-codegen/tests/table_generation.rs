@@ -60,7 +60,7 @@ fn impl_text(source: &str, trait_: &str, ty: &str) -> String {
 fn test_markup_domain_of_table_proto_alone_takes_unknown_consumers_as_references() {
     let generated = markup_domain(&descriptors(&[TABLE]), &[TABLE], WIRE)
         .expect("an event's consumer outside the set is a reference");
-    assert!(one(generated).contains("pub enum TableAggregateEvent"));
+    assert!(one(generated).contains("pub enum TableStateEvent"));
 }
 
 // ------------------------------------------------------------ projectors
@@ -92,44 +92,54 @@ fn test_markup_domain_generates_the_ledger_projectors_events_and_context() {
 /// A projector's interface, as every other kind's, is the domain layer's:
 /// one async method per projected event (decision 14.50's ruling: an async
 /// user interface); its implementation, the user's, holds the projection.
+/// The ledger is two projectors, each of one source domain (decision 14.96).
 #[test]
 fn test_scaffold_writes_the_ledger_projectors_interface_and_implementation() {
     let files = scaffold(&descriptors(BLACKJACK), &[LEDGER], &[]).unwrap();
     let interface = one(markup_domain(&descriptors(BLACKJACK), &[LEDGER], WIRE).unwrap());
     for expected in [
-        "pub trait LedgerProjector {",
+        "pub trait TableLedgerProjection {",
         "    fn round_settled(\n        &mut self,\n        event: &RoundSettled,\n        ctx: &ProjectionContext,\n    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;",
+        "pub trait WalletLedgerProjection {",
         "    fn funds_held(\n        &mut self,\n        event: &FundsHeld,\n        ctx: &ProjectionContext,\n    ) -> impl std::future::Future<Output = Result<(), Bug>> + Send;",
     ] {
         assert!(interface.contains(expected), "{expected}:\n{interface}");
     }
-    let implementation = files
-        .iter()
-        .find(|f| f.path == "ledger_projector_impl.rs")
-        .expect("ledger_projector_impl.rs");
-    assert!(
-        implementation
-            .source
-            .contains("pub state: crate::wire::LedgerProjection,"),
-        "{}",
-        implementation.source
-    );
+    for (path, state) in [
+        (
+            "table_ledger_projection_impl.rs",
+            "pub state: crate::wire::TableLedgerProjection,",
+        ),
+        (
+            "wallet_ledger_projection_impl.rs",
+            "pub state: crate::wire::WalletLedgerProjection,",
+        ),
+    ] {
+        let implementation = files
+            .iter()
+            .find(|f| f.path == path)
+            .unwrap_or_else(|| panic!("{path}"));
+        assert!(
+            implementation.source.contains(state),
+            "{}",
+            implementation.source
+        );
+    }
 }
 
-/// The adapter marks the projector up for angzarr-embedded: ONE
-/// `#[projector]` over every source domain (the owner's ruling: the markup
-/// takes a list of sources), named by its component_name, delegating to
-/// the user's one implementation.
+/// The adapter marks each ledger projector up for angzarr-embedded: one
+/// `#[projector]` each, over its one source domain, named by its
+/// component_name, delegating to the user's implementation.
 #[test]
-fn test_adapters_mark_up_the_ledger_projector_for_each_source_domain() {
+fn test_adapters_mark_up_the_ledger_projectors_each_for_its_source_domain() {
     let source = adapters(&descriptors(BLACKJACK), &[LEDGER], &[]).unwrap();
-    assert_eq!(source.matches("#[projector(").count(), 1, "{source}");
-    assert!(
-        source.contains(
-            "#[projector(name = \"projector-wallet-table-ledger\", sources = [\"table\", \"wallet\"])]"
-        ),
-        "{source}"
-    );
+    assert_eq!(source.matches("#[projector(").count(), 2, "{source}");
+    for projector in [
+        "#[projector(name = \"projector-wallet-ledger\", sources = [\"wallet\"])]",
+        "#[projector(name = \"projector-table-ledger\", sources = [\"table\"])]",
+    ] {
+        assert!(source.contains(projector), "{projector}:\n{source}");
+    }
     assert!(source.contains("#[projects(RoundSettled)]"), "{source}");
     assert!(source.contains("#[projects(FundsHeld)]"), "{source}");
 }

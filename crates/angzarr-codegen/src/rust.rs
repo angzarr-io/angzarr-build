@@ -15,8 +15,7 @@ use prost_reflect::{EnumDescriptor, FieldDescriptor, Kind, MessageDescriptor};
 use quote::{format_ident, quote};
 
 use crate::common::{
-    enum_name, has_code_status, output_name, refusal_choice_name, refusal_key, refusal_reason,
-    screaming, wire_name,
+    enum_name, output_name, refusal_choice_name, refusal_key, refusal_reason, screaming, wire_name,
 };
 use crate::model::{Package, TIMESTAMP};
 
@@ -55,7 +54,6 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         let anchor = package.components.iter().any(|c| &c.anchor == message);
         items.extend(structure(message, wire, anchor));
     }
-    items.extend(rejection());
     items.extend(handler_context());
     let mut refusals: Vec<&MessageDescriptor> = Vec::new();
     for component in &package.components {
@@ -81,6 +79,7 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         ));
         items.extend(output_enum(component));
         items.extend(fact_enum(component));
+        items.extend(refusal_enum(component));
         items.extend(plain_enum(
             &format_ident!("{}Event", component.name),
             &component.events,
@@ -230,63 +229,12 @@ fn wire_settings(messages: &[MessageDescriptor], wire: &syn::Path) -> TokenStrea
     }
 }
 
-/// The domain's untyped rejection: a diagnostic key and its args, never
-/// text (decision 14.37). A command with no typed refusal rejects with it.
-fn rejection() -> TokenStream {
-    quote! {
-        /// Why a command is rejected: a business "no", never a fault, the
-        /// command refused under a business status (this one crosses as
-        /// FAILED_PRECONDITION) and the issuing policy's refusal handler
-        /// told. One of the two classes a handler fails
-        /// with; the other is [`Bug`]. A diagnostic key and its args,
-        /// never text.
-        #[derive(Clone, Debug, PartialEq, Eq)]
-        pub struct Rejection {
-            pub key: &'static str,
-            pub args: Vec<(&'static str, String)>,
-        }
-
-        impl Rejection {
-            /// A rejection keyed `key`, with no args yet.
-            pub fn new(key: &'static str) -> Rejection {
-                Rejection { key, args: Vec::new() }
-            }
-
-            /// This rejection with the arg `name` set to `value`.
-            pub fn arg(mut self, name: &'static str, value: impl ToString) -> Rejection {
-                self.args.push((name, value.to_string()));
-                self
-            }
-        }
-
-        impl ::std::fmt::Display for Rejection {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                f.write_str(self.key)
-            }
-        }
-
-        impl ::std::error::Error for Rejection {}
-
-        impl ::angzarr_embedded::angzarr_diagnostic::Diagnostic for Rejection {
-            fn code(&self) -> &str {
-                self.key
-            }
-
-            fn args(&self) -> Vec<(&str, ::angzarr_embedded::angzarr_diagnostic::Arg)> {
-                self.args
-                    .iter()
-                    .map(|(name, value)| (*name, value.as_str().into()))
-                    .collect()
-            }
-        }
-    }
-}
-
 /// What the user's handlers read and fail with, under the domain layer's
 /// names, so a user file imports only `crate::domain`: the runtime's
-/// contexts and its `Failed`, `BusinessStatus` and `RetryableStatus`
-/// re-exported, and `Bug`,
-/// a defect: a diagnostic key and its args, never text (decision 14.37).
+/// contexts and its `Failed`, `Unrefusable`, `BusinessStatus` and
+/// `RetryableStatus` re-exported, `Refusal`, the status a refusal
+/// message declares, and `Bug`, a defect: a diagnostic key and its args,
+/// never text (decision 14.37).
 fn handler_context() -> TokenStream {
     let root = root();
     quote! {
@@ -301,8 +249,13 @@ fn handler_context() -> TokenStream {
         pub use #root::markup::PolicyContext;
 
         /// The refused command's context, whole, as its target's handler
-        /// was handed it: what a `<command>_refused` method reads.
+        /// was handed it: what a fact's continuation step reads.
         pub use #root::markup::CommandContext;
+
+        /// The refused answer a policy's refusal callback reads besides
+        /// the refused command and the refusal: the status it travelled as,
+        /// the delivery, the trigger and its metadata.
+        pub use #root::markup::Refused;
 
         /// What a projector's handler reads besides the event: the stream
         /// it is from (its source domain and root), its sequence there and
@@ -315,15 +268,16 @@ fn handler_context() -> TokenStream {
         pub use #root::markup::Compensation;
 
         /// What a command handler fails with, one of four classes:
-        /// `Failed::Rejected`, a [`Rejection`] (or a typed refusal) under
-        /// a [`BusinessStatus`], FAILED_PRECONDITION unless `with_status`
-        /// says otherwise; `Failed::immediate(&bug)`, ABORTED under the
+        /// `Failed::Rejected`, one of the command's typed refusals under
+        /// a [`BusinessStatus`] (the one the refusal message declares);
+        /// `Failed::immediate(&bug)`, ABORTED under the
         /// [`Bug`]'s key, "re-read and re-decide", back to a caller at
         /// once and re-run as a policy's step; `Failed::Bug`, a [`Bug`],
         /// dead-lettered at once; or `Failed::retryable_bug(status, &bug)`,
         /// a [`Bug`] under the [`RetryableStatus`] the handler picks,
         /// retried with capped backoff, then dead-lettered.
-        /// `Err(rejection)?` and `Err(bug)?` both convert.
+        /// `Err(refusal)?` and `Err(bug)?` both convert. A command that
+        /// refuses nothing fails with `Failed<Unrefusable>`.
         ///
         /// The retryable statuses are not interchangeable: `Unavailable`
         /// means resend (the dependency is down for now);
@@ -331,11 +285,21 @@ fn handler_context() -> TokenStream {
         /// since the work may have happened (a command is, by its
         /// `command_id`); `ResourceExhausted` means wait longer before
         /// resending (a quota or a capacity limit was hit).
-        pub use #root::markup::{BusinessStatus, Failed, RetryableStatus};
+        pub use #root::markup::{BusinessStatus, Failed, RetryableStatus, Unrefusable};
 
-        /// A bug: a defect, never a business answer. The other of the two
-        /// classes a handler fails with; the first is [`Rejection`], a
-        /// business "no". A command handler fails with it as
+        /// A typed refusal message: the status it is refused under, the
+        /// `(refusal_status)` its message declares (there is no default).
+        /// Every refusal message of the domain layer implements it; a
+        /// generated adapter refuses under it, and a hand-written handler
+        /// reads it for the same status.
+        pub trait Refusal {
+            /// The business status the refusal is refused with.
+            const REFUSAL_STATUS: BusinessStatus;
+        }
+
+        /// A bug: a defect, never a business answer. The other class a
+        /// handler fails with besides a typed refusal. A command handler
+        /// fails with it as
         /// `Failed::Bug` (`Err(Bug::new("key").arg(..))?`), a policy as its
         /// `Err`, since a policy reacts to events the application's own
         /// domains recorded. A diagnostic key and its args, never text; it
@@ -382,9 +346,21 @@ fn handler_context() -> TokenStream {
         }
 
         /// A command handler's bug, as it fails: `Failed::Bug`.
-        impl ::core::convert::From<Bug> for Failed<Rejection> {
+        impl ::core::convert::From<Bug> for Failed<Unrefusable> {
             fn from(bug: Bug) -> Self {
                 Failed::bug(&bug)
+            }
+        }
+
+        /// A fact handler's failure: the router's `Bug`, under this bug's
+        /// key and args (a fact is never refused, so a bug is its one
+        /// failure).
+        impl ::core::convert::From<Bug> for #root::markup::Bug {
+            fn from(bug: Bug) -> Self {
+                #root::markup::Bug::coded(
+                    bug.key,
+                    bug.args.into_iter().map(|(name, value)| (name.to_string(), value)),
+                )
             }
         }
     }
@@ -422,36 +398,28 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
             args
         }
     };
-    let status = refusal_reason(message).map(|e| {
-        let ty = ident(&enum_name(&e));
-        let arms = e.values().filter(|v| v.number() != 0).map(|v| {
-            let variant = ident(&camel(wire_name(&e, v.name())));
-            let status = business_status(crate::model::refusal_status(&v));
-            quote!(#ty::#variant => BusinessStatus::#status)
-        });
-        quote! {
-            impl #name {
-                /// The status this refusal is refused with (decision 14.52): its
-                /// reason's `refusal_status`, FAILED_PRECONDITION where unmarked.
-                pub fn status(&self) -> BusinessStatus {
-                    match self.reason { #(#arms),* }
-                }
+    let status = business_status(crate::model::message_status(message));
+    let status = quote! {
+        impl Refusal for #name {
+            const REFUSAL_STATUS: BusinessStatus = BusinessStatus::#status;
+        }
 
-                /// `failed`, its refusal under its code's status ([`Self::status`]),
-                /// whatever status it was given; any other failure unchanged.
-                /// What the generated adapter refuses with.
-                pub fn with_code_status(failed: Failed<#name>) -> Failed<#name> {
-                    match failed {
-                        Failed::Rejected { rejection, .. } => {
-                            let status = rejection.status();
-                            Failed::Rejected { rejection, status }
-                        }
-                        other => other,
-                    }
+        impl #name {
+            /// `failed`, its refusal under the status this message declares
+            /// ([`Refusal::REFUSAL_STATUS`]), whatever status it was given;
+            /// any other failure unchanged. What the generated adapter
+            /// refuses with.
+            pub fn with_declared_status(failed: Failed<#name>) -> Failed<#name> {
+                match failed {
+                    Failed::Rejected { rejection, .. } => Failed::Rejected {
+                        rejection,
+                        status: <#name as Refusal>::REFUSAL_STATUS,
+                    },
+                    other => other,
                 }
             }
         }
-    });
+    };
     quote! {
         #status
 
@@ -481,6 +449,32 @@ fn refusal_diagnostic(message: &MessageDescriptor) -> TokenStream {
     }
 }
 
+/// A choice's `with_declared_status`: its refusal under the status the
+/// chosen type declares ([`Refusal::REFUSAL_STATUS`]).
+fn choice_status(name: &syn::Ident, input: &crate::model::Input) -> TokenStream {
+    let arms = input.refuses.iter().map(|r| {
+        let ty = ident(r.name());
+        quote!(#name::#ty(_) => <#ty as Refusal>::REFUSAL_STATUS)
+    });
+    quote! {
+        impl #name {
+            /// `failed`, its refusal under the status the chosen type
+            /// declares ([`Refusal::REFUSAL_STATUS`]), whatever status it
+            /// was given; any other failure unchanged. What the generated
+            /// adapter refuses with.
+            pub fn with_declared_status(failed: Failed<#name>) -> Failed<#name> {
+                match failed {
+                    Failed::Rejected { rejection, .. } => {
+                        let status = match &rejection { #(#arms),* };
+                        Failed::Rejected { rejection, status }
+                    }
+                    other => other,
+                }
+            }
+        }
+    }
+}
+
 /// What a command naming several `refuses` types refuses with: one of
 /// them, each `From` its type, its diagnostic the chosen one's, and
 /// `widen`, which hands the adapter's markup its own choice.
@@ -491,33 +485,7 @@ fn refusal_choice(input: &crate::model::Input) -> TokenStream {
         " What {} refuses with: one of its refuses types.",
         input.message.name()
     );
-    let coded = has_code_status(input).then(|| {
-        let arms = input.refuses.iter().map(|r| {
-            let ty = ident(r.name());
-            if refusal_reason(r).is_some() {
-                quote!(#name::#ty(refusal) => refusal.status())
-            } else {
-                quote!(#name::#ty(_) => status)
-            }
-        });
-        quote! {
-            impl #name {
-                /// `failed`, its refusal under the chosen type's code's status
-                /// (decision 14.52) when it has a Reason, else the status it was
-                /// given; any other failure unchanged. What the generated adapter
-                /// refuses with.
-                pub fn with_code_status(failed: Failed<#name>) -> Failed<#name> {
-                    match failed {
-                        Failed::Rejected { rejection, status } => {
-                            let status = match &rejection { #(#arms),* };
-                            Failed::Rejected { rejection, status }
-                        }
-                        other => other,
-                    }
-                }
-            }
-        }
-    });
+    let coded = choice_status(&name, input);
     quote! {
         #coded
 
@@ -767,6 +735,60 @@ fn fact_enum(component: &crate::model::Component) -> TokenStream {
                 ::core::option::Option::Some(match self {
                     #(#name::#facts(value) => #m::pack_message(&value),)*
                 })
+            }
+        }
+    }
+}
+
+/// A domain's typed refusals as one choice (`<Component>Refusal`), when
+/// any command of it names one: one arm per refusal message its commands
+/// name (typed only, decision 14.95), each once, each `From` its type. What
+/// a policy targeting the domain is handed, with the command refused, by
+/// its one refusal callback: matching it is exhaustive, so an arm missing
+/// from the callback does not compile. [`Self::read`] reads both from the
+/// refused answer.
+fn refusal_enum(component: &crate::model::Component) -> TokenStream {
+    let Some(name) = crate::scaffold::refusal_choice(component) else {
+        return quote!();
+    };
+    let name = format_ident!("{name}");
+    let mut refusals: Vec<MessageDescriptor> = Vec::new();
+    for refusal in component
+        .inputs
+        .iter()
+        .filter(|i| !i.fact)
+        .flat_map(|i| &i.refuses)
+    {
+        if !refusals.contains(refusal) {
+            refusals.push(refusal.clone());
+        }
+    }
+    let doc = format!(
+        " A typed refusal of {}'s commands: one arm per refusal message they name. \
+         What a policy sending {} is handed by its one refusal callback.",
+        component.name, component.name
+    );
+    let choice = plain_enum(&name, &refusals, &doc);
+    let command = format_ident!("{}Command", component.name);
+    let root = root();
+    quote! {
+        #choice
+
+        impl #name {
+            /// The command refused and the refusal it was refused with,
+            /// read from the answer a policy's refusal callback is handed.
+            /// A bug when the answer holds none: the kernel hands the
+            /// callback only a typed refusal of a command the domain decides.
+            pub fn read(refused: &Refused) -> Result<(#command, #name), Bug> {
+                use #root::Payload as _;
+                let command = #command::from_any(refused.command_payload())
+                    .map_err(|_| Bug::new("refused-command-unknown"))?;
+                let object = refused
+                    .refusal_object()
+                    .ok_or_else(|| Bug::new("refusal-without-object"))?;
+                let refusal = #name::from_any(object)
+                    .map_err(|_| Bug::new("refusal-unknown"))?;
+                Ok((command, refusal))
             }
         }
     }

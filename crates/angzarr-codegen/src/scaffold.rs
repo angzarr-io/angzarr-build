@@ -27,7 +27,7 @@ use proc_macro2::TokenStream;
 use prost_reflect::MessageDescriptor;
 use quote::{format_ident, quote};
 
-use crate::common::{Arm, has_code_status, output_name, refusal_choice_name, snake};
+use crate::common::{Arm, output_name, refusal_choice_name, snake};
 use crate::error::{CodegenError, UseError};
 use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input, owner};
 use crate::rust::{RUNTIME, ident, root, runtime_macros};
@@ -124,10 +124,10 @@ pub struct PinDrift {
 }
 
 /// angzarr-cli's refusal switch (backlog OB-7), set to translate for one
-/// command of one policy: the policy's implementation is written with its
-/// `<command>_refused` callback, translating the refusal into `fact`, a
-/// fact of its source. Every command it does not translate is passed
-/// through, the default.
+/// command of one policy, a selection checked against the protos
+/// ([`check_translate`]). It selects nothing now: a policy has one refusal
+/// callback over all of its target's refusals (decision 14.89), and the spec
+/// retires the switch (C-0623); the type stays until its callers do.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Translate {
     /// The policy's anchor message, e.g. `buyin.v1.BuyInWalletPolicy`.
@@ -142,7 +142,7 @@ pub struct Translate {
 /// implementation (`<component>_impl.rs`), the user's, of its generated
 /// interface; and the interface an earlier scaffold wrote beside it
 /// (`<component>.rs`), now the domain layer's, [`Owner::Obsolete`]. Every
-/// method is required, a policy's refusal callbacks too (decision 14.76),
+/// method is required, a policy's refusal callback too (decisions 14.89, 14.99),
 /// so each is stubbed; `translate`'s selections are checked against the
 /// protos.
 ///
@@ -247,9 +247,9 @@ struct Method {
     /// (`impl Future<Output = ..> + Send`), its implementation's is an
     /// `async fn`.
     asynchronous: bool,
-    /// The refused command (its full name), for a policy's refusal
-    /// callback; `None` for any other method. Every method is required.
-    refused: Option<String>,
+    /// Whether this is a policy's one refusal callback. Every method is
+    /// required.
+    refused: bool,
 }
 
 impl Method {
@@ -339,16 +339,19 @@ fn projector_methods(component: &Component) -> Vec<Method> {
         ],
         returns: Some("Result<(), Bug>".to_string()),
         asynchronous: true,
-        refused: None,
+        refused: false,
     });
     projections.collect()
 }
 
-/// A policy's interface: a reaction per event, and, when its source takes
-/// facts, a required refusal callback per command of its target
-/// (`<command>_refused`: the command, its typed refusal if it declares one
-/// and the refused command's context, returning one of the source's facts,
-/// [`fact_choice`], or a `Bug`; it cannot decline, decision 14.76).
+/// A policy's interface: a reaction per event, and, when its target has a
+/// command that can refuse and its source takes facts, its one required
+/// `refused` callback: the command refused (the target's command choice),
+/// the refusal (the target's refusal choice, one arm per refusal message
+/// its commands name, so a missing arm does not compile) and the refused
+/// answer, returning one of the source's facts ([`fact_choice`]) or a
+/// `Bug`; it cannot decline (decisions 14.89, 14.99). A target that cannot
+/// refuse needs none.
 fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Method>, CodegenError> {
     let target = component.target(pool)?;
     let reactions = component.events.iter().map(|event| Method {
@@ -364,26 +367,24 @@ fn policy_methods(component: &Component, pool: &[Component]) -> Result<Vec<Metho
             output_name(target)
         )),
         asynchronous: false,
-        refused: None,
+        refused: false,
     });
     let choice = owner(pool, &component.input_domain).and_then(fact_choice);
-    let callbacks = choice.into_iter().flat_map(|choice| {
-        target.inputs.iter().filter(|i| !i.fact).map(move |input| {
-            let command = input.message.name();
-            let mut params = vec![param("command", format!("&{command}"))];
-            params.extend(refusal_type(input).map(|r| param("refusal", format!("Option<{r}>"))));
-            params.push(param("ctx", "&CommandContext"));
-            Method {
-                name: format!("{}_refused", snake(command)),
-                receiver: "&self",
-                params,
-                returns: Some(format!("Result<{choice}, Bug>")),
-                asynchronous: false,
-                refused: Some(input.message.full_name().to_string()),
-            }
-        })
-    });
-    Ok(reactions.chain(callbacks).collect())
+    let callback = choice
+        .zip(refusal_choice(target))
+        .map(|(fact, refusal)| Method {
+            name: "refused".to_string(),
+            receiver: "&self",
+            params: vec![
+                param("command", format!("{}Command", target.name)),
+                param("refusal", refusal),
+                param("ctx", "&Refused"),
+            ],
+            returns: Some(format!("Result<{fact}, Bug>")),
+            asynchronous: false,
+            refused: true,
+        });
+    Ok(reactions.chain(callback).collect())
 }
 
 /// The domain layer's choice of a domain's facts (`<Domain>Fact`), when it
@@ -393,6 +394,18 @@ pub(crate) fn fact_choice(domain: &Component) -> Option<String> {
         .then(|| format!("{}Fact", domain.name))
 }
 
+/// The domain layer's choice of a domain's typed refusals
+/// (`<Component>Refusal`), when any of its commands names one: what a
+/// policy targeting it is handed by its one refusal callback.
+pub(crate) fn refusal_choice(domain: &Component) -> Option<String> {
+    (domain.kind.is_domain()
+        && domain
+            .inputs
+            .iter()
+            .any(|i| !i.fact && !i.refuses.is_empty()))
+    .then(|| format!("{}Refusal", domain.name))
+}
+
 /// An aggregate's or a process manager's interface: a decision per command,
 /// a record per fact, and a fold per event.
 fn domain_methods(component: &Component) -> Vec<Method> {
@@ -400,9 +413,9 @@ fn domain_methods(component: &Component) -> Vec<Method> {
         let ty = input.message.name();
         let out = decided(component);
         let (arg, returns) = if input.fact {
-            ("fact", out)
+            ("fact", format!("Result<{out}, Bug>"))
         } else {
-            let error = refusal_type(input).unwrap_or_else(|| "Rejection".to_string());
+            let error = refusal_type(input).unwrap_or_else(|| "Unrefusable".to_string());
             ("cmd", format!("Result<{out}, Failed<{error}>>"))
         };
         Method {
@@ -411,7 +424,7 @@ fn domain_methods(component: &Component) -> Vec<Method> {
             params: vec![param(arg, format!("&{ty}")), param("ctx", "&Context")],
             returns: Some(returns),
             asynchronous: false,
-            refused: None,
+            refused: false,
         }
     });
     let folds = component.events.iter().map(|event| Method {
@@ -420,7 +433,7 @@ fn domain_methods(component: &Component) -> Vec<Method> {
         params: vec![param("event", format!("&{}", event.name()))],
         returns: None,
         asynchronous: false,
-        refused: None,
+        refused: false,
     });
     decisions.chain(folds).collect()
 }
@@ -440,9 +453,10 @@ fn interface_source(component: &Component, methods: &[Method]) -> String {
              and returns what it sends its target, each with its target root: a command, \
              or a fact the target declares, sent in the arm the target declares. Or its \
              `Bug`: a defect, since a policy reacts to events the application's own \
-             domains recorded. Each `<command>_refused` answers the refusal of a command \
-             of its target with one of the source's facts (or a `Bug`, for a command it \
-             never sends): every command a policy sends has a refusal path."
+             domains recorded. Its one `refused` callback, required when its target has a \
+             command that can refuse, takes the command refused and the refusal, a choice \
+             of the target's refusal messages (a missing arm does not compile), and answers \
+             one of the source's facts, or its `Bug`: it cannot decline."
         }
         ComponentKind::Aggregate | ComponentKind::ProcessManager => {
             "Each handler takes its input and its `Context`; each `apply_` folds an event."
@@ -891,9 +905,9 @@ fn application(components: &[Component]) -> Vec<&Component> {
 /// projector's angzarr-embedded markup, every handler delegating to the
 /// component's interface (the domain layer's trait, [`markup_domain`]) on
 /// its implementation (`crate::<component>_impl::<Component>Impl`). A
-/// policy's adapter has an `#[on_refused]` callback per command of its
-/// target, each translating the refusal through its interface's required
-/// callback (decision 14.76). What a child process serves is in `remote`, a domain by its
+/// policy's adapter has its one `#[on_refused]` callback, reading the
+/// target's refusal choice and translating it through its interface's
+/// required `refused` (decisions 14.89, 14.99). What a child process serves is in `remote`, a domain by its
 /// stream domain, a policy or a projector by its name in the application.
 /// A remote domain has no markup here: it is its command set
 /// (`CommandTarget`) and its event set (`EventSource`), so a policy can name
@@ -926,13 +940,12 @@ pub fn adapters(
                 markup.extend(["Commands", "PolicyContext"]);
                 macros.extend(["on_event", "policy"]);
                 let methods = policy_methods(component, &components)?;
-                let refused: Vec<&Method> =
-                    methods.iter().filter(|m| m.refused.is_some()).collect();
-                if !refused.is_empty() {
-                    markup.extend(["CommandContext", "Refusal"]);
+                let refused = methods.iter().any(|m| m.refused);
+                if refused {
+                    markup.push("Refused");
                     macros.push("on_refused");
                 }
-                policy_adapter(component, &components, &refused)
+                policy_adapter(component, &components, refused)
             }
             _ if is_remote => {
                 markup.extend(["CommandTarget", "EventSource"]);
@@ -946,7 +959,7 @@ pub fn adapters(
             }
             _ => {
                 macros.extend(["applies", "handles_cmd", "handles_fact"]);
-                markup.extend(["Fails", "Record", "Refuses"]);
+                markup.extend(["Fails", "FactEmit", "Refuses"]);
                 macros.push(domain_markup(component.kind));
                 domain_adapter(component)
             }
@@ -1049,8 +1062,8 @@ impl Adapter {
 /// A domain adapter's helpers turning a handling's list of the domain's
 /// events (decision 14.75) into what the markup takes: `emitted`, a
 /// command's `Emit`, generic over the handler's failure `E`, and
-/// `recorded`, a fact's `Record`, each event one continuation step (the
-/// markup takes no event enum as is). One of each per domain, generated
+/// `recorded`, a fact's `FactEmit` of the events packed, each command event one
+/// continuation step (the markup takes no event enum as is). One of each per domain, generated
 /// only where an input takes it, so no handler repeats the fold.
 fn steps(component: &Component) -> TokenStream {
     let first = component
@@ -1059,23 +1072,19 @@ fn steps(component: &Component) -> TokenStream {
         .map(|e| ident(e.name()))
         .unwrap_or_else(|| format_ident!("Rejection"));
     let enum_name = format_ident!("{}Event", component.name);
-    let arms = |fallible: bool| -> Vec<TokenStream> {
+    let arms = |component: &Component| -> Vec<TokenStream> {
         component
             .events
             .iter()
             .map(|e| {
                 let v = ident(e.name());
-                if fallible {
-                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event)))
-                } else {
-                    quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| event))
-                }
+                quote!(#enum_name::#v(event) => emit.then(move |_: &Self, _: &Context| Ok::<_, E>(event)))
             })
             .collect()
     };
     let mut out = TokenStream::new();
     if component.inputs.iter().any(|i| !i.fact) {
-        let arms = arms(true);
+        let arms = arms(component);
         out.extend(quote! {
             /// A decision's events, each a step of the markup's `Emit`,
             /// failing as its handler does (`E`).
@@ -1087,13 +1096,12 @@ fn steps(component: &Component) -> TokenStream {
         });
     }
     if component.inputs.iter().any(|i| i.fact) {
-        let arms = arms(false);
+        let enum_name = &enum_name;
         out.extend(quote! {
-            /// A fact's events, each a step of the markup's `Record`.
-            fn recorded(events: Vec<#enum_name>) -> Record<Self> {
-                events.into_iter().fold(Record::of(None::<#first>), |emit, event| match event {
-                    #(#arms,)*
-                })
+            /// A fact's events, as the router's `FactEmit`.
+            fn recorded(events: Vec<#enum_name>) -> FactEmit<Self> {
+                use ::angzarr_embedded::Payload as _;
+                FactEmit::of(events.iter().map(|event| event.to_any()))
             }
         });
     }
@@ -1122,6 +1130,16 @@ fn domain_adapter(component: &Component) -> TokenStream {
     } = &adapter;
     let markup = format_ident!("{}", domain_markup(component.kind));
     let domain = &component.domain;
+    // A process manager lists its starting inputs, which the macro
+    // cross-checks against the handlers marked `starts`.
+    let starting = (component.kind == ComponentKind::ProcessManager).then(|| {
+        let types = component
+            .inputs
+            .iter()
+            .filter(|i| i.starts)
+            .map(|i| ident(i.message.name()));
+        quote!(, starting_types = [#(#types),*])
+    });
     // The domain layer's named enums, which carry their Payload: the
     // domain's payloads, so the markup writes none of its own.
     let commands = format_ident!("{}Command", component.name);
@@ -1150,7 +1168,7 @@ fn domain_adapter(component: &Component) -> TokenStream {
             }
         }
 
-        #[#markup(domain = #domain, command = #commands, event = #events)]
+        #[#markup(domain = #domain, command = #commands, event = #events #starting)]
         #[allow(clippy::result_large_err)]
         impl #name {
             #(#methods)*
@@ -1184,16 +1202,23 @@ fn starts(input: &Input) -> TokenStream {
     }
 }
 
-/// A domain adapter's recorder of the fact `input`, delegating to
-/// `interface`.
+/// A domain adapter's handler of the fact `input`, delegating to
+/// `interface`: the router's `FactEmit`, its one failure a `Bug`.
 fn fact_method(input: &Input, interface: &TokenStream) -> TokenStream {
     let ty = ident(input.message.name());
     let starts = starts(input);
     let m = format_ident!("{}", method(input.message.name()));
+    let root = root();
     quote! {
         #[handles_fact(#ty #starts)]
-        fn #m(&self, fact: #ty, ctx: &Context) -> Record<Self> {
-            Self::recorded(#interface::#m(&self.0, &fact, ctx))
+        fn #m(
+            &self,
+            fact: #ty,
+            ctx: &Context,
+        ) -> Result<FactEmit<Self>, #root::markup::Bug> {
+            #interface::#m(&self.0, &fact, ctx)
+                .map(Self::recorded)
+                .map_err(#root::markup::Bug::from)
         }
     }
 }
@@ -1206,10 +1231,10 @@ fn command_method(input: &Input, interface: &TokenStream) -> TokenStream {
     let starts = starts(input);
     match input.refuses.as_slice() {
         [] => {
-            let emit = quote!(Self::emitted::<Failed<Rejection>>);
+            let emit = quote!(Self::emitted::<Failed<Unrefusable>>);
             quote! {
                 #[handles_cmd(#ty #starts)]
-                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Rejection>> {
+                fn #m(&self, cmd: #ty, ctx: &Context) -> Result<Emit<Self>, Failed<Unrefusable>> {
                     #interface::#m(&self.0, &cmd, ctx).map(#emit)
                 }
             }
@@ -1217,18 +1242,14 @@ fn command_method(input: &Input, interface: &TokenStream) -> TokenStream {
         refusals => {
             let emit = quote!(Self::emitted::<Failed<Refuses<Self, #ty>>>);
             // One type widens by its own `Into`; several, by their
-            // domain-layer choice's `widen`. A refusal with a Reason is
-            // refused under its code's status first (decision 14.52).
+            // domain-layer choice's `widen`. A refusal is refused under the
+            // status its message declares first.
             let refusal = ident(&refusal_type(input).expect("it refuses with types"));
             let widen = match refusals {
                 [_] => quote!(Failed::widen),
                 _ => quote!(#refusal::widen),
             };
-            let widen = if has_code_status(input) {
-                quote!(map_err(#refusal::with_code_status).map_err(#widen))
-            } else {
-                quote!(map_err(#widen))
-            };
+            let widen = quote!(map_err(#refusal::with_declared_status).map_err(#widen));
             let refusals: Vec<syn::Ident> = refusals.iter().map(|r| ident(r.name())).collect();
             quote! {
                 #[handles_cmd(#ty #starts, refuses(#(#refusals),*))]
@@ -1335,13 +1356,9 @@ fn remote_domain(component: &Component) -> TokenStream {
 }
 
 /// A policy's adapter: its reaction per event, each output in the arm its
-/// target declares, and an `#[on_refused]` callback per `refused` method of
-/// its interface, each delegating to it.
-fn policy_adapter(
-    component: &Component,
-    components: &[Component],
-    refused: &[&Method],
-) -> TokenStream {
+/// target declares, and, when its interface has one, its one
+/// `#[on_refused]` callback delegating to the interface's `refused`.
+fn policy_adapter(component: &Component, components: &[Component], refused: bool) -> TokenStream {
     let adapter = Adapter::of(component);
     let declaration = adapter.declaration(component);
     let Adapter {
@@ -1391,52 +1408,29 @@ fn policy_adapter(
             }
         }
     });
-    let fact = fact_choice(source).map(|f| format_ident!("{f}"));
-    let callbacks = refused.iter().filter_map(|r| {
-        let fact = fact.as_ref()?;
-        let m = format_ident!("{}", r.name);
-        let input = target
-            .inputs
-            .iter()
-            .find(|i| Some(i.message.full_name()) == r.refused.as_deref())?;
-        let command = ident(input.message.name());
-        // A command refusing several types: their choice, each type tried
-        // in turn.
-        let args = match input.refuses.as_slice() {
-            [] => quote!(refusal.command()),
-            [one] => {
-                let one = ident(one.name());
-                quote!(refusal.command(), refusal.refusal::<#one>())
-            }
-            several => {
-                let choice = format_ident!("{}", refusal_choice_name(&input.message));
-                let types: Vec<syn::Ident> = several.iter().map(|t| ident(t.name())).collect();
-                let (first, rest) = (&types[0], &types[1..]);
-                quote! {
-                    refusal.command(),
-                    refusal.refusal::<#first>().map(#choice::#first)
-                        #(.or_else(|| refusal.refusal::<#rest>().map(#choice::#rest)))*
+    // The one callback: the command refused and the refusal, read from the
+    // refused answer as the target's choices, handed to the interface; it
+    // answers one of the source's facts.
+    let callback = refused
+        .then(|| {
+            let fact = format_ident!("{}", fact_choice(source)?);
+            let refusal = format_ident!("{}", refusal_choice(target)?);
+            Some(quote! {
+                #[on_refused]
+                fn refused(&self, refused: &Refused) -> ::core::result::Result<#fact, Bug> {
+                    let (command, refusal) = #refusal::read(refused)?;
+                    #interface::refused(&self.0, command, refusal, refused)
                 }
-            }
-        };
-        Some(quote! {
-            #[on_refused(#command)]
-            fn #m(
-                &self,
-                refusal: &Refusal<#command>,
-                ctx: &CommandContext,
-            ) -> ::core::result::Result<#fact, Bug> {
-                #interface::#m(&self.0, #args, ctx)
-            }
+            })
         })
-    });
+        .flatten();
     quote! {
         #declaration
 
         #[policy(name = #policy_name, source = #source_ty, target = #target_ty)]
         impl #name {
             #(#methods)*
-            #(#callbacks)*
+            #callback
         }
     }
 }
@@ -1584,6 +1578,7 @@ pub fn markup_domain(
             .or_default();
         let mut names = vec![component.name.clone()];
         names.extend(fact_choice(component));
+        names.extend(refusal_choice(component));
         let taken = layer
             .messages
             .iter()

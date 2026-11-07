@@ -140,7 +140,9 @@ fn test_markup_domain_implements_payload_for_every_command_and_event_enum() {
             syn::Item::Enum(e) => Some(e.ident.to_string()),
             _ => None,
         })
-        .filter(|name| name.ends_with("Command") || name.ends_with("Event"))
+        .filter(|name| {
+            name.ends_with("Command") || name.ends_with("Event") || name.ends_with("Refusal")
+        })
         .collect();
     let mut payloads: Vec<String> = impls(&file)
         .into_iter()
@@ -256,14 +258,15 @@ fn items(file: &syn::File) -> Vec<String> {
 }
 
 #[test]
-fn test_markup_domain_has_the_rejection_and_each_components_command_and_event_enums() {
+fn test_markup_domain_has_each_components_command_event_and_refusal_enums() {
     let names = items(&buyin());
     for name in [
-        "Rejection",
-        "WalletCommand",
-        "WalletEvent",
-        "BuyInCommand",
-        "BuyInEvent",
+        "WalletStateCommand",
+        "WalletStateEvent",
+        "WalletStateRefusal",
+        "BuyInStateCommand",
+        "BuyInStateEvent",
+        "BuyInStateRefusal",
     ] {
         assert!(names.contains(&name.to_string()), "{name}: {names:?}");
     }
@@ -272,8 +275,8 @@ fn test_markup_domain_has_the_rejection_and_each_components_command_and_event_en
 /// The domain layer gives the user's files the runtime's contexts and what
 /// a handler fails with under its own names, so a user file imports only
 /// `crate::domain`: a handler's `Context`, a policy reaction's
-/// `PolicyContext`, a refused command's `CommandContext`, `Failed`,
-/// `BusinessStatus` and `RetryableStatus`, and `Bug`, a diagnostic key and its args, which a
+/// `PolicyContext`, a refused command's `CommandContext`, the refused answer `Refused`, `Failed`,
+/// `Unrefusable`, `BusinessStatus` and `RetryableStatus`, and `Bug`, a diagnostic key and its args, which a
 /// command handler's `Failed` of its rejection or of a typed refusal takes
 /// by `?`.
 #[test]
@@ -295,7 +298,8 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_bug() {
         "Context",
         "PolicyContext",
         "CommandContext",
-        "{BusinessStatus,Failed,RetryableStatus}",
+        "Refused",
+        "{BusinessStatus,Failed,RetryableStatus,Unrefusable,}",
     ] {
         assert!(
             reexports.contains(&format!("angzarr_embedded::markup::{name}")),
@@ -312,7 +316,7 @@ fn test_markup_domain_gives_the_users_files_the_contexts_and_the_bug() {
         "::angzarr_embedded::angzarr_diagnostic::Diagnostic".to_string(),
         "Bug".to_string()
     )));
-    for failed in ["Failed<Rejection>", "Failed<InsufficientFunds>"] {
+    for failed in ["Failed<Unrefusable>", "Failed<InsufficientFunds>"] {
         assert!(
             impls.contains(&("::core::convert::From<Bug>".to_string(), failed.to_string())),
             "{failed}: {impls:?}"
@@ -376,12 +380,12 @@ fn test_markup_domain_command_enum_holds_the_commands_not_the_facts() {
         .items
         .iter()
         .find_map(|i| match i {
-            syn::Item::Enum(e) if e.ident == "BuyInCommand" => {
+            syn::Item::Enum(e) if e.ident == "BuyInStateCommand" => {
                 Some(e.variants.iter().map(|v| v.ident.to_string()).collect())
             }
             _ => None,
         })
-        .expect("BuyInCommand");
+        .expect("BuyInStateCommand");
     assert!(variants.contains(&"StartBuyIn".to_string()), "{variants:?}");
     assert!(!variants.contains(&"HoldLost".to_string()), "{variants:?}");
 }

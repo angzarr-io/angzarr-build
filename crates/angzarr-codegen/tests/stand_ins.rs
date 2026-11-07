@@ -30,7 +30,7 @@ fn impls(source: &str, ty: &str) -> Vec<(String, String)> {
 #[test]
 fn test_a_stand_in_is_its_domains_command_and_event_sets_from_its_proto() {
     let source = stand_ins(&descriptors(BLACKJACK), &[PLAYER]).unwrap();
-    let found = impls(&source, "PlayerAggregate");
+    let found = impls(&source, "PlayerState");
     let traits: Vec<&str> = found.iter().map(|(t, _)| t.as_str()).collect();
     assert_eq!(
         traits,
@@ -62,7 +62,7 @@ fn test_a_stand_in_is_its_domains_command_and_event_sets_from_its_proto() {
 #[test]
 fn test_every_domain_of_the_files_gets_a_stand_in_and_nothing_else_does() {
     let source = stand_ins(&descriptors(BUYIN), BUYIN).unwrap();
-    let buy_in: Vec<String> = impls(&source, "BuyIn")
+    let buy_in: Vec<String> = impls(&source, "BuyInState")
         .into_iter()
         .map(|(t, _)| t)
         .collect();
@@ -76,8 +76,8 @@ fn test_every_domain_of_the_files_gets_a_stand_in_and_nothing_else_does() {
             "Ingests<HoldLost>"
         ]
     );
-    assert!(!impls(&source, "Wallet").is_empty(), "{source}");
-    for policy in ["BuyInWallet", "WalletBuyIn"] {
+    assert!(!impls(&source, "WalletState").is_empty(), "{source}");
+    for policy in ["BuyInWalletPolicy", "WalletBuyInPolicy"] {
         assert!(impls(&source, policy).is_empty(), "{policy}:\n{source}");
         assert!(!source.contains(&format!("struct {policy}")), "{source}");
     }
@@ -145,7 +145,7 @@ fn test_a_stand_in_compiles_and_is_a_policys_target_and_source() {
          <T as ::angzarr_embedded::markup::CommandTarget>::DOMAIN\n}}\n\
          fn source<T: ::angzarr_embedded::markup::EventSource>() -> Vec<String> {{ T::event_types() }}\n\
          pub fn check() -> (&'static str, Vec<String>) {{\n\
-         (target::<stand_ins::PlayerAggregate>(), source::<stand_ins::PlayerAggregate>())\n}}\n"
+         (target::<stand_ins::PlayerState>(), source::<stand_ins::PlayerState>())\n}}\n"
     ));
 }
 
@@ -179,6 +179,6 @@ fn test_a_stand_in_takes_a_policys_fact() {
          pub mod stand_ins {{\n{source}\n}}\n\
          fn fact_target<T: ::angzarr_embedded::markup::Ingests<domain::HoldLost>>() -> &'static str {{\n\
          <T as ::angzarr_embedded::markup::EventSource>::DOMAIN\n}}\n\
-         pub fn check() -> &'static str {{ fact_target::<stand_ins::BuyIn>() }}\n"
+         pub fn check() -> &'static str {{ fact_target::<stand_ins::BuyInState>() }}\n"
     ));
 }
