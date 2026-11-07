@@ -75,6 +75,22 @@ lint-deps:
     }
     echo "ok   lint-deps"
 
+# gitleaks over the whole history, findings redacted: before a first push.
+secrets-scan:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p target/logs
+    if ! command -v gitleaks >/dev/null 2>&1; then
+        echo "FAIL secrets-scan: gitleaks is not installed; a scan that does not run looked at nothing." >&2
+        exit 1
+    fi
+    gitleaks detect --source . --log-opts=--all --redact --no-banner \
+        --report-format json --report-path target/logs/secrets-scan.json > target/logs/secrets-scan.log 2>&1 || {
+        echo "FAIL secrets-scan: findings (target/logs/secrets-scan.json, redacted)" >&2
+        exit 1
+    }
+    echo "ok   secrets-scan (full history)"
+
 # Apply rustfmt.
 fmt:
     cargo fmt --all
