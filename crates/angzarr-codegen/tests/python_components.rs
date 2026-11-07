@@ -320,6 +320,7 @@ fn test_a_policys_dispatch_addresses_each_output_to_its_target() {
         ],
     );
     // Nothing it sends can be refused: no refusal path in the dispatch.
+    assert!(!dispatch.contains("callback's arguments"), "{dispatch}");
     for gone in ["on_refused", "_typed_refusal", "_fact(", "_FACTS = "] {
         assert!(
             !dispatch.replace("_SENT_FACTS = ", "").contains(gone),
