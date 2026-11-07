@@ -9,8 +9,8 @@ import "io/angzarr/v1/options.proto";
 
 message SeatState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "seats"
+    component_name: "seats"
+    aggregate: {domain: "seats"}
   };
   int64 stack = 1;
 }
@@ -30,6 +30,7 @@ message BetPlaced {
 }
 
 message BetRefused {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   enum Reason {
     REASON_UNSPECIFIED = 0;
     REASON_ALREADY_BET = 1;

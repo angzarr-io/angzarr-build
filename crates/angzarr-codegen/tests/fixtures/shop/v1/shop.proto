@@ -9,9 +9,8 @@ import "io/angzarr/v1/options.proto";
 
 message CartState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "carts"
-    name: "Cart"
+    component_name: "carts"
+    aggregate: {domain: "carts"}
   };
 
   string owner = 1;

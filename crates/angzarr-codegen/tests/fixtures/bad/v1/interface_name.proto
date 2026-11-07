@@ -3,21 +3,20 @@ package bad.v1;
 import "io/angzarr/v1/options.proto";
 
 message ShelfState {
+  option (io.angzarr.v1.event) = {component: "bad.v1.ShelfState"};
   option (io.angzarr.v1.component) = {
     component_name: "shelves"
     aggregate: {domain: "shelves"}
   };
 }
 
-// The shelf's interface is the domain layer's trait `Shelf`, which a
-// message here already is.
+// The shelf's interface is the domain layer's trait `ShelfState`, which a
+// message here already is: the anchor, also its own event.
 message Stock {
   option (io.angzarr.v1.command) = {
     component: "bad.v1.ShelfState"
-    emits: "bad.v1.Shelf"
+    emits: "bad.v1.ShelfState"
   };
 }
 
-message Shelf {
-  option (io.angzarr.v1.event) = {component: "bad.v1.ShelfState"};
-}
+

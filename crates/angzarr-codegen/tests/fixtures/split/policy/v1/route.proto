@@ -6,8 +6,7 @@ import "io/angzarr/v1/options.proto";
 // interface is its target's layer's.
 message RoutePolicy {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_POLICY
-    input_domain: "depot"
-    output_domain: "depot"
+    component_name: "policy-depot-depot"
+    policy: {output_domain: "depot"}
   };
 }

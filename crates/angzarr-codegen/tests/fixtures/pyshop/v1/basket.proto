@@ -8,9 +8,8 @@ import "pyshop/v1/mood.proto";
 
 message BasketState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "store"
-    name: "Basket"
+    component_name: "store"
+    aggregate: {domain: "store"}
   };
 
   string owner = 1;

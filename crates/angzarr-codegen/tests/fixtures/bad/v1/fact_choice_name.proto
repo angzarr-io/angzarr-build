@@ -9,15 +9,15 @@ message BinState {
   };
 }
 
-// The bin takes a fact: the domain layer names their choice BinFact, which
+// The bin takes a fact: the domain layer names their choice BinStateFact, which
 // a message here already is.
 message Fill {
   option (io.angzarr.v1.fact) = {
     component: "bad.v1.BinState"
-    emits: "bad.v1.BinFact"
+    emits: "bad.v1.BinStateFact"
   };
 }
 
-message BinFact {
+message BinStateFact {
   option (io.angzarr.v1.event) = {component: "bad.v1.BinState"};
 }

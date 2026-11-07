@@ -6,21 +6,33 @@ import "io/angzarr/v1/options.proto";
 
 message SlotState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "slots"
+    component_name: "slots"
+    aggregate: {domain: "slots"}
   };
 }
 
 message Book {
   option (io.angzarr.v1.command) = {
     component: "lone.v1.SlotState"
+    emits: "lone.v1.Booked"
     refuses: "lone.v1.BookRefuses"
   };
 }
 
-message BookRefuses {}
+message BookRefuses {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
+}
 
-// A projector of no source: nothing names it.
+// Folded by the slot, and projected by the view.
+message Booked {
+  option (io.angzarr.v1.event) = {component: "lone.v1.SlotState"};
+  option (io.angzarr.v1.event) = {component: "lone.v1.SlotView"};
+}
+
+// A projector of one source.
 message SlotView {
-  option (io.angzarr.v1.component) = {kind: COMPONENT_KIND_PROJECTOR};
+  option (io.angzarr.v1.component) = {
+    component_name: "projector-slot-view"
+    projector: {}
+  };
 }

@@ -10,8 +10,8 @@ import "io/angzarr/v1/options.proto";
 
 message TillState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "till"
+    component_name: "till"
+    aggregate: {domain: "till"}
   };
 
   int64 balance = 1;
@@ -77,10 +77,9 @@ message Close {
 
 // A fact: recorded as received, flagged by the event it emits.
 message CashCounted {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "pyshop.v1.TillState"
     emits: "pyshop.v1.Refunded"
-    fact: true
   };
 
   int64 counted = 1;
@@ -102,20 +101,23 @@ message Refunded {
 // The till's rejection codes: the reason, and an argument set only where
 // a code names one. OVER_LIMIT is refused OUT_OF_RANGE (decision 14.52).
 message TillRefused {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_OUT_OF_RANGE;
   enum Reason {
     REASON_UNSPECIFIED = 0;
     REASON_TILL_CLOSED = 1;
-    REASON_OVER_LIMIT = 2 [(io.angzarr.v1.refusal_status) = REFUSAL_STATUS_OUT_OF_RANGE];
+    REASON_OVER_LIMIT = 2;
   }
   Reason reason = 1;
   optional int64 limit = 2;
 }
 
 message CardDeclined {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   string issuer = 1;
 }
 
 // A refusal whose reason is text, not a code.
 message Unbalanced {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   string reason = 1;
 }

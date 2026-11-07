@@ -10,19 +10,15 @@ import "io/angzarr/v1/options.proto";
 // A started buy-in holds its stake on the wallet it names.
 message BuyInWalletPolicy {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_POLICY
-    input_domain: "buyin"
-    output_domain: "wallet"
-    name: "BuyInWallet"
+    component_name: "policy-buyin-wallet"
+    policy: {output_domain: "wallet"}
   };
 }
 
 // A hold on the wallet is recorded on the buy-in of its correlation.
 message WalletBuyInPolicy {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_POLICY
-    input_domain: "wallet"
-    output_domain: "buyin"
-    name: "WalletBuyIn"
+    component_name: "policy-wallet-buyin"
+    policy: {output_domain: "buyin"}
   };
 }

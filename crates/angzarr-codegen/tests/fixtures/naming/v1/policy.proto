@@ -8,9 +8,7 @@ import "io/angzarr/v1/options.proto";
 // Its target domain is owned by no aggregate or process manager.
 message BooksNowherePolicy {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_POLICY
-    input_domain: "books"
-    output_domain: "nowhere"
-    name: "BooksNowhere"
+    component_name: "policy-books-nowhere"
+    policy: {output_domain: "nowhere"}
   };
 }

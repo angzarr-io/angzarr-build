@@ -5,9 +5,8 @@ import "io/angzarr/v1/options.proto";
 // A depot, whose policy (split/policy/v1) is declared in another package.
 message DepotState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "depot"
-    name: "Depot"
+    component_name: "depot"
+    aggregate: {domain: "depot"}
   };
 }
 
@@ -22,15 +21,15 @@ message Ship {
 // Ship's typed refusal: every command a policy may send names one
 // (decision 14.76).
 message ShipRefused {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   string reason = 1;
 }
 
 // What RoutePolicy translates a refused Ship into: a fact of its source.
 message RecordShipRefused {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "split.v1.DepotState"
     emits: "split.v1.ShipRefusalRecorded"
-    fact: true
   };
   string reason = 1;
 }

@@ -9,9 +9,8 @@ import "io/angzarr/v1/options.proto";
 
 message OrderBookState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "books"
-    name: "OrderBook"
+    component_name: "books"
+    aggregate: {domain: "books"}
   };
 
   DeliveryStatus status = 1;
@@ -30,19 +29,15 @@ message AssignTrackingID {
 }
 
 message ShipmentNoted {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "naming.v1.OrderBookState"
     emits: ["naming.v1.TrackingIDAssigned", "naming.v1.Level2Reached"]
-    fact: true
   };
 }
 
 message TrackingIDAssigned {
   option (io.angzarr.v1.event) = {component: "naming.v1.OrderBookState"};
-  option (io.angzarr.v1.event) = {
-    component: "naming.v1.BooksNowherePolicy"
-    domain: "books"
-  };
+  option (io.angzarr.v1.event) = {component: "naming.v1.BooksNowherePolicy"};
 }
 
 message Level2Reached {

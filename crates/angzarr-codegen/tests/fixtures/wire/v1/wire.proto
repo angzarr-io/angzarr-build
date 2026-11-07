@@ -6,8 +6,8 @@ import "io/angzarr/v1/options.proto";
 
 message VaultState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "vault"
+    component_name: "vault"
+    aggregate: {domain: "vault"}
   };
 }
 

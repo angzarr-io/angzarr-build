@@ -7,9 +7,8 @@ import "io/angzarr/v1/options.proto";
 
 message WalletState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "wallet"
-    name: "Wallet"
+    component_name: "wallet"
+    aggregate: {domain: "wallet"}
   };
 
   int64 balance = 1;
@@ -42,6 +41,7 @@ message Hold {
 // Deposit's typed refusal: every command a policy may send names one
 // (decision 14.76).
 message DepositRefused {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   string reason = 1;
 }
 
@@ -49,10 +49,9 @@ message DepositRefused {
 // buy-in refuses one of its commands (decision 14.76): a fact, recorded,
 // never refused.
 message RecordBuyInRefused {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "buyin.v1.WalletState"
     emits: ["buyin.v1.BuyInRefusalRecorded"]
-    fact: true
   };
 
   string reason = 1;
@@ -66,6 +65,7 @@ message BuyInRefusalRecorded {
 
 // Hold's typed refusal: a message of the wallet's domain, never an event.
 message InsufficientFunds {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   int64 short = 1;
 }
 
@@ -78,10 +78,7 @@ message Deposited {
 // Folded by the wallet, and translated into the buy-in by WalletBuyIn.
 message Held {
   option (io.angzarr.v1.event) = {component: "buyin.v1.WalletState"};
-  option (io.angzarr.v1.event) = {
-    component: "buyin.v1.WalletBuyInPolicy"
-    domain: "wallet"
-  };
+  option (io.angzarr.v1.event) = {component: "buyin.v1.WalletBuyInPolicy"};
 
   int64 cents = 1;
   bytes buy_in = 2;

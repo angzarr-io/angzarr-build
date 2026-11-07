@@ -4,8 +4,8 @@ import "io/angzarr/v1/options.proto";
 
 message ThingState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "things"
+    component_name: "things"
+    aggregate: {domain: "things"}
   };
 }
 
@@ -13,8 +13,8 @@ message ThingState {
 // naming it: the one-entry list.
 message ThingView {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_PROJECTOR
-    input_domain: "things"
+    component_name: "projector-thing-view"
+    projector: {}
   };
 }
 
@@ -25,8 +25,5 @@ message Poked {
 
 message Prodded {
   option (io.angzarr.v1.event) = {component: "one.v1.ThingState"};
-  option (io.angzarr.v1.event) = {
-    component: "one.v1.ThingView"
-    domain: "things"
-  };
+  option (io.angzarr.v1.event) = {component: "one.v1.ThingView"};
 }

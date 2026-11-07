@@ -5,16 +5,16 @@
 // a string itself, an enum its value's name without the enum's prefix,
 // bytes their hex, a bool or a float its text), a message, list or map
 // field is not, and only a nested Reason enum held as `reason` keys the
-// diagnostic by its value, a value marked (refusal_status) refused under
-// that status (decision 14.52).
+// diagnostic by its value; a refusal is refused under the status its
+// message declares ((refusal_status), a message option).
 syntax = "proto3";
 package kinds.v1;
 import "io/angzarr/v1/options.proto";
 
 message LedgerState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "ledger"
+    component_name: "ledger"
+    aggregate: {domain: "ledger"}
   };
 }
 
@@ -32,18 +32,12 @@ message Post {
 
 message Posted {
   option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerState"};
-  option (io.angzarr.v1.event) = {
-    component: "kinds.v1.LedgerView"
-    domain: "ledger"
-  };
+  option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerView"};
 }
 
 message Noted {
   option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerState"};
-  option (io.angzarr.v1.event) = {
-    component: "kinds.v1.LedgerAuditPolicy"
-    domain: "ledger"
-  };
+  option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerAuditPolicy"};
 }
 
 // Two emits types (every handling a list, decision 14.75).
@@ -102,19 +96,17 @@ message Raw {
 
 // A fact of two emits types.
 message Arrived {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "kinds.v1.LedgerState"
     emits: ["kinds.v1.Posted", "kinds.v1.Noted"]
-    fact: true
   };
 }
 
 // A fact of two emits types, again.
 message Swept {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "kinds.v1.LedgerState"
     emits: ["kinds.v1.Posted", "kinds.v1.Noted"]
-    fact: true
   };
 }
 
@@ -128,10 +120,11 @@ message Note {
 }
 
 message PostRefused {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_OUT_OF_RANGE;
   enum Reason {
     REASON_UNSPECIFIED = 0;
     REASON_CLOSED = 1;
-    REASON_OVER_LIMIT = 2 [(io.angzarr.v1.refusal_status) = REFUSAL_STATUS_OUT_OF_RANGE];
+    REASON_OVER_LIMIT = 2;
   }
   Reason reason = 1;
   int32 small = 2;
@@ -153,11 +146,13 @@ message PostRefused {
 
 // A `reason` of an enum not nested in it: an arg, not the key's.
 message Unreasoned {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   Tone reason = 1;
 }
 
 // A repeated Reason: neither the key's nor an arg.
 message Listed {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   enum Reason {
     REASON_UNSPECIFIED = 0;
     REASON_FULL = 1;
@@ -167,6 +162,7 @@ message Listed {
 
 // A nested Reason held under another name: an arg, not the key's.
 message Elsewhere {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   enum Reason {
     REASON_UNSPECIFIED = 0;
     REASON_AWAY = 1;
@@ -176,6 +172,7 @@ message Elsewhere {
 
 // A nested enum of another name held as `reason`: an arg, not the key's.
 message Mislabeled {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
   enum Cause {
     CAUSE_UNSPECIFIED = 0;
     CAUSE_LATE = 1;
@@ -186,8 +183,8 @@ message Mislabeled {
 // A second domain, a source of the projector.
 message AuditState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "audit"
+    component_name: "audit"
+    aggregate: {domain: "audit"}
   };
 }
 
@@ -203,17 +200,14 @@ message Audit {
 
 message Audited {
   option (io.angzarr.v1.event) = {component: "kinds.v1.AuditState"};
-  option (io.angzarr.v1.event) = {
-    component: "kinds.v1.LedgerView"
-    domain: "audit"
-  };
+  option (io.angzarr.v1.event) = {component: "kinds.v1.LedgerView"};
 }
 
 // One projector of both domains.
 message LedgerView {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_PROJECTOR
-    input_domains: ["ledger", "audit"]
+    component_name: "projector-ledger-view"
+    projector: {}
   };
   int64 seen = 1;
 }
@@ -221,8 +215,7 @@ message LedgerView {
 // Each Noted on the ledger audits the same root.
 message LedgerAuditPolicy {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_POLICY
-    input_domain: "ledger"
-    output_domain: "audit"
+    component_name: "policy-ledger-audit"
+    policy: {output_domain: "audit"}
   };
 }
