@@ -23,10 +23,10 @@ const BUYIN: &[&str] = &[
     "buyin/v1/policies.proto",
 ];
 const FILES: &[&str] = &[
-    "buy_in_impl.rs",
-    "buy_in_wallet_impl.rs",
-    "wallet_buy_in_impl.rs",
-    "wallet_impl.rs",
+    "buy_in_state_impl.rs",
+    "buy_in_wallet_policy_impl.rs",
+    "wallet_buy_in_policy_impl.rs",
+    "wallet_state_impl.rs",
 ];
 
 fn fixtures() -> String {
@@ -65,13 +65,13 @@ fn test_scaffold_into_writes_each_absent_file() {
 fn test_scaffold_into_never_overwrites_a_users_file_and_reports_what_it_lacks() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
-    let mine = "//! The user's wallet.\n\nimpl Wallet for WalletImpl {}\n";
-    std::fs::write(src.join("wallet_impl.rs"), mine).unwrap();
+    let mine = "//! The user's wallet.\n\nimpl WalletState for WalletStateImpl {}\n";
+    std::fs::write(src.join("wallet_state_impl.rs"), mine).unwrap();
     let done = scaffold(&src, Existing::Keep);
     let lacks = done
         .iter()
         .find_map(|d| match d {
-            Scaffolded::Kept { path, notes } if path.ends_with("wallet_impl.rs") => {
+            Scaffolded::Kept { path, notes } if path.ends_with("wallet_state_impl.rs") => {
                 Some(notes.lacks.clone())
             }
             _ => None,
@@ -89,7 +89,7 @@ fn test_scaffold_into_never_overwrites_a_users_file_and_reports_what_it_lacks() 
         ]
     );
     assert_eq!(
-        std::fs::read_to_string(src.join("wallet_impl.rs")).unwrap(),
+        std::fs::read_to_string(src.join("wallet_state_impl.rs")).unwrap(),
         mine
     );
 }
@@ -101,24 +101,27 @@ fn test_scaffold_into_reports_an_earlier_interface_file_as_obsolete() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
     let old = "//! The wallet's interface, as an earlier scaffold wrote it.\n";
-    std::fs::write(src.join("wallet.rs"), old).unwrap();
+    std::fs::write(src.join("wallet_state.rs"), old).unwrap();
     let done = scaffold(&src, Existing::Keep);
     assert!(
-        done.contains(&Scaffolded::Obsolete(src.join("wallet.rs"))),
+        done.contains(&Scaffolded::Obsolete(src.join("wallet_state.rs"))),
         "{done:?}"
     );
-    assert_eq!(std::fs::read_to_string(src.join("wallet.rs")).unwrap(), old);
+    assert_eq!(
+        std::fs::read_to_string(src.join("wallet_state.rs")).unwrap(),
+        old
+    );
 }
 
-/// A policy's refusal callbacks are required (decision 14.76): a kept file
+/// A policy's refusal callback is required (decisions 14.89, 14.99): a kept file
 /// lacking one reports it, and `--missing` adds it, as any required method.
 #[test]
 fn test_scaffold_into_adds_a_missing_refused_method_to_an_existing_file() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
-    let path = src.join("buy_in_wallet_impl.rs");
+    let path = src.join("buy_in_wallet_policy_impl.rs");
     let fresh = std::fs::read_to_string(&path).unwrap();
-    let start = fresh.find("    fn hold_refused(").unwrap();
+    let start = fresh.find("    fn refused(").unwrap();
     let end = start + fresh[start..].find("    }\n").unwrap() + "    }\n".len();
     let mine = format!("{}{}", &fresh[..start], &fresh[end..]);
     std::fs::write(&path, &mine).unwrap();
@@ -127,7 +130,7 @@ fn test_scaffold_into_adds_a_missing_refused_method_to_an_existing_file() {
         kept.contains(&Scaffolded::Kept {
             path: path.clone(),
             notes: Notes {
-                lacks: vec!["hold_refused".to_string()],
+                lacks: vec!["refused".to_string()],
                 ..Notes::default()
             },
         }),
@@ -143,14 +146,14 @@ fn test_scaffold_into_adds_a_missing_refused_method_to_an_existing_file() {
         "{done:?}"
     );
     let after = std::fs::read_to_string(&path).unwrap();
-    assert!(after.contains("fn hold_refused("), "{after}");
+    assert!(after.contains("fn refused("), "{after}");
 }
 
 #[test]
 fn test_scaffold_into_with_complete_refuses_an_input_the_proto_contradicts() {
     let src = empty_dir();
     scaffold(&src, Existing::Keep);
-    let path = src.join("buy_in_impl.rs");
+    let path = src.join("buy_in_state_impl.rs");
     // The user took HoldLost, a fact, as a command.
     let mine = std::fs::read_to_string(&path)
         .unwrap()
@@ -213,7 +216,7 @@ fn test_adapters_into_writes_the_generated_adapters() {
         "{source}"
     );
     assert!(
-        source.contains("pub struct Wallet(pub crate::wallet_impl::WalletImpl);"),
+        source.contains("pub struct WalletState(pub crate::wallet_state_impl::WalletStateImpl);"),
         "{source}"
     );
     assert!(source.contains("pub mod adapters {"), "{source}");
