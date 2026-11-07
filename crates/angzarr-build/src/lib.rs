@@ -918,20 +918,15 @@ mod tests {
     use super::{BuildError, EN_US, English, error_samples};
 
     /// Every crate's catalog a build script shows, in Fluent.
-    fn fluent() -> angzarr_fmt::Catalog {
-        let mut catalog = angzarr_fmt::Catalog::en_us();
-        catalog.add(angzarr_codegen::EN_US.1).unwrap();
-        catalog.add(EN_US.1).unwrap();
-        catalog
+    fn fluent() -> angzarr_presentation::Catalog {
+        angzarr_presentation::Catalog::en_us(&[angzarr_codegen::EN_US, EN_US])
+            .expect("the catalogs load")
     }
 
-    /// `d` as Fluent renders it, without its isolation marks.
-    fn rendered(catalog: &angzarr_fmt::Catalog, d: &dyn Diagnostic) -> String {
-        catalog
-            .render(d)
-            .chars()
-            .filter(|c| !matches!(c, '\u{2068}' | '\u{2069}'))
-            .collect()
+    /// `d` as Fluent renders it, strictly: a code with no message, or a
+    /// message that does not format, fails the test.
+    fn rendered(catalog: &angzarr_presentation::Catalog, d: &dyn Diagnostic) -> String {
+        catalog.render(d).expect("the catalog renders it")
     }
 
     /// A build script's English is Fluent's rendering of the catalogs, for

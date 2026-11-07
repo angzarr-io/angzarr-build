@@ -55,8 +55,17 @@ fn test_markup_domain_into_reports_a_proto_protoc_cannot_find() {
 fn test_every_error_has_a_catalog_message_with_its_args() {
     let ftl = angzarr_build::EN_US.1;
     let samples = angzarr_build::diagnostic_samples();
-    let problems = angzarr_fmt::check(ftl, &samples);
+    let problems = angzarr_diagnostic::catalog::check(angzarr_build::EN_US.0, ftl, &samples);
     assert!(problems.is_empty(), "{problems:#?}");
+    // Fluent's own parser and formatter agree: every message formats with
+    // exactly its error's args.
+    let fluent =
+        angzarr_presentation::Catalog::en_us(&[angzarr_build::EN_US]).expect("the catalog loads");
+    for sample in &samples {
+        fluent
+            .render(&**sample)
+            .unwrap_or_else(|e| panic!("{}: {e:?}", sample.code()));
+    }
     // A sample of every message the catalog has.
     let mut codes: Vec<&str> = samples.iter().map(|d| d.code()).collect();
     codes.sort_unstable();

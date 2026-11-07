@@ -609,11 +609,22 @@ fn test_markup_domain_refuses_bytes_that_are_not_a_descriptor_set() {
 
 #[test]
 fn test_every_error_has_a_catalog_message_with_its_args() {
-    let problems = angzarr_fmt::check(
+    let samples = angzarr_codegen::diagnostic_samples();
+    let problems = angzarr_diagnostic::catalog::check(
+        angzarr_codegen::EN_US.0,
         angzarr_codegen::EN_US.1,
-        &angzarr_codegen::diagnostic_samples(),
+        &samples,
     );
     assert!(problems.is_empty(), "{problems:#?}");
+    // Fluent's own parser and formatter agree: every message formats with
+    // exactly its error's args.
+    let fluent =
+        angzarr_presentation::Catalog::en_us(&[angzarr_codegen::EN_US]).expect("the catalog loads");
+    for sample in &samples {
+        fluent
+            .render(&**sample)
+            .unwrap_or_else(|e| panic!("{}: {e:?}", sample.code()));
+    }
 }
 
 #[test]
