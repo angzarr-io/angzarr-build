@@ -7,23 +7,18 @@ messages to these and back.
 
 from __future__ import annotations
 
-import dataclasses
 import enum
 from dataclasses import dataclass
 
-# What a decision reads besides its command and state, and the two
-# classes it fails with, raised, each a diagnostic key and its args, never
-# text; re-exported so the logic imports only this module.
-# - Rejection(key, [status,] **args): a business "no", refusing the
-#   command under a business status: FAILED_PRECONDITION unless given,
-#   or INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or
-#   PERMISSION_DENIED; the issuing policy's OnRefused receives it.
+# What a decision reads besides its command and state, and the class it
+# fails with, raised, a diagnostic key and its args, never text;
+# re-exported so the logic imports only this module. A business "no" is
+# not raised: a decision returns one of its typed refusals.
 # - Bug(key, **args): a defect, never a business answer; the runtime alerts
 #   it and dead-letters the command (ROUTER_REASON_UNHANDLED_HANDLER_ERROR,
 #   its key and args the cause).
 from angzarr_client.router import Bug as Bug
 from angzarr_client.router import CommandContext as CommandContext
-from angzarr_client.router import Rejection as Rejection
 
 
 class MoveAction(enum.IntEnum):
@@ -31,28 +26,6 @@ class MoveAction(enum.IntEnum):
     HIT = 1
     STAND = 2
     DOUBLE_DOWN = 3
-
-
-class TableRefusedReason(enum.IntEnum):
-    UNSPECIFIED = 0
-    TABLE_ALREADY_EXISTS = 1
-    INVALID_TABLE_CONFIG = 2
-    TABLE_NOT_FOUND = 3
-    SEAT_TAKEN = 4
-    PLAYER_ALREADY_SEATED = 5
-    NOT_SEATED = 6
-    ROUND_IN_PROGRESS = 7
-    ALREADY_BET = 8
-    INSUFFICIENT_STACK = 9
-    NO_BETS = 10
-    NO_ROUND_IN_PROGRESS = 11
-    NOT_YOUR_TURN = 12
-    DOUBLE_NOT_ALLOWED = 13
-    SEAT_OUT_OF_RANGE = 14
-    BUY_IN_OUT_OF_RANGE = 15
-    BET_OUT_OF_RANGE = 16
-    BET_NOT_EVEN = 17
-    WAGER_IN_PLAY = 18
 
 
 class Suit(enum.IntEnum):
@@ -119,25 +92,6 @@ class MoveDecided:
 
 
 @dataclass(frozen=True)
-class DecideMoveRefused:
-    reason: str = ""
-
-    def key(self) -> str:
-        """Its diagnostic key: its full name and its reason."""
-        return "io-angzarr-examples-v1-decidemoverefused"
-
-    def args(self) -> dict[str, object]:
-        """Its diagnostic args: the fields it sets."""
-        return _args(self)
-
-    def status(self) -> int:
-        """The status it is refused with, a google.rpc.Code: its reason's
-        refusal_status, FAILED_PRECONDITION (9) where unmarked.
-        """
-        return 9
-
-
-@dataclass(frozen=True)
 class RecordMoveRefused:
     seat: int = 0
     action: MoveAction = MoveAction.UNSPECIFIED
@@ -168,92 +122,6 @@ class MoveRefused:
 
 
 @dataclass(frozen=True)
-class CreateTable:
-    name: str = ""
-    min_bet: int = 0
-    max_bet: int = 0
-    min_buy_in: int = 0
-    max_buy_in: int = 0
-    seats: int = 0
-    decks: int = 0
-    shoe_seed: int = 0
-
-
-@dataclass(frozen=True)
-class TableRefused:
-    reason: TableRefusedReason = TableRefusedReason.UNSPECIFIED
-    name: str | None = None
-    rule: str | None = None
-    seat: int | None = None
-    min_buy_in: int | None = None
-    max_buy_in: int | None = None
-    min_bet: int | None = None
-    max_bet: int | None = None
-
-
-@dataclass(frozen=True)
-class RequestSeat:
-    player_root: bytes = b""
-    seat: int = 0
-    amount: int = 0
-    request_id: bytes = b""
-
-
-@dataclass(frozen=True)
-class LeaveTable:
-    seat: int = 0
-
-
-@dataclass(frozen=True)
-class PlaceBet:
-    seat: int = 0
-    amount: int = 0
-
-
-@dataclass(frozen=True)
-class DealRound:
-    pass
-
-
-@dataclass(frozen=True)
-class Hit:
-    seat: int = 0
-
-
-@dataclass(frozen=True)
-class Stand:
-    seat: int = 0
-
-
-@dataclass(frozen=True)
-class DoubleDown:
-    seat: int = 0
-
-
-@dataclass(frozen=True)
-class ConfirmSeat:
-    buy_in_id: bytes = b""
-
-
-@dataclass(frozen=True)
-class SeatNotConfirmable:
-    reason: str = ""
-
-
-@dataclass(frozen=True)
 class Card:
     rank: int = 0
     suit: Suit = Suit.UNSPECIFIED
-
-
-def _args(refusal) -> dict[str, object]:
-    """A typed refusal's diagnostic args: each field it sets, by name, an enum
-    by its member's name.
-    """
-    args = {}
-    for f in dataclasses.fields(refusal):
-        value = getattr(refusal, f.name)
-        if value is None or value == f.default or value in ((), {}):
-            continue
-        args[f.name] = value.name if isinstance(value, enum.Enum) else value
-    return args

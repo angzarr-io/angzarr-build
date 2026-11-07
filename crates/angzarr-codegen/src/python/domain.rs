@@ -58,9 +58,9 @@ const COMPENSATION: &str = "# What a process manager rolls back with: each step 
     from angzarr_client import Compensation as Compensation\n";
 
 /// `domain.py`'s re-exports of the harness, with the comment saying what
-/// each is for: a domain's context and the two classes a decision fails
-/// with (a process manager's compensation tooling too), or a reaction's or
-/// a projection's context and its `Bug`.
+/// each is for: a domain's context and the class a decision fails with (a
+/// process manager's compensation tooling too), or a reaction's or a
+/// projection's context and its `Bug`.
 fn reexports(unit: &Unit) -> String {
     let base = base_reexports(unit);
     if unit.kind() == ComponentKind::ProcessManager {
@@ -73,23 +73,19 @@ fn reexports(unit: &Unit) -> String {
 /// [`reexports`] but for a process manager's compensation tooling.
 fn base_reexports(unit: &Unit) -> &'static str {
     if unit.is_domain() {
-        "# What a decision reads besides its command and state, and the two\n\
-         # classes it fails with, raised, each a diagnostic key and its args, never\n\
-         # text; re-exported so the logic imports only this module.\n\
-         # - Rejection(key, [status,] **args): a business \"no\", refusing the\n\
-         #   command under a business status: FAILED_PRECONDITION unless given,\n\
-         #   or INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE or\n\
-         #   PERMISSION_DENIED; the issuing policy's OnRefused receives it.\n\
+        "# What a decision reads besides its command and state, and the class it\n\
+         # fails with, raised, a diagnostic key and its args, never text;\n\
+         # re-exported so the logic imports only this module. A business \"no\" is\n\
+         # not raised: a decision returns one of its typed refusals.\n\
          # - Bug(key, **args): a defect, never a business answer; the runtime alerts\n\
          #   it and dead-letters the command (ROUTER_REASON_UNHANDLED_HANDLER_ERROR,\n\
          #   its key and args the cause).\n\
          from angzarr_client.router import Bug as Bug\n\
-         from angzarr_client.router import CommandContext as CommandContext\n\
-         from angzarr_client.router import Rejection as Rejection\n"
-    } else if unit.kind() == ComponentKind::Policy && !unit.refusable.is_empty() {
+         from angzarr_client.router import CommandContext as CommandContext\n"
+    } else if unit.refusal.is_some() {
         "# What a handler reads besides its event (its page's context: the book's\n\
          # cover, the source domain and root among it, and the page's sequence),\n\
-         # what a translating callback reads besides the refused command (that\n\
+         # what the refusal callback reads besides the refused command (that\n\
          # command's context), and the class they fail with, raised, a diagnostic\n\
          # key and its args, never text; re-exported so the logic imports only this\n\
          # module.\n\
@@ -217,32 +213,9 @@ fn diagnostic(refusal: &MessageDescriptor) -> String {
         }
         None => format!("{base:?}"),
     };
-    // The status its code is refused with (decision 14.52), a
-    // google.rpc.Code number: its Reason value's refusal_status, else
-    // FAILED_PRECONDITION (9).
-    let status = match refusal_reason(refusal) {
-        Some(reason) => {
-            let enum_type = local_name(reason.full_name(), reason.package_name());
-            let entries: String = reason
-                .values()
-                .filter(|v| v.number() != 0)
-                .map(|v| (v.name().to_string(), crate::model::refusal_status(&v)))
-                .filter(|(_, status)| *status != 0)
-                .map(|(name, status)| {
-                    format!(
-                        "            {enum_type}.{}: {status},\n",
-                        member(&reason, &name)
-                    )
-                })
-                .collect();
-            if entries.is_empty() {
-                "9".to_string()
-            } else {
-                format!("{{\n{entries}        }}.get(self.reason, 9)")
-            }
-        }
-        None => "9".to_string(),
-    };
+    // The status it is refused with (decision 14.95), a google.rpc.Code
+    // number: its message's `(refusal_status)`, which has no default.
+    let status = crate::model::message_status(refusal);
     format!(
         "\n    def key(self) -> str:\n        \
          \"\"\"Its diagnostic key: its full name and its reason.\"\"\"\n        \
@@ -251,8 +224,8 @@ fn diagnostic(refusal: &MessageDescriptor) -> String {
          \"\"\"Its diagnostic args: the fields it sets.\"\"\"\n        \
          return _args(self)\n\n    \
          def status(self) -> int:\n        \
-         \"\"\"The status it is refused with, a google.rpc.Code: its reason's\n        \
-         refusal_status, FAILED_PRECONDITION (9) where unmarked.\n        \
+         \"\"\"The status it is refused with, a google.rpc.Code: its message's\n        \
+         refusal_status.\n        \
          \"\"\"\n        \
          return {status}\n",
     )

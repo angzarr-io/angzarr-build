@@ -60,20 +60,22 @@ pub(crate) fn complete(
 
 /// Whether `method` is a handler the scaffold writes, named as it names one
 /// for the message it takes: a decision or a reaction (`<message>`), a fold
-/// (`apply_<message>`), a projection (`project_<message>`) or a refusal
-/// callback (`on_refused_<message>`, `<message>_refused`). Any other method
-/// is the user's own.
+/// (`apply_<message>`), a projection (`project_<message>`) or a policy's
+/// one refusal callback (`refused`). Any other method is the user's own.
 fn handles(method: &Found) -> bool {
     let message = snake(&method.ty);
     [
         message.clone(),
         format!("apply_{message}"),
         format!("project_{message}"),
-        format!("on_refused_{message}"),
-        format!("{message}_refused"),
     ]
     .contains(&method.name)
 }
+
+/// The name of a policy's one refusal callback: the one method keyed by its
+/// name, not by the type of its input (a choice of the target's commands,
+/// which a user may name with an alias of their own).
+const REFUSED: &str = "refused";
 
 /// A class of a Python module: its name, its methods and where its body
 /// ends (the byte after its last non-blank line).
@@ -148,11 +150,17 @@ fn class(source: &str, name: Option<&str>) -> Option<Class> {
             j
         });
         let text: String = lines[i..=stop].iter().map(|(_, l)| *l).collect();
+        let name = def_name(&text);
         let Some((param, ty)) = first_param(&text) else {
             continue;
         };
+        let (param, ty) = if name == REFUSED {
+            ("command".to_string(), REFUSED.to_string())
+        } else {
+            (param, ty)
+        };
         methods.push(PyMethod {
-            name: def_name(&text),
+            name,
             param,
             ty,
             span: (lines[i].0, lines[stop].0 + lines[stop].1.len()),

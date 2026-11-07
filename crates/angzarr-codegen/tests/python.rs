@@ -78,7 +78,7 @@ fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
     ] {
         expected.push((format!("{gen_dir}/{generated}"), Owner::Generated));
     }
-    for proto in ["cards", "player", "table"] {
+    for proto in ["cards", "player"] {
         for ext in ["py", "pyi"] {
             expected.push((format!("{v1}/{proto}_pb2.{ext}"), Owner::External));
         }

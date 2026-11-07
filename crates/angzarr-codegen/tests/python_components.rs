@@ -10,8 +10,8 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, MarkupError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate, UseError,
-    refusal_key, scaffold_python,
+    CodegenError, Existing, MarkupError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate,
+    UseError, complete, refusal_key, scaffold_python,
 };
 use common::*;
 
@@ -1013,6 +1013,10 @@ fn test_a_policy_must_translate_each_refused_command() {
         ],
     );
     assert!(!dispatch.contains("hasattr"), "{dispatch}");
+    assert_has(
+        dispatch,
+        &["the refusal of a command it sent into its one callback's arguments"],
+    );
     assert_parses("buy_in_wallet_policy_angzarr.py", dispatch);
     assert_parses("logic.py", logic);
 }
@@ -1141,6 +1145,34 @@ fn test_a_refusal_is_refused_under_the_status_its_message_declares() {
         !domain.contains("FAILED_PRECONDITION (9) where unmarked"),
         "{domain}"
     );
+}
+
+/// `--missing` keys a policy's one refusal callback by its name, not by the
+/// type of its input (a choice, which a user may alias): absent, it is
+/// added at the class's end; present, however its input is annotated, it is
+/// neither added again nor reported obsolete.
+#[test]
+fn test_complete_finds_a_policys_refusal_callback_by_its_name() {
+    let fresh = implementation(&buyin_python("policy-buyin-wallet", &[])).clone();
+    let callback = "    def refused(\n        self,\n        command: Deposit | Hold,\n        refusal: DepositRefused | InsufficientFunds,\n        ctx: CommandContext,\n    ) -> HoldLost:\n        raise NotImplementedError  # TODO: translate the refusal\n";
+    assert!(fresh.source.contains(callback), "{}", fresh.source);
+    let without = fresh.source.replace(&format!("\n{callback}"), "");
+    assert_ne!(without, fresh.source);
+    let added = complete(&fresh, &without, Existing::Complete).unwrap();
+    assert_eq!(
+        added.completed,
+        Some(format!("{without}\n{callback}")),
+        "{without}"
+    );
+    let aliased = fresh.source.replace(
+        "command: Deposit | Hold,\n        refusal: DepositRefused | InsufficientFunds,",
+        "command: WalletCommand,\n        refusal: WalletRefusal,",
+    );
+    assert_ne!(aliased, fresh.source);
+    let kept = complete(&fresh, &aliased, Existing::Complete).unwrap();
+    assert_eq!(kept.completed, None);
+    assert!(kept.notes.obsolete.is_empty(), "{:?}", kept.notes);
+    assert!(kept.notes.lacks.is_empty(), "{:?}", kept.notes);
 }
 
 /// A policy whose target cannot refuse needs no path for a refusal

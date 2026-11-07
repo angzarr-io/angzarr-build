@@ -1,8 +1,9 @@
 //! The logic interface (`_gen/logic.py`: an `abc.ABC` of the required
-//! methods over the plain types, and a reference `Protocol` of the optional
-//! refusal callbacks, which nothing subclasses), the CLI's, and its
-//! implementation (`logic_impl.py`, every method a TODO), the user's,
-//! written once.
+//! methods over the plain types), the CLI's, and its implementation
+//! (`logic_impl.py`, every method a TODO), the user's, written once. Every
+//! method is required: a domain has no optional refusal handler (a policy
+//! translates the refusal of a command it sent), and a policy's one refusal
+//! callback is required when its target can refuse.
 
 use std::collections::BTreeSet;
 
@@ -10,7 +11,7 @@ use crate::common::snake;
 use crate::model::{Component, ComponentKind, Input};
 
 use super::layout::{head, wrap};
-use super::{GENERATED, PythonApp, Refusable, Unit};
+use super::{GENERATED, PythonApp, Unit};
 
 /// One method of the logic interface.
 struct Method {
@@ -21,13 +22,6 @@ struct Method {
     params: Vec<(String, String)>,
     returns: String,
     todo: String,
-    /// The refused command, for a domain's optional refusal handler (which
-    /// the implementation may leave out, declining the refusal); `None` for
-    /// a required method.
-    refused: Option<String>,
-    /// The refused command, for a policy's refusal callback, required
-    /// (decision 14.76): what `--translate` names the stub's fact for.
-    translates: Option<String>,
 }
 
 /// The interface's name: a domain's, camel-cased, then `Logic` (`player`
@@ -52,13 +46,6 @@ pub(super) fn logic_name(app: &PythonApp, unit: &Unit) -> String {
     format!("{camel}Logic")
 }
 
-/// The reference protocol of the optional refusal callbacks: the
-/// interface's name with `Refusals` for `Logic` (`PlayerRefusals`).
-fn refusals_name(app: &PythonApp, unit: &Unit) -> String {
-    let logic = logic_name(app, unit);
-    format!("{}Refusals", logic.trim_end_matches("Logic"))
-}
-
 /// What a decision of `input` returns: a list of its events (decision
 /// 14.75), of its emits or, when it lists none, of any of `component`'s
 /// events (None when it has none), or one of its typed refusals.
@@ -76,44 +63,17 @@ fn decided(component: &Component, input: &Input) -> String {
         .join(" | ")
 }
 
-/// A refusal method's typed refusal parameter, when `refusable` refuses
-/// with types: `refusal`, one of them or None.
-fn refusal_param(refusable: &Refusable) -> Option<(String, String)> {
-    if refusable.refuses.is_empty() {
-        return None;
-    }
-    let types: Vec<&str> = refusable.refuses.iter().map(|r| r.name()).collect();
-    Some((
-        "refusal".to_string(),
-        format!("{} | None", types.join(" | ")),
-    ))
-}
-
-/// What a domain's handler of a refusal returns, as a fact handler with no
-/// emits does: a list of any of its events, None when it has none.
-fn any_events(component: &Component) -> String {
-    let any: Vec<&str> = component.events.iter().map(|e| e.name()).collect();
-    if any.is_empty() {
-        "None".to_string()
-    } else {
-        format!("list[{}]", any.join(" | "))
-    }
-}
-
-/// The interface's methods, by kind, required first. A domain's: a decision
-/// per command (or fact) from the state and its context (the harness's
-/// `CommandContext`, re-exported by `domain.py`), returning what it emits
-/// or a typed refusal, a fold per event from the state to the next state,
-/// and, optional, a handler per command its policies send that declares a
-/// `refuses` type, of that command's pass-through refusal
-/// (`on_refused_<command>`: the command, its typed refusal or None, the
-/// state and the context, returning the events recording it). A policy's: a
-/// reaction per event from the event, its source root and its page's
-/// context, returning the target's commands and facts, each with its root,
-/// and a required translating callback per command of its target
-/// (`<command>_refused`: the command, its typed refusal or None and the
-/// refused command's context, returning one of the source's facts; decision
-/// 14.76). A projector's: a coroutine per event from the projection, the
+/// The interface's methods, by kind, every one required. A domain's: a
+/// decision per command (or fact) from the state and its context (the
+/// harness's `CommandContext`, re-exported by `domain.py`), returning what
+/// it emits or a typed refusal, and a fold per event from the state to the
+/// next state. A policy's: a reaction per event from the event, its source
+/// root and its page's context, returning the target's commands and facts,
+/// each with its root, and, when its target has a command that can refuse
+/// and its source takes facts, its one `refused` callback (the command
+/// refused and the refusal, each a choice of the target's, and the refused
+/// command's context, returning one of the source's facts; decisions 14.89,
+/// 14.99). A projector's: a coroutine per event from the projection, the
 /// event and its page's context, returning the next projection. All of it
 /// in the plain types (`domain.py`).
 fn methods(unit: &Unit) -> Vec<Method> {
@@ -150,8 +110,6 @@ fn domain_methods(unit: &Unit) -> Vec<Method> {
             ],
             returns: decided(component, input),
             todo: format!("{todo} {ty}"),
-            refused: None,
-            translates: None,
         }
     });
     let folds = component.events.iter().map(|event| {
@@ -162,27 +120,9 @@ fn domain_methods(unit: &Unit) -> Vec<Method> {
             params: vec![param("state", state), param("event", ty)],
             returns: state.to_string(),
             todo: format!("fold {ty} into the state"),
-            refused: None,
-            translates: None,
         }
     });
-    let refusals = unit.refusable.iter().map(|refusable| {
-        let ty = refusable.command.name();
-        let mut params = vec![param("command", ty)];
-        params.extend(refusal_param(refusable));
-        params.push(param("state", state));
-        params.push(param("ctx", "CommandContext"));
-        Method {
-            name: format!("on_refused_{}", snake(ty)),
-            asynchronous: false,
-            params,
-            returns: any_events(component),
-            todo: format!("record the refusal of {ty}"),
-            refused: Some(refusable.command.full_name().to_string()),
-            translates: None,
-        }
-    });
-    decisions.chain(folds).chain(refusals).collect()
+    decisions.chain(folds).collect()
 }
 
 /// A policy's methods (see [`methods`]).
@@ -209,27 +149,27 @@ fn policy_methods(unit: &Unit) -> Vec<Method> {
             ],
             returns: format!("list[tuple[bytes, {command}]]"),
             todo: format!("react to {ty}"),
-            refused: None,
-            translates: None,
         }
     });
-    let facts: Vec<&str> = unit.facts.iter().map(|f| f.name()).collect();
-    let translations = unit.refusable.iter().map(move |refusable| {
-        let ty = refusable.command.name();
-        let mut params = vec![param("command", ty)];
-        params.extend(refusal_param(refusable));
-        params.push(param("ctx", "CommandContext"));
-        Method {
-            name: format!("{}_refused", snake(ty)),
-            asynchronous: false,
-            params,
-            returns: facts.join(" | "),
-            todo: format!("translate the refusal of {ty}"),
-            refused: None,
-            translates: Some(refusable.command.full_name().to_string()),
-        }
+    let names = |messages: &[prost_reflect::MessageDescriptor]| {
+        messages
+            .iter()
+            .map(|m| m.name())
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+    let callback = unit.refusal.as_ref().map(|path| Method {
+        name: "refused".to_string(),
+        asynchronous: false,
+        params: vec![
+            param("command", &names(&unit.commands)),
+            param("refusal", &names(&path.refusals)),
+            param("ctx", "CommandContext"),
+        ],
+        returns: names(&unit.facts),
+        todo: "translate the refusal".to_string(),
     });
-    reactions.chain(translations).collect()
+    reactions.chain(callback).collect()
 }
 
 /// A projector's methods (see [`methods`]).
@@ -247,8 +187,6 @@ fn projector_methods(unit: &Unit) -> Vec<Method> {
             ],
             returns: projection.to_string(),
             todo: format!("project {ty}"),
-            refused: None,
-            translates: None,
         }
     });
     projections.collect()
@@ -309,32 +247,40 @@ fn signature(indent: usize, method: &Method, tail: &str) -> String {
 }
 
 /// What the logic does, for the interface's doc, by kind.
-fn duties(unit: &Unit) -> &'static str {
+fn duties(unit: &Unit) -> String {
     match unit.kind() {
         ComponentKind::Aggregate | ComponentKind::ProcessManager => {
             "each decision its ``CommandContext`` too, returning its events or one of \
-             its typed refusals, or raising ``Rejection`` to refuse its command \
-             (or ``Bug`` for a defect)."
+             its typed refusals (or raising ``Bug`` for a defect)."
+                .to_string()
         }
         ComponentKind::Policy => {
-            "each reaction its event's source root and ``PageContext`` too, returning \
-             what it sends, each with its target root: a command, or a fact its target \
-             declares, which the generated dispatch sends in the arm the target \
-             declares (raising ``Bug`` for a defect)."
+            let refusal = if unit.refusal.is_some() {
+                " Its one ``refused`` callback takes the command refused and the \
+                 refusal, each a union of the target's (a type checker holds a match \
+                 over it exhaustive), and answers one of the source's facts: it \
+                 cannot decline."
+            } else {
+                ""
+            };
+            format!(
+                "each reaction its event's source root and ``PageContext`` too, \
+                 returning what it sends, each with its target root: a command, or a \
+                 fact its target declares, which the generated dispatch sends in the \
+                 arm the target declares (raising ``Bug`` for a defect).{refusal}"
+            )
         }
         ComponentKind::Projector => {
             "each projection a coroutine, its event's ``PageContext`` too (the source \
              domain is its cover's), returning the next projection (raising ``Bug`` \
              for a defect)."
+                .to_string()
         }
     }
 }
 
 /// `_gen/logic.py`: the ABC of the required methods, each abstract, so an
-/// implementation lacking one fails to instantiate, naming it; and the
-/// reference protocol of the optional refusal callbacks, which the
-/// implementation never subclasses: the dispatch registers each one it
-/// defines (`hasattr`), and passes every other refusal through.
+/// implementation lacking one fails to instantiate, naming it.
 pub(super) fn interface(app: &PythonApp, unit: &Unit) -> String {
     let component = &unit.component;
     let name = logic_name(app, unit);
@@ -346,8 +292,6 @@ pub(super) fn interface(app: &PythonApp, unit: &Unit) -> String {
         ComponentKind::Projector => format!("the {} projector's logic", unit.name),
     };
     let all = methods(unit);
-    let (optional, required): (Vec<&Method>, Vec<&Method>) =
-        all.iter().partition(|m| m.refused.is_some());
     let doc = wrap(&format!(
         "\"\"\"{name}: {owner}, for ``{}``, generated from its protos: \
          ``{name}Impl`` (``logic_impl.py``, yours) implements it. It takes and returns \
@@ -357,12 +301,8 @@ pub(super) fn interface(app: &PythonApp, unit: &Unit) -> String {
     ));
     let mut out = format!(
         "{GENERATED}{doc}\n\"\"\"\n\nfrom __future__ import annotations\n\n\
-         from abc import ABC, abstractmethod\n"
+         from abc import ABC, abstractmethod\n\n"
     );
-    if !optional.is_empty() {
-        out.push_str("from typing import Protocol\n");
-    }
-    out.push('\n');
     out.push_str(&import(
         ".domain",
         &named_types(&all.iter().collect::<Vec<_>>()),
@@ -376,27 +316,11 @@ pub(super) fn interface(app: &PythonApp, unit: &Unit) -> String {
         75,
     );
     out.push_str(&format!("    {}\n    \"\"\"\n", indented(&class_doc)));
-    for method in &required {
+    for method in &all {
         out.push_str(&format!(
             "\n    @abstractmethod\n{}\n",
             signature(4, method, " ...")
         ));
-    }
-    if !optional.is_empty() {
-        let refusals = refusals_name(app, unit);
-        out.push_str(&format!("\n\nclass {refusals}(Protocol):\n"));
-        let class_doc = crate::common::wrap(
-            &format!(
-                "\"\"\"The refusal handlers {name}Impl may define, each optional: \
-             the dispatch registers each one it has, and declines the refusal of any \
-             other command. Never subclassed; a reference.",
-            ),
-            75,
-        );
-        out.push_str(&format!("    {}\n    \"\"\"\n", indented(&class_doc)));
-        for method in &optional {
-            out.push_str(&format!("\n{}\n", signature(4, method, " ...")));
-        }
     }
     out
 }
@@ -417,58 +341,16 @@ fn indented(text: &str) -> String {
         .join("\n")
 }
 
-/// The refusal handlers a domain's implementation is created with: each
-/// refusal its policies may pass through (one the refusal switch names a
-/// fact for excepted), and those `selected` (`--on-refused`), each by its
-/// refused command's full name.
-fn created_with(unit: &Unit, refused: &str) -> bool {
-    let translated = unit
-        .translated
-        .iter()
-        .any(|(command, _)| command == refused);
-    !translated || selected(unit, refused)
-}
-
-/// Whether a domain's refusal handler for `refused` is selected for the
-/// unit: `--on-refused`.
-fn selected(unit: &Unit, refused: &str) -> bool {
-    unit.on_refused.iter().any(|c| c == refused)
-}
-
-/// The user's implementation, as `logic_impl.py` is created: a stub of every
-/// required method and of the refusal callbacks it is created with
-/// ([`created_with`]); with the optional methods' names, and the selected
-/// ones' ([`crate::ScaffoldFile`]).
+/// The user's implementation, as `logic_impl.py` is created: a stub of
+/// every method, and no optional or selected one to name
+/// ([`crate::ScaffoldFile`]).
 pub(super) fn implementation(app: &PythonApp, unit: &Unit) -> (String, Vec<String>, Vec<String>) {
     let name = logic_name(app, unit);
-    let all = methods(unit);
-    let stubs: Vec<Method> = all
-        .iter()
-        .filter(|m| m.refused.as_deref().is_none_or(|r| created_with(unit, r)))
-        .map(|m| translated(unit, m))
-        .collect();
-    let optional: Vec<String> = all
-        .iter()
-        .filter(|m| m.refused.is_some())
-        .map(|m| m.name.clone())
-        .collect();
-    let chosen: Vec<String> = all
-        .iter()
-        .filter(|m| m.refused.as_deref().is_some_and(|r| selected(unit, r)))
-        .map(|m| m.name.clone())
-        .collect();
-    let refusals = if optional.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " Its refusal handlers are optional\n(``{}``): delete one to decline that refusal.",
-            refusals_name(app, unit)
-        )
-    };
+    let stubs = methods(unit);
     let mut out = format!(
         "\"\"\"{name}Impl: the implementation of ``{name}``, written once by\n\
          ``angzarr scaffold python`` and yours from then on: ``--missing`` adds the\n\
-         required methods it lacks, each a TODO.{refusals}\n\"\"\"\n\n\
+         required methods it lacks, each a TODO.\n\"\"\"\n\n\
          from __future__ import annotations\n\n",
     );
     out.push_str(&import(
@@ -480,28 +362,7 @@ pub(super) fn implementation(app: &PythonApp, unit: &Unit) -> (String, Vec<Strin
     ));
     let body: Vec<String> = stubs.iter().map(stub).collect();
     out.push_str(&body.join("\n"));
-    (out, optional, chosen)
-}
-
-/// `method` as the implementation is created with it: a policy's
-/// translating callback the refusal switch selects returns the fact it
-/// selects.
-fn translated(unit: &Unit, method: &Method) -> Method {
-    let fact = method.translates.as_deref().and_then(|refused| {
-        unit.translated
-            .iter()
-            .find(|(command, _)| command == refused)
-            .map(|(_, fact)| fact.name().to_string())
-    });
-    Method {
-        name: method.name.clone(),
-        asynchronous: method.asynchronous,
-        params: method.params.clone(),
-        returns: fact.unwrap_or_else(|| method.returns.clone()),
-        todo: method.todo.clone(),
-        refused: method.refused.clone(),
-        translates: method.translates.clone(),
-    }
+    (out, Vec::new(), Vec::new())
 }
 
 /// An implementation method: its signature and a TODO body.

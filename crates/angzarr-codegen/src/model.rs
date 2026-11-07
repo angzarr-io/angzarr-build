@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use prost_reflect::{
-    DescriptorPool, DynamicMessage, EnumDescriptor, EnumValueDescriptor, ExtensionDescriptor, Kind,
-    MessageDescriptor, Value,
+    DescriptorPool, DynamicMessage, EnumDescriptor, ExtensionDescriptor, Kind, MessageDescriptor,
+    Value,
 };
 
 mod resolve;
@@ -759,24 +759,6 @@ fn command_input(
             .any(|t| t == message.full_name()),
         fact,
     })
-}
-
-/// The status a refusal Reason's value marks (decision 14.52), its
-/// `google.rpc.Code` number: 0 where unmarked, or where the set's
-/// options.proto has no `refusal_status`.
-pub(crate) fn refusal_status(value: &EnumValueDescriptor) -> i32 {
-    let Some(ext) = value
-        .parent_enum()
-        .parent_pool()
-        .get_extension_by_name(REFUSAL_STATUS)
-    else {
-        return 0;
-    };
-    let options = value.options();
-    if !options.has_extension(&ext) {
-        return 0;
-    }
-    options.get_extension(&ext).as_enum_number().unwrap_or(0)
 }
 
 /// The status a refusal message declares (`(refusal_status)`), its

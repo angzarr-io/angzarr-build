@@ -59,10 +59,10 @@ pub(crate) fn output_name(target: &crate::model::Component) -> String {
     format!("{}Output", target.name)
 }
 
-/// The commands of `target` whose pass-through refusal a domain sourcing
-/// a policy to it is handed (`on_refused_<command>`, decision 14.73): each
-/// that declares a `refuses` type. A command naming none has no typed
-/// refusal for a handler to read, and a fact is never refused.
+/// The commands of `target` whose refusal reaches a policy sending to it
+/// (decisions 14.89, 14.95): each that declares a `refuses` type. A command
+/// naming none has no typed refusal for the policy's one callback to read,
+/// and a fact is never refused.
 pub(crate) fn handed_refusals(
     target: &crate::model::Component,
 ) -> impl Iterator<Item = &crate::model::Input> {

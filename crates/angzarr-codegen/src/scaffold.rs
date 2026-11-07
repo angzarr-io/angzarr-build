@@ -194,16 +194,6 @@ pub(crate) fn checked_pool(
     Ok(pool)
 }
 
-/// The selections of `translate` for `policy`.
-pub(crate) fn selected<'a>(
-    translate: &'a [Translate],
-    policy: &'a Component,
-) -> impl Iterator<Item = &'a Translate> {
-    translate
-        .iter()
-        .filter(|t| t.policy == policy.anchor.full_name())
-}
-
 /// `selection`'s policy is a policy, its command one its target decides,
 /// and its fact a fact its source ingests.
 fn check_translate(components: &[Component], selection: &Translate) -> Result<(), UseError> {

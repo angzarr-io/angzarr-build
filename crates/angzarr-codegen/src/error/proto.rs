@@ -28,7 +28,7 @@ pub enum ProtoError {
     EnumZero { enum_name: String, value: String },
     /// A message or enum named as one of the names the generated domain
     /// layer gives the runtime's types (`Context`, `PolicyContext`,
-    /// `CommandContext`, `Rejection`, `Bug`, `Failed`, `BusinessStatus`,
+    /// `CommandContext`, `Refused`, `Bug`, `Failed`, `BusinessStatus`,
     /// `RetryableStatus`): the generated code would
     /// collide, and nothing is renamed silently.
     ReservedName { message: String, name: String },

@@ -52,7 +52,7 @@ use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 use crate::common::{Arm, handed_refusals, local_name, snake, wire_name};
 use crate::error::{CodegenError, ProtoError, UseError};
 use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input};
-use crate::scaffold::{Owner, ScaffoldFile, Translate, selected};
+use crate::scaffold::{Owner, ScaffoldFile, Translate};
 use dispatch::dispatch;
 use domain::domain_py;
 use logic::{implementation, interface};
@@ -133,8 +133,7 @@ impl PythonApp {
 /// One component as the Python scaffold emits it.
 struct Unit {
     component: Component,
-    /// Its name in an application: its `component_name`, else its kind's
-    /// default.
+    /// Its name in an application: its `component_name`.
     name: String,
     /// A policy's target's commands: what its reactions send as commands.
     commands: Vec<MessageDescriptor>,
@@ -143,39 +142,24 @@ struct Unit {
     sent_facts: Vec<MessageDescriptor>,
     /// A projector's source domains.
     sources: Vec<String>,
-    /// The commands whose refusal reaches the unit: a domain's, each
-    /// command a policy it sources sends that declares a `refuses` type (the
-    /// pass-through `CommandRefused`, decision 14.31; only a typed refusal
-    /// is handed over, decision 14.73); a policy's, each command it sends
-    /// when its source takes facts to translate a refusal into. Whatever `--translate`
-    /// selects: the generated files are the same either way.
-    refusable: Vec<Refusable>,
-    /// The refusal switch's selections touching the unit, each a command's
-    /// full name and the fact it translates into: a policy's own, which its
-    /// logic translates; a domain's, the ones its policies translate, which
-    /// its logic is not handed as `CommandRefused`.
-    translated: Vec<(String, MessageDescriptor)>,
-    /// A policy's source's facts: what a translating callback returns.
+    /// A policy's one refusal callback, when its target has a command that
+    /// can refuse and its source takes facts to answer with (decisions
+    /// 14.89, 14.99); none otherwise.
+    refusal: Option<RefusalPath>,
+    /// A policy's source's facts: what its refusal callback answers with.
     facts: Vec<MessageDescriptor>,
-    /// The refused commands whose callback `--on-refused` selects, by full
-    /// name: written into the user's implementation even when it exists.
-    on_refused: Vec<String>,
 }
 
-/// A command whose refusal reaches a unit, and the typed refusals it
-/// refuses with.
-struct Refusable {
-    command: MessageDescriptor,
-    refuses: Vec<MessageDescriptor>,
-}
-
-impl Refusable {
-    fn of(input: &Input) -> Self {
-        Refusable {
-            command: input.message.clone(),
-            refuses: input.refuses.clone(),
-        }
-    }
+/// What a policy's refusal callback is handed: the commands of its target
+/// that can be refused, and the typed refusals they name, each once, in the
+/// order of the commands. The callback takes the choice of the target's
+/// commands and of these refusals (decision 14.95: typed only).
+struct RefusalPath {
+    /// The commands of the target that name a refusal: the ones whose
+    /// refusal reaches the policy.
+    refusable: Vec<MessageDescriptor>,
+    /// The refusal messages those commands name, each once.
+    refusals: Vec<MessageDescriptor>,
 }
 
 impl Unit {
@@ -198,7 +182,7 @@ pub fn scaffold_python(
     files: &[&str],
     app: &PythonApp,
     translate: &[Translate],
-    on_refused: &[String],
+    _on_refused: &[String],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
     let pool = crate::scaffold::checked_pool(descriptor_set, translate)?;
     let components: Vec<Component> = model::components(descriptor_set, files, ALL_KINDS)?
@@ -213,7 +197,7 @@ pub fn scaffold_python(
     }
     let units = components
         .into_iter()
-        .map(|c| unit(c, &pool, translate, on_refused))
+        .map(|c| unit(c, &pool))
         .collect::<Result<Vec<_>, _>>()?;
     refuse_python_names(&units)?;
     let project = Project::new(app, &units);
@@ -419,76 +403,48 @@ impl<'a> Project<'a> {
 }
 
 /// `component` with what its kind needs beside it, from the descriptor
-/// set's `pool`: a policy's target's commands (refused when no aggregate or
-/// process manager of the set owns its `output_domain`) and, when its
-/// source takes facts, those facts and the commands it may translate the
-/// refusal of; a domain's commands its policies send, refusable back to
-/// it; a projector's sources; and the `translate` selections touching it.
-fn unit(
-    component: Component,
-    pool: &[Component],
-    translate: &[Translate],
-    on_refused: &[String],
-) -> Result<Unit, CodegenError> {
-    let owner = |domain: &str| model::owner(pool, domain);
-    let fact_of = |selection: &Translate| {
-        owner_input(pool, &selection.fact).map(|f| (selection.command.clone(), f))
-    };
+/// set's `pool`: a policy's target's commands and facts (refused when no
+/// aggregate or process manager of the set owns its `output_domain`) and,
+/// when its target has a command that can refuse and its source takes
+/// facts, its refusal path; a projector's sources.
+fn unit(component: Component, pool: &[Component]) -> Result<Unit, CodegenError> {
     let mut commands = Vec::new();
     let mut sent_facts = Vec::new();
-    let mut refusable = Vec::new();
-    let mut translated = Vec::new();
+    let mut refusal = None;
     let mut facts = Vec::new();
-    match component.kind {
-        ComponentKind::Policy => {
-            let target = component.target(pool)?;
-            let sent: Vec<&Input> = target
+    if component.kind == ComponentKind::Policy {
+        let target = component.target(pool)?;
+        let sent = |arm: Arm| {
+            target
                 .inputs
                 .iter()
-                .filter(|i| Arm::of(i) == Arm::Command)
-                .collect();
-            commands = sent.iter().map(|i| i.message.clone()).collect();
-            sent_facts = target
+                .filter(move |i| Arm::of(i) == arm)
+                .map(|i| i.message.clone())
+                .collect::<Vec<_>>()
+        };
+        commands = sent(Arm::Command);
+        sent_facts = sent(Arm::Fact);
+        if let Some(source) = model::owner(pool, &component.input_domain) {
+            facts = source
                 .inputs
                 .iter()
-                .filter(|i| Arm::of(i) == Arm::Fact)
+                .filter(|i| i.fact)
                 .map(|i| i.message.clone())
                 .collect();
-            if let Some(source) = owner(&component.input_domain) {
-                facts = source
-                    .inputs
-                    .iter()
-                    .filter(|i| i.fact)
-                    .map(|i| i.message.clone())
-                    .collect();
-            }
-            if !facts.is_empty() {
-                refusable = sent.into_iter().map(Refusable::of).collect();
-            }
-            translated = selected(translate, &component)
-                .filter_map(fact_of)
-                .collect();
         }
-        ComponentKind::Aggregate | ComponentKind::ProcessManager => {
-            for policy in pool
-                .iter()
-                .filter(|p| p.kind == ComponentKind::Policy && p.input_domain == component.domain)
-            {
-                let Some(target) = owner(&policy.output_domain) else {
-                    continue;
-                };
-                for input in handed_refusals(target) {
-                    if !refusable
-                        .iter()
-                        .any(|r: &Refusable| r.command == input.message)
-                    {
-                        refusable.push(Refusable::of(input));
-                    }
+        let handed: Vec<&Input> = handed_refusals(target).collect();
+        if !handed.is_empty() && !facts.is_empty() {
+            let mut refusals: Vec<MessageDescriptor> = Vec::new();
+            for refused in handed.iter().flat_map(|i| &i.refuses) {
+                if !refusals.contains(refused) {
+                    refusals.push(refused.clone());
                 }
-                translated.extend(selected(translate, policy).filter_map(fact_of));
             }
+            refusal = Some(RefusalPath {
+                refusable: handed.iter().map(|i| i.message.clone()).collect(),
+                refusals,
+            });
         }
-        ComponentKind::Projector => {}
     }
     let sources = if component.kind == ComponentKind::Projector {
         component.sources.clone()
@@ -501,20 +457,9 @@ fn unit(
         commands,
         sent_facts,
         sources,
-        refusable,
-        translated,
+        refusal,
         facts,
-        on_refused: on_refused.to_vec(),
     })
-}
-
-/// The message of the input of some aggregate or process manager of
-/// `pool` named `full_name`.
-fn owner_input(pool: &[Component], full_name: &str) -> Option<MessageDescriptor> {
-    pool.iter()
-        .filter(|c| c.kind.is_domain())
-        .find_map(|c| c.input(full_name))
-        .map(|i| i.message.clone())
 }
 
 /// What the project serves, for its docs: `the player domain`, `the
@@ -619,9 +564,8 @@ fn roots(unit: &Unit) -> Vec<MessageDescriptor> {
     roots.extend(component.events.iter().cloned());
     roots.extend(unit.commands.iter().cloned());
     roots.extend(unit.sent_facts.iter().cloned());
-    for refusable in &unit.refusable {
-        roots.push(refusable.command.clone());
-        roots.extend(refusable.refuses.iter().cloned());
+    if let Some(path) = &unit.refusal {
+        roots.extend(path.refusals.iter().cloned());
     }
     roots.extend(unit.facts.iter().cloned());
     roots

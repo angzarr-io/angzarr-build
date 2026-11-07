@@ -4,34 +4,21 @@
 ``io.angzarr.examples.v1.PlayerState``, generated from its protos:
 ``PlayerLogicImpl`` (``logic_impl.py``, yours) implements it. It takes and
 returns the plain types (:mod:`.domain`), each decision its ``CommandContext``
-too, returning its events or one of its typed refusals, or raising
-``Rejection`` to refuse its command (or ``Bug`` for a defect).
+too, returning its events or one of its typed refusals (or raising ``Bug`` for
+a defect).
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Protocol
 
 from .domain import (
     CommandContext,
-    ConfirmSeat,
-    CreateTable,
-    DealRound,
     DecideMove,
-    DecideMoveRefused,
-    DoubleDown,
-    Hit,
-    LeaveTable,
     MoveDecided,
     MoveRefused,
-    PlaceBet,
     PlayerState,
     RecordMoveRefused,
-    RequestSeat,
-    SeatNotConfirmable,
-    Stand,
-    TableRefused,
 )
 
 
@@ -43,7 +30,7 @@ class PlayerLogic(ABC):
     @abstractmethod
     def decide_move(
         self, cmd: DecideMove, state: PlayerState, ctx: CommandContext
-    ) -> list[MoveDecided] | DecideMoveRefused: ...
+    ) -> list[MoveDecided]: ...
 
     @abstractmethod
     def record_move_refused(
@@ -59,82 +46,3 @@ class PlayerLogic(ABC):
     def apply_move_refused(
         self, state: PlayerState, event: MoveRefused
     ) -> PlayerState: ...
-
-
-class PlayerRefusals(Protocol):
-    """The refusal handlers PlayerLogicImpl may define, each optional: the
-    dispatch registers each one it has, and declines the refusal of any other
-    command. Never subclassed; a reference.
-    """
-
-    def on_refused_create_table(
-        self,
-        command: CreateTable,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_request_seat(
-        self,
-        command: RequestSeat,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_leave_table(
-        self,
-        command: LeaveTable,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_place_bet(
-        self,
-        command: PlaceBet,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_deal_round(
-        self,
-        command: DealRound,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_hit(
-        self,
-        command: Hit,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_stand(
-        self,
-        command: Stand,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_double_down(
-        self,
-        command: DoubleDown,
-        refusal: TableRefused | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...
-
-    def on_refused_confirm_seat(
-        self,
-        command: ConfirmSeat,
-        refusal: SeatNotConfirmable | None,
-        state: PlayerState,
-        ctx: CommandContext,
-    ) -> list[MoveDecided | MoveRefused]: ...

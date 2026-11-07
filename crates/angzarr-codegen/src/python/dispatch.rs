@@ -12,8 +12,8 @@ use super::convert::{converter_pair, converters, pb2_class, table};
 use super::layout::{call, head, wrap};
 use super::logic::logic_name;
 use super::{
-    GENERATED, PythonApp, Refusable, Unit, alias, dispatch_package, pb2_module, reached, relative,
-    relative_module,
+    GENERATED, PythonApp, RefusalPath, Unit, alias, dispatch_package, pb2_module, reached,
+    relative, relative_module,
 };
 
 /// The dispatch's table type, by kind: the client's public dispatch.
@@ -35,6 +35,13 @@ fn dispatch_doc(unit: &Unit, package: &str, logic: &str) -> String {
              event book, or its typed refusal into the client's ``Refused``, a fact's \
              list of events beside it into its record, a fold's next state into the \
              state."
+        }
+        ComponentKind::Policy if unit.refusal.is_some() => {
+            "and converts what it returns back: each output, with its target root, \
+             into a command book to the policy's target domain, in the arm the target \
+             declares (a command, or a fact it records and never refuses); the \
+             refusal of a command it sent into its one callback's arguments (the \
+             command and its typed refusal), and the fact it answers with."
         }
         ComponentKind::Policy => {
             "and converts what it returns back: each output, with its target root, \
@@ -64,7 +71,7 @@ const WIRE_EVENTS: &str = "\n\ndef _wire(result) -> list:\n    \
     def _book(result) -> _t.EventBook:\n    \
     book = _t.EventBook()\n    \
     for wire in _wire(result):\n        \
-    book.pages.add().payload.CopyFrom(_az.pack(wire))\n    \
+    book.pages.add().event.CopyFrom(_az.pack(wire))\n    \
     return book\n";
 
 /// A decision's result refused, when it is a typed refusal: the client's
@@ -75,9 +82,9 @@ const DECIDED: &str = "\n\ndef _decided(result) -> _t.EventBook:\n    \
     raise _az.Refused(to_wire(result), result.status())\n    \
     return _book(result)\n";
 
-/// A translating callback's fact on the wire.
+/// The refusal callback's fact on the wire.
 const FACT: &str = "\n\ndef _fact(fact):\n    \
-    \"\"\"A translating callback's fact, on the wire.\"\"\"\n    \
+    \"\"\"The refusal callback's fact, on the wire.\"\"\"\n    \
     return _FACTS[type(fact)](fact)\n";
 
 /// The event loop a projector's coroutines run on.
@@ -153,65 +160,6 @@ pub(super) fn dispatch(app: &PythonApp, unit: &Unit) -> String {
     out
 }
 
-/// The table of the typed refusals the unit's refusable commands may carry
-/// (each by its full name: its wire type and its converter to the plain
-/// type) and `_typed_refusal`, which unpacks one; nothing when none refuses
-/// with a type.
-fn typed_refusals(unit: &Unit) -> String {
-    let mut types: Vec<&MessageDescriptor> = Vec::new();
-    for r in unit.refusable.iter().flat_map(|r| &r.refuses) {
-        if !types.contains(&r) {
-            types.push(r);
-        }
-    }
-    if types.is_empty() {
-        return String::new();
-    }
-    let entries: String = types
-        .iter()
-        .map(|r| {
-            let (to, _) = converters(r);
-            format!("    \"{}\": ({}, {to}),\n", r.full_name(), pb2_class(r))
-        })
-        .collect();
-    format!(
-        "\n\n# Each typed refusal a refused command may carry, by its full name: its\n\
-         # wire type and its converter to the plain type.\n\
-         _TYPED_REFUSALS = {{\n{entries}}}\n\n\n\
-         def _typed_refusal(payload):\n    \
-         \"\"\"The typed refusal ``payload`` packs, as its plain type; None when it\n    \
-         packs none, or one this component does not know.\n    \
-         \"\"\"\n    \
-         entry = _TYPED_REFUSALS.get(payload.type_url.rpartition(\"/\")[2])\n    \
-         if entry is None:\n        \
-         return None\n    \
-         wire, to_plain = entry\n    \
-         return to_plain(_decode(wire(), payload))\n"
-    )
-}
-
-/// The statements of a refusal handler's body before its call: the refused
-/// command, plain, from `book` (a CommandBook), and its typed refusal from
-/// `packed` (an Any) when it refuses with types.
-fn refused_command(refusable: &Refusable, book: &str, packed: &str) -> (String, String) {
-    let command = &refusable.command;
-    let (to, _) = converters(command);
-    let mut out = call(
-        8,
-        &format!("command = {to}"),
-        &format!(
-            "_decode({}(), {book}.page.command.payload)",
-            pb2_class(command)
-        ),
-    );
-    let mut args = "command, ".to_string();
-    if !refusable.refuses.is_empty() {
-        out.push_str(&format!("        typed = _typed_refusal({packed})\n"));
-        args.push_str("typed, ");
-    }
-    (out, args)
-}
-
 /// The registration of the handler `_<method>` with `registrar`, for
 /// `message` by its full name.
 fn register(registrar: &str, message: &MessageDescriptor, method: &str) -> String {
@@ -222,23 +170,69 @@ fn register(registrar: &str, message: &MessageDescriptor, method: &str) -> Strin
     )
 }
 
-/// `if hasattr(logic, "<method>"):` registering `thunk` for `command`'s
-/// refusals with the client's `on_refused`: a domain's handler is optional
-/// (the interface's reference protocol, never subclassed), and one it does
-/// not define declines the refusal.
-fn register_refused(command: &MessageDescriptor, method: &str, thunk: &str) -> String {
-    let mut out = format!("    if hasattr(logic, \"{method}\"):\n");
-    out.push_str(&call(
-        8,
-        "dispatch.on_refused",
-        &format!("\"{}\", {thunk}", command.full_name()),
-    ));
-    out
+/// The table of the commands a policy's target declares (each by its full
+/// name: its wire type and its converter to the plain type) and
+/// `_target_command`, which unpacks the refused one: a bug when the target
+/// declares no such command.
+fn target_commands(unit: &Unit) -> String {
+    let entries: String = unit
+        .commands
+        .iter()
+        .map(|c| {
+            let (to, _) = converters(c);
+            format!("    \"{}\": ({}, {to}),\n", c.full_name(), pb2_class(c))
+        })
+        .collect();
+    format!(
+        "\n\n# Each command the target declares, by its full name: its wire type and\n\
+         # its converter to the plain type.\n\
+         _TARGET_COMMANDS = {{\n{entries}}}\n\n\n\
+         def _target_command(payload):\n    \
+         \"\"\"The command ``payload`` packs, as its plain type; a bug when the target\n    \
+         declares none such.\n    \
+         \"\"\"\n    \
+         entry = _TARGET_COMMANDS.get(payload.type_url.rpartition(\"/\")[2])\n    \
+         if entry is None:\n        \
+         raise _az.Bug(\"refused-command-unknown\")\n    \
+         wire, to_plain = entry\n    \
+         return to_plain(_decode(wire(), payload))\n"
+    )
+}
+
+/// The table of the typed refusals the target's commands name (each by its
+/// full name: its wire type and its converter to the plain type) and
+/// `_typed_refusal`, which unpacks the refusal a command was refused with:
+/// a bug when the answer holds none, or one the commands do not name (the
+/// callback is handed a typed refusal only, decision 14.95).
+fn typed_refusals(path: &RefusalPath) -> String {
+    let entries: String = path
+        .refusals
+        .iter()
+        .map(|r| {
+            let (to, _) = converters(r);
+            format!("    \"{}\": ({}, {to}),\n", r.full_name(), pb2_class(r))
+        })
+        .collect();
+    format!(
+        "\n\n# Each typed refusal the target's commands name, by its full name: its\n\
+         # wire type and its converter to the plain type.\n\
+         _TYPED_REFUSALS = {{\n{entries}}}\n\n\n\
+         def _typed_refusal(payload):\n    \
+         \"\"\"The typed refusal ``payload`` packs, as its plain type; a bug when it\n    \
+         packs none, or one the target's commands do not name.\n    \
+         \"\"\"\n    \
+         if not payload.type_url:\n        \
+         raise _az.Bug(\"refusal-without-object\")\n    \
+         entry = _TYPED_REFUSALS.get(payload.type_url.rpartition(\"/\")[2])\n    \
+         if entry is None:\n        \
+         raise _az.Bug(\"refusal-unknown\")\n    \
+         wire, to_plain = entry\n    \
+         return to_plain(_decode(wire(), payload))\n"
+    )
 }
 
 /// An aggregate's or a process manager's dispatch: its rebuilder of folds,
-/// a decision per command, a record per fact, and a record per pass-through
-/// refusal of a command its policies send, when its logic handles it.
+/// a decision per command and a record per fact.
 fn domain_dispatch(unit: &Unit, new: &str) -> String {
     let component = &unit.component;
     let mut out = table(
@@ -261,7 +255,6 @@ fn domain_dispatch(unit: &Unit, new: &str) -> String {
         ));
         out.push_str(DECIDED);
     }
-    out.push_str(&typed_refusals(unit));
     let (state_to, state_from) = converters(&component.anchor);
     out.push_str(&format!(
         "\n\n{new}\n    rebuilder = _az.Rebuilder({})\n",
@@ -278,9 +271,6 @@ fn domain_dispatch(unit: &Unit, new: &str) -> String {
     ));
     for input in &component.inputs {
         out.push_str(&input_handler(input, &state_to));
-    }
-    for refusable in &unit.refusable {
-        out.push_str(&refused_handler(refusable, &state_to));
     }
     out
 }
@@ -339,31 +329,12 @@ fn input_handler(input: &Input, state_to: &str) -> String {
     out
 }
 
-/// A domain's record of the pass-through refusal of `refusable`, a command
-/// its policies send, when its logic handles it; `state_to` its state's
-/// converter to the plain type.
-fn refused_handler(refusable: &Refusable, state_to: &str) -> String {
-    let method = format!("on_refused_{}", snake(refusable.command.name()));
-    let (body, args) = refused_command(refusable, "refused.command", "refused.refusal");
-    let mut out = format!("\n    def _{method}(refused, state, cctx):\n{body}");
-    out.push_str(&call(
-        8,
-        &format!("flags = logic.{method}"),
-        &format!("{args}{state_to}(state), cctx"),
-    ));
-    out.push_str("        return _az.FactRecord(refused, tuple(_wire(flags)))\n\n");
-    out.push_str(&register_refused(
-        &refusable.command,
-        &method,
-        &format!("_{method}"),
-    ));
-    out
-}
-
 /// A policy's dispatch: a reaction per event, its outputs addressed to
 /// the target domain, each in the arm the target declares (decision
-/// 14.69), and, when its source takes facts, the required translating
-/// callback per command of its target (decision 14.76).
+/// 14.69), and, when its target can refuse and its source takes facts, its
+/// one refusal callback over the target's commands and refusals (decisions
+/// 14.89, 14.99), registered for each command of the target that can be
+/// refused.
 fn policy_dispatch(unit: &Unit, new: &str) -> String {
     let component = &unit.component;
     let mut out = table(
@@ -395,14 +366,15 @@ fn policy_dispatch(unit: &Unit, new: &str) -> String {
          return books\n",
         target = component.output_domain,
     ));
-    if !unit.refusable.is_empty() {
+    if let Some(path) = &unit.refusal {
         out.push_str(&table(
             "Each fact of the source's plain type, and its converter to the wire.",
             "_FACTS",
             &unit.facts,
         ));
         out.push_str(FACT);
-        out.push_str(&typed_refusals(unit));
+        out.push_str(&target_commands(unit));
+        out.push_str(&typed_refusals(path));
     }
     out.push_str(&format!("\n\n{new}\n"));
     out.push_str(&call(
@@ -425,23 +397,20 @@ fn policy_dispatch(unit: &Unit, new: &str) -> String {
         ));
         out.push_str(&register("dispatch.on_event", event, &method));
     }
-    for refusable in &unit.refusable {
-        let method = format!("{}_refused", snake(refusable.command.name()));
-        let (body, args) =
-            refused_command(refusable, "refusal.command", "refusal.response.refusal");
-        out.push_str(&format!("\n    def _{method}(refusal, ctx):\n{body}"));
-        out.push_str(&call(
-            8,
-            &format!("return _fact(logic.{method}"),
-            &format!("{args}ctx)"),
-        ));
-        out.push('\n');
-        // Required (decision 14.76): the interface's abstract method.
-        out.push_str(&register(
-            "dispatch.on_refused",
-            &refusable.command,
-            &method,
-        ));
+    if let Some(path) = &unit.refusal {
+        out.push_str(
+            "\n    def _refused(refusal, ctx):\n        \
+             command = _target_command(refusal.command.page.command.payload)\n        \
+             typed = _typed_refusal(refusal.response.refusal)\n        \
+             return _fact(logic.refused(command, typed, ctx))\n\n",
+        );
+        for command in &path.refusable {
+            out.push_str(&call(
+                4,
+                "dispatch.on_refused",
+                &format!("\"{}\", _refused", command.full_name()),
+            ));
+        }
     }
     out
 }

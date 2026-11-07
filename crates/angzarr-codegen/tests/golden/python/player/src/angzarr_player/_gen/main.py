@@ -14,16 +14,16 @@ from angzarr_client.child import run_child
 
 from ._descriptor import DESCRIPTOR
 from ._version import __version__
-from .io.angzarr.examples.v1.player_aggregate_angzarr import (
-    new_player_aggregate_dispatch,
+from .io.angzarr.examples.v1.player_state_angzarr import (
+    new_player_state_dispatch,
 )
 from .logic import PlayerLogic
 
 
 def register(host: ComponentHost, player_logic: PlayerLogic) -> ComponentHost:
-    """The PlayerAggregate on ``host``, over the logic given."""
+    """The PlayerState on ``host``, over the logic given."""
     return host.add_aggregate(
-        new_player_aggregate_dispatch(player_logic), DESCRIPTOR
+        new_player_state_dispatch(player_logic), DESCRIPTOR
     )
 
 
