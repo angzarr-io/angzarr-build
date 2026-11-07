@@ -59,6 +59,22 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --all -- --check
 
+# cargo-deny over the workspace (deny.toml): licences, sources, advisories.
+lint-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p target/logs
+    if ! cargo deny --version >/dev/null 2>&1; then
+        echo "FAIL lint-deps: cargo-deny is not installed (cargo install cargo-deny --locked)" >&2
+        exit 1
+    fi
+    cargo deny --color never check --hide-inclusion-graph > target/logs/lint-deps.log 2>&1 || {
+        echo "FAIL lint-deps: see target/logs/lint-deps.log" >&2
+        grep -E '^(error|warning\[)' target/logs/lint-deps.log | head -40 >&2 || true
+        exit 1
+    }
+    echo "ok   lint-deps"
+
 # Apply rustfmt.
 fmt:
     cargo fmt --all
@@ -66,10 +82,9 @@ fmt:
 # Mutation kill-rate thresholds, percent, by crate path: a mutant is judged by
 # the longest prefix its file is under, and one under none fails the gate, so
 # a new crate gets a threshold before it gets code. angzarr-codegen is at 100:
-# its close-out runs reached 0 missed. The others are proposed at 90, the bar
-# the org's other Rust repositories hold, until a full pass (`just
-# mutants-all`) measures them.
-mutation_thresholds := "crates/angzarr-codegen=100 crates/angzarr-build=90 crates/angzarr-cli=90 crates/angzarr-fmt=90"
+# its close-out runs reached 0 missed. angzarr-build is at 90, the bar the
+# org's other Rust repositories hold.
+mutation_thresholds := "crates/angzarr-codegen=100 crates/angzarr-build=90"
 
 # Mutation-test the whole workspace, judged by `mutation_thresholds`: the full
 # pass, for a scheduled run (slow: a generated-code test builds and runs a
@@ -79,11 +94,9 @@ mutants-all:
 
 # The branches red tests never reach, besides the remote's default branch
 # (<remote>/HEAD, else main): the lines that integrate here (bash globs).
-# This repository's integration line is poc/local-wiring, not its default
-# branch, and nothing in it names that line (origin/HEAD is main), so it is
-# listed: add a line here when one starts integrating, drop it when it stops.
+# Add a line here when another branch starts integrating.
 # test-commit (pre-commit) and push-check (pre-push) both read it.
-PROTECTED_BRANCHES := "poc/local-wiring"
+PROTECTED_BRANCHES := "main"
 
 # lefthook's pre-push step, given the remote's name and git's pushed refs on
 # stdin. For each ref pushed, in that commit's tree checked out alone
@@ -94,8 +107,7 @@ PROTECTED_BRANCHES := "poc/local-wiring"
 # fetched here, the merge base with the first of the protected branches (the
 # remote's default branch, <remote>/HEAD else main, then each of
 # PROTECTED_BRANCHES; each the remote's ref, else the local one) it shares
-# history with, so a branch cut from poc/local-wiring, which shares none with
-# main, has a base. A commit sharing history with none of them is refused.
+# history with. A commit sharing history with none of them is refused.
 # The base only bounds the range reported: the tests always run on the
 # pushed commit's whole tree. A deleted ref passes at once. The push tree's
 # angzarr-project is the pushed commit's submodule commit, exported from this
@@ -108,7 +120,7 @@ PROTECTED_BRANCHES := "poc/local-wiring"
 # it, and is ignored. To check a push to the integration line by hand
 # without pushing:
 #
-#     echo "refs/heads/B $(git rev-parse HEAD) refs/heads/poc/local-wiring 0" | just push-check origin
+#     echo "refs/heads/B $(git rev-parse HEAD) refs/heads/main 0" | just push-check origin
 [positional-arguments]
 push-check remote *lefthook:
     #!/usr/bin/env bash

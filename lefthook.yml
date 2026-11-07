@@ -44,11 +44,13 @@ pre-commit:
       # [workspace.lints.clippy] and clippy.toml) and the rustfmt check.
       priority: 3
       run: just lint
+    deps:
+      priority: 4
+      run: just lint-deps
     tests:
       # Red tests are allowed off the protected branches (origin's default
-      # branch and the justfile's PROTECTED_BRANCHES: the integration line
-      # poc/local-wiring), with a warning (`just test-commit`).
-      priority: 4
+      # branch and the justfile's PROTECTED_BRANCHES), with a warning (`just test-commit`).
+      priority: 5
       run: just test-commit
 
 # No mutation testing in any hook: it runs while tests are written and judged
