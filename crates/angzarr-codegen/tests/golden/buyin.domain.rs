@@ -484,14 +484,12 @@ impl<S> ::angzarr_embedded::markup::Translation<S> for WalletStateFact
 where
     S: ::angzarr_embedded::markup::Ingests<RecordBuyInRefused>,
 {
-    fn fact(self) -> ::core::option::Option<::angzarr_embedded::Any> {
-        ::core::option::Option::Some(
-            match self {
-                WalletStateFact::RecordBuyInRefused(value) => {
-                    ::angzarr_embedded::markup::pack_message(&value)
-                }
-            },
-        )
+    fn fact(self) -> ::angzarr_embedded::Any {
+        match self {
+            WalletStateFact::RecordBuyInRefused(value) => {
+                ::angzarr_embedded::markup::pack_message(&value)
+            }
+        }
     }
 }
 /// A typed refusal of WalletState's commands: one arm per refusal message they name. What a policy sending WalletState is handed by its one refusal callback.
@@ -724,14 +722,12 @@ impl<S> ::angzarr_embedded::markup::Translation<S> for BuyInStateFact
 where
     S: ::angzarr_embedded::markup::Ingests<HoldLost>,
 {
-    fn fact(self) -> ::core::option::Option<::angzarr_embedded::Any> {
-        ::core::option::Option::Some(
-            match self {
-                BuyInStateFact::HoldLost(value) => {
-                    ::angzarr_embedded::markup::pack_message(&value)
-                }
-            },
-        )
+    fn fact(self) -> ::angzarr_embedded::Any {
+        match self {
+            BuyInStateFact::HoldLost(value) => {
+                ::angzarr_embedded::markup::pack_message(&value)
+            }
+        }
     }
 }
 /// A typed refusal of BuyInState's commands: one arm per refusal message they name. What a policy sending BuyInState is handed by its one refusal callback.

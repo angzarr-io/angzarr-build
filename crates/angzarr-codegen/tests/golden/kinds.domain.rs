@@ -819,17 +819,15 @@ where
     S: ::angzarr_embedded::markup::Ingests<Arrived>
         + ::angzarr_embedded::markup::Ingests<Swept>,
 {
-    fn fact(self) -> ::core::option::Option<::angzarr_embedded::Any> {
-        ::core::option::Option::Some(
-            match self {
-                LedgerStateFact::Arrived(value) => {
-                    ::angzarr_embedded::markup::pack_message(&value)
-                }
-                LedgerStateFact::Swept(value) => {
-                    ::angzarr_embedded::markup::pack_message(&value)
-                }
-            },
-        )
+    fn fact(self) -> ::angzarr_embedded::Any {
+        match self {
+            LedgerStateFact::Arrived(value) => {
+                ::angzarr_embedded::markup::pack_message(&value)
+            }
+            LedgerStateFact::Swept(value) => {
+                ::angzarr_embedded::markup::pack_message(&value)
+            }
+        }
     }
 }
 /// A typed refusal of LedgerState's commands: one arm per refusal message they name. What a policy sending LedgerState is handed by its one refusal callback.

@@ -731,10 +731,10 @@ fn fact_enum(component: &crate::model::Component) -> TokenStream {
         where
             S: #(#m::Ingests<#facts>)+*,
         {
-            fn fact(self) -> ::core::option::Option<#root::Any> {
-                ::core::option::Option::Some(match self {
+            fn fact(self) -> #root::Any {
+                match self {
                     #(#name::#facts(value) => #m::pack_message(&value),)*
-                })
+                }
             }
         }
     }
