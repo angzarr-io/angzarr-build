@@ -30,7 +30,7 @@ fn kind_of(words: &str) -> &'static str {
 /// A stateful component `name` owning `domain`, and what the scenario says
 /// of it after: an input, an event it folds, or that it names nothing.
 #[given(
-    regex = r#"^(an aggregate|a process manager) "([\w-]+)" owning domain "([\w-]+)"(?: with (?:(command|fact|message|input) )?"([^"]+)"| that folds "([^"]+)"| that takes no fact| that no \(command\), \(fact\) or \(event\) entry names)?$"#
+    regex = r#"^(an aggregate|a process manager) "([\w-]+)" owning domain "([\w-]+)"(?: with (?:the )?(?:(command|fact|message|input) )?"([^"]+)"| that folds "([^"]+)"(?: and takes no fact)?| that takes no fact| that no \(command\), \(fact\) or \(event\) entry names)?$"#
 )]
 fn stateful(
     w: &mut Generator,
@@ -62,31 +62,34 @@ fn stateful(
 }
 
 #[given(
-    regex = r#"^(an aggregate|a process manager)(?: component)? "(\w+)" owning domain "([\w-]+)" whose state message is "([^"]+)"$"#
+    regex = r#"^(an aggregate|a process manager)(?: component)? "(\w+)" owning domain "([\w-]+)" whose state message is "([^"]+)"(?: with input "([^"]+)")?$"#
 )]
-fn with_state(w: &mut Generator, words: String, name: String, domain: String, state: String) {
+fn with_state(
+    w: &mut Generator,
+    words: String,
+    name: String,
+    domain: String,
+    state: String,
+    input: String,
+) {
     w.declare(&name, &full(&state), kind_of(&words)).domain = Some(domain);
-}
-
-#[given(regex = r#"^(an aggregate|a process manager|a projector) component "([\w-]+)"$"#)]
-fn component_of_kind(w: &mut Generator, words: String, name: String) {
-    let kind = kind_of(&words);
-    let component = w.component(&name, kind, &name);
-    if kind != "PROJECTOR" {
-        component.domain = Some(name);
-    } else {
-        // A projector names an event (C-0855); the scenario's Given says
-        // none, so it is given one of the `order` domain, by override.
-        let projector = w.named(&name);
-        w.protos
-            .message("order.OrderPlaced")
-            .events
-            .push((projector, Some("order".to_string())));
+    if !input.is_empty() {
+        w.input(&input, &name);
     }
 }
 
-/// The amended reading of the projector Given of C-0716: the projector
-/// names its event.
+/// An aggregate or a process manager component, named by its domain (the
+/// outline of C-0716 leaves a trailing space where its row names no
+/// events).
+#[given(regex = r#"^(an aggregate|a process manager) component "([\w-]+)"\s*$"#)]
+fn component_of_kind(w: &mut Generator, words: String, name: String) {
+    w.component(&name, kind_of(&words), &name).domain = Some(name.clone());
+}
+
+/// The projector row of C-0716: the projector names its event. The row
+/// declares no aggregate, though its comment says the event's domain has
+/// one folding it: the entry carries the domain, as for an owner outside
+/// the set.
 #[given(regex = r#"^a projector component "([\w-]+)" whose \(event\) entries name "([^"]+)"$"#)]
 fn projector_component_with_event(w: &mut Generator, name: String, event: String) {
     w.component(&name, "PROJECTOR", &name);
@@ -107,6 +110,8 @@ fn anchored(w: &mut Generator, anchor: String, domain: String, name: String) {
     component.component_name = Some(name.trim_matches('"').replace("empty", ""));
 }
 
+/// The aggregates of the domains named, `<Domain>State` each (C-0582,
+/// which has no event to fold).
 #[given(regex = r#"^aggregates owning domains "([\w-]+)" and "([\w-]+)"$"#)]
 fn aggregates(w: &mut Generator, first: String, second: String) {
     for domain in [first, second] {
@@ -147,15 +152,6 @@ fn projector(w: &mut Generator, name: String, first: String, second: String) {
 fn starting_types(w: &mut Generator, name: String, listed: String) {
     let anchor = w.named(&name);
     let listed = full(&listed);
-    // A starting type is one of the process manager's own inputs (C-0860);
-    // where no message declares it yet, it is its command.
-    if w.protos
-        .messages
-        .get(&listed)
-        .is_none_or(|m| m.input.is_none())
-    {
-        w.input(&listed, &name);
-    }
     w.protos
         .message(&anchor)
         .component
@@ -206,7 +202,20 @@ fn no_event_entry(w: &mut Generator, event: String, component: String) {
     message.events.retain(|(named, _)| *named != component);
 }
 
-#[given(regex = r#"^no component in the descriptor set folds "([^"]+)"$"#)]
+#[given(regex = r#"^the entry for "([\w-]+)" has no domain override$"#)]
+fn no_override(w: &mut Generator, component: String) {
+    let component = w.named(&component);
+    let overridden = w.protos.messages.values().any(|m| {
+        m.events
+            .iter()
+            .any(|(named, domain)| *named == component && domain.is_some())
+    });
+    assert!(!overridden, "{component} has an override");
+}
+
+#[given(
+    regex = r#"^no (?:component in the descriptor set|aggregate or process manager) folds "([^"]+)"$"#
+)]
 fn no_folder(w: &mut Generator, event: String) {
     let event = full(&event);
     let entries = w.protos.message(&event).events.clone();

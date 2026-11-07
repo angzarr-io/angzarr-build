@@ -138,6 +138,8 @@ fn error_naming(w: &mut Generator, name: String, rest: String) {
         Some(why(|m| matches!(m, MarkupError::ForeignRefusal { .. })))
     } else if rest.contains(": it names no event") {
         Some(why(|m| matches!(m, MarkupError::NoEvent { .. })))
+    } else if rest.contains(": it has no owner") {
+        Some(why(|m| matches!(m, MarkupError::EventWithoutSource { .. })))
     } else if rest.contains("its source domains") {
         Some(why(|m| matches!(m, MarkupError::PolicySources { .. })))
     } else if rest.contains("the override on its entry") {

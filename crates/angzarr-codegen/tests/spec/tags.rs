@@ -37,6 +37,15 @@ const UNBOUND_GENERATED: Tag = Tag {
     why: "the generated code's shape: the output generators are stage 3 of the generator rewrite",
 };
 
+/// A hand-written handler attribute that disagrees with the message's
+/// option: the generator writes the attribute from the option, so it
+/// never meets one; a source of the user's carrying one is read by no
+/// entry point yet (a design question, reported with the stage).
+const UNBOUND_HANDWRITTEN: Tag = Tag {
+    name: "unbound_handwritten_attribute",
+    why: "a hand-written attribute contradicting the option: no entry point reads a user's markup against the protos",
+};
+
 /// Every tagged scenario, by ID or outline row, in the tier's file order.
 const TAGGED: &[(&str, Tag)] = &[
     // component_options.feature
@@ -48,6 +57,8 @@ const TAGGED: &[(&str, Tag)] = &[
     ("C-0864", UNBOUND_GENERATED),
     ("C-0794", UNBOUND_GENERATED),
     ("C-0797", UNBOUND_GENERATED),
+    ("C-0876", UNBOUND_BUILT),
+    ("C-0877", UNBOUND_HANDWRITTEN),
     // descriptor.feature
     ("C-0565", UNBOUND_BUILT),
 ];
