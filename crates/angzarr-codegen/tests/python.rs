@@ -69,7 +69,7 @@ fn test_scaffold_python_writes_the_projects_files_each_with_its_owner() {
         "io/angzarr/__init__.py",
         "io/angzarr/examples/__init__.py",
         "io/angzarr/examples/v1/__init__.py",
-        "io/angzarr/examples/v1/player_aggregate_angzarr.py",
+        "io/angzarr/examples/v1/player_state_angzarr.py",
         "_descriptor.py",
         "_version.py",
         "domain.py",
@@ -145,7 +145,7 @@ fn test_main_py_registers_the_logic_it_is_handed_with_its_generated_descriptor()
     for expected in [
         "from ._descriptor import DESCRIPTOR\n",
         "from .logic import PlayerLogic\n",
-        "new_player_aggregate_dispatch(player_logic), DESCRIPTOR",
+        "new_player_state_dispatch(player_logic), DESCRIPTOR",
         "def run(player_logic: PlayerLogic) -> None:",
     ] {
         assert!(main.contains(expected), "{expected}:\n{main}");
@@ -166,17 +166,15 @@ fn test_main_py_registers_the_logic_it_is_handed_with_its_generated_descriptor()
 }
 
 /// The interface is an ABC of the required methods, so an implementation
-/// lacking one fails to instantiate; the refusal callbacks are optional,
-/// declared in a reference protocol the implementation never subclasses,
-/// so `hasattr` says whether it has one (item S Q2).
+/// lacking one fails to instantiate. A domain has no optional methods: a
+/// refusal of a command its policies send is theirs to translate, so the
+/// domain is handed no pass-through refusal, and the interface declares
+/// no reference protocol of refusal callbacks.
 #[test]
 fn test_the_interface_is_an_abc_of_the_required_methods_alone() {
     let files = player();
     let logic = &file(&files, INTERFACE).source;
     let abc = &logic[logic.find("class PlayerLogic(ABC):").expect("the ABC")..];
-    let (abc, refusals) = abc
-        .split_once("class PlayerRefusals(Protocol):")
-        .expect("the protocol");
     assert!(
         abc.contains("    @abstractmethod\n    def decide_move("),
         "{abc}"
@@ -185,18 +183,18 @@ fn test_the_interface_is_an_abc_of_the_required_methods_alone() {
         abc.contains("    @abstractmethod\n    def apply_move_decided("),
         "{abc}"
     );
-    assert!(!abc.contains("on_refused_"), "{abc}");
-    assert!(refusals.contains("    def on_refused_hit("), "{refusals}");
-    assert!(!refusals.contains("@abstractmethod"), "{refusals}");
+    for gone in ["on_refused_", "Protocol", "PlayerRefusals"] {
+        assert!(!logic.contains(gone), "{gone}:\n{logic}");
+    }
     let implementation = &file(&files, IMPL).source;
     assert!(
         implementation.contains("class PlayerLogicImpl(PlayerLogic):"),
         "{implementation}"
     );
-    assert!(
-        !implementation.contains("PlayerRefusals)"),
-        "{implementation}"
-    );
+    for gone in ["on_refused_", "PlayerRefusals", "optional"] {
+        assert!(!implementation.contains(gone), "{gone}:\n{implementation}");
+    }
+    assert!(file(&files, IMPL).optional.is_empty());
 }
 
 #[test]
@@ -252,36 +250,35 @@ fn test_the_users_files_name_nothing_of_the_harness() {
     }
 }
 
-/// A decision fails in one of two classes, both angzarr-client-python's,
-/// re-exported by the domain module: `Rejection`, a business "no" under a
-/// business status (FAILED_PRECONDITION unless given), and `Bug`, a defect
-/// the runtime alerts and dead-letters (ROUTER_REASON_UNHANDLED_HANDLER_ERROR,
-/// its key the cause). Each is a diagnostic key and its args, never text.
+/// A decision fails in one class of angzarr-client-python's, re-exported by
+/// the domain module: `Bug`, a defect the runtime alerts and dead-letters
+/// (ROUTER_REASON_UNHANDLED_HANDLER_ERROR, its key the cause), a diagnostic
+/// key and its args, never text. A business "no" is a returned typed
+/// refusal, never a raised untyped `Rejection` (decision 14.95).
 #[test]
-fn test_domain_py_gives_the_logic_its_rejection_and_its_bug() {
+fn test_domain_py_gives_the_logic_its_bug_and_no_untyped_rejection() {
     let files = player();
     let domain = &file(&files, "src/angzarr_player/_gen/domain.py").source;
-    assert!(
-        !domain.contains("(FAILED_PRECONDITION);"),
-        "a rejection is not FAILED_PRECONDITION alone:\n{domain}"
-    );
     for expected in [
-        "# - Rejection(key, [status,] **args):",
-        "INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, OUT_OF_RANGE",
-        "PERMISSION_DENIED",
+        "# - Bug(key, **args):",
         "from angzarr_client.router import Bug as Bug\n",
-        "from angzarr_client.router import Rejection as Rejection\n",
         "from angzarr_client.router import CommandContext as CommandContext\n",
     ] {
         assert!(domain.contains(expected), "{expected}:\n{domain}");
     }
-    for gone in ["class Rejection(", "_CodedError", "_GrpcCode"] {
+    for gone in [
+        "Rejection",
+        "PERMISSION_DENIED",
+        "class Bug(",
+        "_CodedError",
+        "_GrpcCode",
+    ] {
         assert!(!domain.contains(gone), "{gone}:\n{domain}");
     }
 }
 
 /// A message named as one of the names `domain.py` gives the harness's
-/// types (`CommandContext`, `Rejection`) is refused, never renamed.
+/// types (`CommandContext`, `Refused`) is refused, never renamed.
 #[test]
 fn test_scaffold_python_refuses_a_message_named_as_a_reserved_name() {
     const FILE: &str = "bad/v1/reserved_name.proto";
@@ -313,7 +310,8 @@ fn test_scaffold_python_refuses_a_message_named_bug() {
     );
 }
 
-/// The dispatch hands each decision the harness's context of the command.
+/// The dispatch hands each decision the harness's context of the command;
+/// DecideMove refuses nothing, so its events go out as the book.
 #[test]
 fn test_the_dispatch_hands_each_decision_its_context() {
     let files = player();
@@ -324,7 +322,7 @@ fn test_the_dispatch_hands_each_decision_its_context() {
     assert!(
         dispatch
             .source
-            .contains("return _decided(logic.decide_move(cmd, _to_player_state(state), cctx))"),
+            .contains("return _book(logic.decide_move(cmd, _to_player_state(state), cctx))"),
         "{}",
         dispatch.source
     );
@@ -385,9 +383,7 @@ def helper() -> int:
 "#;
 
 /// `--missing` adds the required methods the class lacks at its end, in
-/// the scaffold's order, and nothing of the user's text changes; never an
-/// optional refusal callback, which a user deletes to pass that refusal
-/// through (item S Q5).
+/// the scaffold's order, and nothing of the user's text changes.
 #[test]
 fn test_complete_adds_only_the_absent_required_methods_to_the_class() {
     let fresh = file(&player(), IMPL).clone();
@@ -401,14 +397,8 @@ fn test_complete_adds_only_the_absent_required_methods_to_the_class() {
     // The user's helper is not the scaffold's; a fold of a message the
     // protos no longer declare is.
     assert_eq!(completion.notes.obsolete, ["apply_move_undone"]);
-    assert!(
-        completion
-            .notes
-            .optional
-            .contains(&"on_refused_hit".to_string()),
-        "{:?}",
-        completion.notes.optional
-    );
+    // A domain has no optional method to report.
+    assert_eq!(completion.notes.optional, Vec::<String>::new());
 }
 
 /// Kept, the file is never written: what it lacks is reported.
@@ -420,10 +410,12 @@ fn test_complete_of_a_kept_class_reports_what_it_lacks() {
     assert_eq!(completion.notes.lacks, ["apply_move_decided"]);
 }
 
-/// `--on-refused` writes the refusal callback it names into an existing
-/// implementation that lacks it.
+/// `--on-refused` selected a domain's pass-through refusal handler, which
+/// the model retires (a policy translates the refusal itself): it names
+/// nothing now, so a domain's implementation is created with no handler it
+/// names and completing an existing one adds none.
 #[test]
-fn test_complete_adds_a_selected_refusal_callback() {
+fn test_on_refused_selects_no_handler_of_a_domain() {
     let selected = scaffold_python(
         &descriptors(BLACKJACK),
         &[PLAYER],
@@ -433,14 +425,10 @@ fn test_complete_adds_a_selected_refusal_callback() {
     )
     .unwrap();
     let fresh = file(&selected, IMPL).clone();
-    assert_eq!(fresh.selected, ["on_refused_hit"]);
+    assert!(fresh.selected.is_empty(), "{:?}", fresh.selected);
+    assert_eq!(fresh.source, file(&player(), IMPL).source);
     let completion = complete(&fresh, USER_IMPL, Existing::Keep).unwrap();
-    let completed = completion.completed.expect("on_refused_hit is added");
-    assert!(
-        completed.contains("    def on_refused_hit(\n"),
-        "{completed}"
-    );
-    assert!(!completed.contains("def on_refused_stand"), "{completed}");
+    assert_eq!(completion.completed, None);
     assert_eq!(completion.notes.lacks, ["apply_move_decided"]);
 }
 
@@ -526,9 +514,9 @@ fn test_the_logic_takes_and_returns_the_domains_plain_types() {
     assert!(logic.contains("class PlayerLogic(ABC):"), "{logic}");
     assert!(
         logic.contains(
-            "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) -> list[MoveDecided] | DecideMoveRefused: ..."
+            "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) -> list[MoveDecided]: ..."
         ),
-        "a decision: the command, the state and its context in, its events or its refusal out:\n{logic}"
+        "a decision: the command, the state and its context in, its events out:\n{logic}"
     );
     assert!(
         logic.contains("from .domain import (\n    CommandContext,\n"),
@@ -575,7 +563,7 @@ fn test_reroot_python_takes_the_longest_package_a_line_names() {
 fn test_complete_adds_an_absent_method_that_is_not_the_classes_last() {
     let fresh = file(&player(), IMPL).clone();
     let decide = "    def decide_move(\n        self, cmd: DecideMove, state: PlayerState, ctx: CommandContext\n    ) \
-                  -> list[MoveDecided] | DecideMoveRefused:\n        raise NotImplementedError  # TODO: decide DecideMove\n";
+                  -> list[MoveDecided]:\n        raise NotImplementedError  # TODO: decide DecideMove\n";
     let user = fresh.source.replace(&format!("{decide}\n"), "");
     assert_ne!(user, fresh.source);
     let completed = complete(&fresh, &user, Existing::Complete)
@@ -682,7 +670,7 @@ fn basket_file(path: &str) -> String {
     file(&basket(), path).source.clone()
 }
 
-const DISPATCH: &str = "src/angzarr_store/_gen/pyshop/v1/basket_angzarr.py";
+const DISPATCH: &str = "src/angzarr_store/_gen/pyshop/v1/basket_state_angzarr.py";
 
 #[test]
 fn test_scaffold_python_types_each_field_shape_with_its_default() {

@@ -1,16 +1,17 @@
 //! The Python scaffold of every component kind (decision 14.50): a
-//! projector over several source domains with an async logic, a policy, a
-//! process manager with a fact, typed refusals (several to a command, the
+//! projector over several source domains with an async logic, a policy with
+//! its one refusal callback, a process manager with a fact, typed refusals
+//! (several to a command, each under the status its message declares, the
 //! domain's rejection codes as a Reason enum) and each emits cardinality,
-//! the component's name from the proto. Each generated file sits behind
+//! the component's name from the proto (`component_name`, no default). Each generated file sits behind
 //! angzarr-client-python's public API, so a hand-written one replaces it:
 //! the generated code imports nothing else of the client.
 
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate, UseError, refusal_key,
-    scaffold_python,
+    CodegenError, MarkupError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate, UseError,
+    refusal_key, scaffold_python,
 };
 use common::*;
 
@@ -21,6 +22,9 @@ const POLICIES: &str = "io/angzarr/examples/v1/policies.proto";
 const BUY_IN: &str = "io/angzarr/examples/v1/buy_in.proto";
 const TABLE: &str = "io/angzarr/examples/v1/table.proto";
 const TILL: &[&str] = &["pyshop/v1/till.proto"];
+const KINDS: &str = "kinds/v1/kinds.proto";
+const BARE: &[&str] = &["bare/v1/bare.proto"];
+const STATUSES: &[&str] = &["statuses/v1/statuses.proto"];
 
 fn app(domain: &str) -> PythonApp {
     PythonApp {
@@ -74,16 +78,29 @@ fn assert_has(text: &str, expected: &[&str]) {
 
 // ------------------------------------------------------------ projector
 
-/// The ledger: one projector over the table and the wallet
-/// (`input_domains`), named by its `component_name`.
+/// The wallet ledger: a projector of the wallet's events, named by its
+/// `component_name` (decision 14.96: a spec projector has one source).
 fn ledger() -> Vec<ScaffoldFile> {
-    blackjack(LEDGER, "projector-wallet-table-ledger")
+    blackjack(LEDGER, "projector-wallet-ledger")
+}
+
+/// The kinds' ledger view: one projector of two source domains, its sources
+/// derived from the owners of the events it names.
+fn view() -> Vec<ScaffoldFile> {
+    scaffold_python(
+        &descriptors(&[KINDS]),
+        &[KINDS],
+        &app("projector-ledger-view"),
+        &[],
+        &[],
+    )
+    .unwrap()
 }
 
 #[test]
 fn test_a_projector_is_scaffolded_under_its_component_name() {
     let files = ledger();
-    let package = "src/angzarr_projector_wallet_table_ledger";
+    let package = "src/angzarr_projector_wallet_ledger";
     for (path, owner) in [
         (format!("{package}/_gen/logic.py"), Owner::Generated),
         (format!("{package}/logic_impl.py"), Owner::User),
@@ -91,7 +108,7 @@ fn test_a_projector_is_scaffolded_under_its_component_name() {
         (format!("{package}/_gen/main.py"), Owner::Generated),
         (format!("{package}/__main__.py"), Owner::User),
         (
-            format!("{package}/_gen/io/angzarr/examples/v1/ledger_projector_angzarr.py"),
+            format!("{package}/_gen/io/angzarr/examples/v1/wallet_ledger_projection_angzarr.py"),
             Owner::Generated,
         ),
     ] {
@@ -100,61 +117,55 @@ fn test_a_projector_is_scaffolded_under_its_component_name() {
     }
 }
 
-/// Its logic is async: one coroutine per projected event, of either
-/// source domain, taking the projection and the event in the domain's
-/// plain types and returning the next projection.
 #[test]
 fn test_a_projectors_logic_projects_each_event_of_every_source_asynchronously() {
-    let files = ledger();
+    let files = view();
     let logic = source(&files, "/logic.py");
     assert!(logic.contains("    PageContext,\n"), "{logic}");
     assert!(!logic.contains("CommandContext"), "{logic}");
     assert_has(
         logic,
         &[
-            "class LedgerProjectorLogic(ABC):",
-            "async def project_round_settled(self, projection: LedgerProjection, \
-             event: RoundSettled, ctx: PageContext) -> LedgerProjection: ...",
-            "async def project_funds_held(self, projection: LedgerProjection, \
-             event: FundsHeld, ctx: PageContext) -> LedgerProjection: ...",
+            "class LedgerViewLogic(ABC):",
+            "async def project_posted(self, projection: LedgerView, \
+             event: Posted, ctx: PageContext) -> LedgerView: ...",
+            "async def project_audited(self, projection: LedgerView, \
+             event: Audited, ctx: PageContext) -> LedgerView: ...",
         ],
     );
     let implementation = source(&files, "/logic_impl.py");
     assert_has(
         implementation,
         &[
-            "class LedgerProjectorLogicImpl(LedgerProjectorLogic):",
-            "async def project_round_settled(self, projection: LedgerProjection, \
-             event: RoundSettled, ctx: PageContext) -> LedgerProjection: \
-             raise NotImplementedError # TODO: project RoundSettled",
+            "class LedgerViewLogicImpl(LedgerViewLogic):",
+            "async def project_posted(self, projection: LedgerView, \
+             event: Posted, ctx: PageContext) -> LedgerView: \
+             raise NotImplementedError # TODO: project Posted",
         ],
     );
 }
 
-/// The dispatch is the client's public `ProjectorDispatch`, named for the
-/// component, folding books of both sources; each event's coroutine runs
-/// to its end on the dispatch's one event loop.
 #[test]
 fn test_a_projectors_dispatch_folds_both_sources_through_its_coroutines() {
-    let files = ledger();
-    let dispatch = source(&files, "ledger_projector_angzarr.py");
+    let files = view();
+    let dispatch = source(&files, "ledger_view_angzarr.py");
     assert_has(
         dispatch,
         &[
-            "def new_ledger_projector_dispatch(logic: LedgerProjectorLogic) -> _az.ProjectorDispatch:",
-            "dispatch = _az.ProjectorDispatch(\"projector-wallet-table-ledger\", _ledger.LedgerProjection)",
-            "dispatch.for_domains(\"table\", \"wallet\")",
-            "projected = _run(logic.project_round_settled(_to_ledger_projection(projection), event, ctx))",
-            "projection.CopyFrom(_from_ledger_projection(projected))",
-            "dispatch.on_event(\"io.angzarr.examples.v1.RoundSettled\", _project_round_settled)",
-            "dispatch.on_event(\"io.angzarr.examples.v1.FundsHeld\", _project_funds_held)",
+            "def new_ledger_view_dispatch(logic: LedgerViewLogic) -> _az.ProjectorDispatch:",
+            "dispatch = _az.ProjectorDispatch(\"projector-ledger-view\", _kinds.LedgerView)",
+            "dispatch.for_domains(\"ledger\", \"audit\")",
+            "projected = _run(logic.project_posted(_to_ledger_view(projection), event, ctx))",
+            "projection.CopyFrom(_from_ledger_view(projected))",
+            "dispatch.on_event(\"kinds.v1.Posted\", _project_posted)",
+            "dispatch.on_event(\"kinds.v1.Audited\", _project_audited)",
             "return asyncio.run_coroutine_threadsafe(coroutine, _LOOP).result()",
         ],
     );
     let main = source(&files, "/main.py");
     assert_has(
         main,
-        &["host.add_projector(new_ledger_projector_dispatch(ledger_projector_logic), DESCRIPTOR)"],
+        &["host.add_projector(new_ledger_view_dispatch(ledger_view_logic), DESCRIPTOR)"],
     );
 }
 
@@ -175,7 +186,7 @@ fn test_a_map_field_is_a_dict_of_its_plain_type() {
     assert!(!domain.contains("CommandContext"), "{domain}");
     // A map's entry is no plain type of its own.
     assert!(!domain.contains("Entry"), "{domain}");
-    let dispatch = source(&files, "ledger_projector_angzarr.py");
+    let dispatch = source(&files, "wallet_ledger_projection_angzarr.py");
     assert_has(
         dispatch,
         &[
@@ -207,22 +218,14 @@ fn test_a_command_with_no_emits_returns_a_list_of_any_of_its_domains_events() {
     );
 }
 
-/// A domain with no events at all: a command with no emits returns
-/// nothing, or its refusal.
 #[test]
 fn test_a_command_with_no_emits_of_a_domain_with_no_events_returns_none() {
-    let files = scaffold_python(
-        &descriptors(&["lone/v1/lone.proto"]),
-        &["lone/v1/lone.proto"],
-        &app("slots"),
-        &[],
-        &[],
-    )
-    .unwrap();
+    let files = scaffold_python(&descriptors(BARE), BARE, &app("bare"), &[], &[]).unwrap();
     assert_has(
         source(&files, "/logic.py"),
         &[
-            "def book(self, cmd: Book, state: SlotState, ctx: CommandContext) -> None | BookRefuses: ...",
+            "def touch(self, cmd: Touch, state: BareState, ctx: CommandContext) -> None: ...",
+            "def tap(self, cmd: Tap, state: BareState, ctx: CommandContext) -> None | TapRefused: ...",
         ],
     );
 }
@@ -245,10 +248,6 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
             "class TablePlayerPolicyLogic(ABC):",
             "def turn_started(self, event: TurnStarted, source: bytes, ctx: PageContext) \
              -> list[tuple[bytes, DecideMove | RecordMoveRefused]]: ...",
-            // Required (decision 14.76): the player refusing DecideMove is
-            // translated into a fact of the table.
-            "def decide_move_refused(self, command: DecideMove, refusal: DecideMoveRefused | None, \
-             ctx: CommandContext) -> ReleaseSeat | RecordMoveUndecided: ...",
         ],
     );
     for import in [
@@ -259,6 +258,10 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
         assert!(logic.contains(import), "{import}:\n{logic}");
     }
     assert!(!logic.contains("TablePlayerPolicy,"), "{logic}");
+    // The player's DecideMove cannot be refused: the policy needs no path
+    // for a refusal (C-0861), so no callback and no CommandContext.
+    assert!(!logic.contains("refused("), "{logic}");
+    assert!(!logic.contains("CommandContext"), "{logic}");
     let domain = source(&files, "/domain.py");
     assert_has(
         domain,
@@ -267,6 +270,7 @@ fn test_a_policys_logic_reacts_to_each_event_with_its_targets_commands() {
             "from angzarr_client.router import PageContext as PageContext",
         ],
     );
+    assert!(!domain.contains("CommandContext"), "{domain}");
 }
 
 /// A type its events and its target's commands both reach (`Card`, its
@@ -311,11 +315,17 @@ fn test_a_policys_dispatch_addresses_each_output_to_its_target() {
             // DecideMove is a command of the player's (decision 14.69).
             "_COMMANDS = {_d.DecideMove: _from_decide_move,}",
             "_SENT_FACTS = {_d.RecordMoveRefused: _from_record_move_refused,}",
-            "dispatch.on_refused(\"io.angzarr.examples.v1.DecideMove\", _decide_move_refused)",
             "book.page.command.payload.CopyFrom(_az.pack(to_wire(output)))",
             "dispatch.on_event(\"io.angzarr.examples.v1.TurnStarted\", _turn_started)",
         ],
     );
+    // Nothing it sends can be refused: no refusal path in the dispatch.
+    for gone in ["on_refused", "_typed_refusal", "_fact(", "_FACTS = "] {
+        assert!(
+            !dispatch.replace("_SENT_FACTS = ", "").contains(gone),
+            "{gone}:\n{dispatch}"
+        );
+    }
     let main = source(&files, "/main.py");
     assert_has(
         main,
@@ -349,7 +359,7 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
              ctx: CommandContext) -> list[BuyInSeatLost | HoldReleaseDue | SeatReleaseDue]: ...",
         ],
     );
-    let dispatch = source(&files, "buy_in_process_manager_angzarr.py");
+    let dispatch = source(&files, "buy_in_state_angzarr.py");
     assert_has(
         dispatch,
         &[
@@ -361,12 +371,20 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
     let main = source(&files, "/main.py");
     assert_has(
         main,
-        &[
-            "host.add_process_manager(new_buy_in_process_manager_dispatch(buy_in_logic), DESCRIPTOR)",
-        ],
+        &["host.add_process_manager(new_buy_in_state_dispatch(buy_in_logic), DESCRIPTOR)"],
     );
     let domain = source(&files, "/domain.py");
     assert_has(domain, &["class BuyInStatePhase(enum.IntEnum):"]);
+    // Its starting types are in its descriptor, beside its domain.
+    let descriptor = source(&files, "/_descriptor.py");
+    let hex: String = descriptor
+        .lines()
+        .filter_map(|l| l.strip_prefix("        \"")?.strip_suffix('"'))
+        .collect();
+    assert!(
+        hex.contains(&hex_of("io.angzarr.examples.v1.StartBuyIn")),
+        "{hex}"
+    );
 }
 
 // ------------------------------------------------ refusals, lists
@@ -415,7 +433,13 @@ fn test_the_dispatch_refuses_with_a_returned_typed_refusal() {
             "return _decided(logic.charge(cmd, _to_till_state(state), cctx))",
             // A command refusing nothing answers its events as before.
             "return _book(logic.settle(cmd, _to_till_state(state), cctx))",
+            // Each event is the page's `event` arm.
+            "book.pages.add().event.CopyFrom(_az.pack(wire))",
         ],
+    );
+    assert!(
+        !dispatch.contains(".payload.CopyFrom(_az.pack(wire))"),
+        "{dispatch}"
     );
     // The client's Refused takes the status: nothing sets it afterwards.
     assert!(!dispatch.contains(".grpc"), "{dispatch}");
@@ -423,7 +447,10 @@ fn test_the_dispatch_refuses_with_a_returned_typed_refusal() {
 
 /// A refusal's codes are its Reason enum, each value by its name without
 /// the enum's prefix (the ErrorInfo.reason on the wire); its diagnostic
-/// key is the refusal's full name and its reason, its args its set fields.
+/// key is the refusal's full name and its reason, its args its set fields,
+/// and its status is its message's `(refusal_status)`, whatever its reason:
+/// the till's refusal is OUT_OF_RANGE (11) for every code, the card's
+/// FAILED_PRECONDITION (9).
 #[test]
 fn test_a_refusals_reason_enum_is_its_rejection_code() {
     let files = till();
@@ -446,8 +473,8 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
         domain,
         "r = TillRefused(reason=TillRefusedReason.OVER_LIMIT, limit=5)\n\
          assert r.status() == 11, r.status()\n\
-         assert TillRefused(reason=TillRefusedReason.TILL_CLOSED).status() == 9\n\
-         assert TillRefused().status() == 9\n\
+         assert TillRefused(reason=TillRefusedReason.TILL_CLOSED).status() == 11\n\
+         assert TillRefused().status() == 11\n\
          assert CardDeclined().status() == 9\n\
          assert r.key() == 'pyshop-v1-tillrefused-over-limit', r.key()\n\
          assert r.args() == {'reason': 'OVER_LIMIT', 'limit': 5}, r.args()\n\
@@ -524,8 +551,6 @@ fn test_a_refusals_key_is_the_same_in_python_as_in_rust() {
     }
 }
 
-/// The spec's table: every command refusing the table's codes, ConfirmSeat
-/// its own, the cardinalities table.proto declares.
 #[test]
 fn test_the_spec_table_is_scaffolded() {
     let files = blackjack(TABLE, "table");
@@ -534,17 +559,17 @@ fn test_the_spec_table_is_scaffolded() {
         logic,
         &[
             "def place_bet(self, cmd: PlaceBet, state: TableState, ctx: CommandContext) \
-             -> list[BetPlaced] | TableRefused: ...",
+             -> list[BetPlaced] | TableNotFound | NotSeated | RoundInProgress | AlreadyBet | InsufficientStack | BetOutOfRange | BetNotEven: ...",
             "def confirm_seat(self, cmd: ConfirmSeat, state: TableState, ctx: CommandContext) \
              -> list[PlayerSeated] | SeatNotConfirmable: ...",
             // A fact: the buy-in's compensation (ruling 9, decision 14.69).
             "def release_seat(self, fact: ReleaseSeat, state: TableState, ctx: CommandContext) \
              -> list[SeatReleased]: ...",
             "def hit(self, cmd: Hit, state: TableState, ctx: CommandContext) \
-             -> list[CardDealt | TurnStarted | DealerPlayed | RoundSettled] | TableRefused: ...",
+             -> list[CardDealt | TurnStarted | DealerPlayed | RoundSettled] | TableNotFound | NoRoundInProgress | NotYourTurn: ...",
         ],
     );
-    let dispatch = source(&files, "table_aggregate_angzarr.py");
+    let dispatch = source(&files, "table_state_angzarr.py");
     assert_has(
         dispatch,
         &["_az.AggregateDispatch(\"table\", \"table\", rebuilder)"],
@@ -553,23 +578,21 @@ fn test_the_spec_table_is_scaffolded() {
 
 // --------------------------------------------------------------- names
 
-/// The name an application knows a component by: its `component_name`,
-/// else its kind's default (`policy-<input>-<output>`, `pmg-<domain>`,
-/// an aggregate's domain), on its dispatch and its descriptor alike.
 #[test]
 fn test_each_component_takes_its_name_from_the_proto() {
     for (files, dispatch, name) in [
         (
             ledger(),
-            "ledger_projector_angzarr.py",
-            "projector-wallet-table-ledger",
+            "wallet_ledger_projection_angzarr.py",
+            "projector-wallet-ledger",
         ),
+        (view(), "ledger_view_angzarr.py", "projector-ledger-view"),
         (
             table_player(),
             "table_player_policy_angzarr.py",
             "policy-table-player",
         ),
-        (buy_in(), "buy_in_process_manager_angzarr.py", "pmg-buy-in"),
+        (buy_in(), "buy_in_state_angzarr.py", "pmg-buy-in"),
         (till(), "till_state_angzarr.py", "till"),
     ] {
         let source_ = source(&files, dispatch);
@@ -591,10 +614,22 @@ fn hex_of(text: &str) -> String {
     text.bytes().map(|b| format!("{b:02x}")).collect()
 }
 
-/// A projector with no `component_name` is `projector-` and its anchor's
-/// name in kebab case.
 #[test]
-fn test_a_projectors_default_name_is_its_anchor_in_kebab_case() {
+fn test_a_component_declaring_no_name_is_refused_with_no_default() {
+    const FILE: &str = "bad/v1/component_name_empty.proto";
+    assert_eq!(
+        scaffold_python(&descriptors(&[FILE]), &[FILE], &app("things"), &[], &[]),
+        Err(CodegenError::Markup(MarkupError::ComponentName {
+            component: "bad.v1.ThingState".to_string(),
+            name: String::new(),
+        }))
+    );
+}
+
+/// A projector's sources are its events' domains, in order, and its name its
+/// `component_name`.
+#[test]
+fn test_a_projectors_sources_are_its_events_domains() {
     const FILE: &str = "pyshop/v1/views.proto";
     let files = scaffold_python(
         &descriptors(&[FILE]),
@@ -609,7 +644,6 @@ fn test_a_projectors_default_name_is_its_anchor_in_kebab_case() {
         flat(dispatch).contains("_az.ProjectorDispatch(\"projector-http-server-view\""),
         "{dispatch}"
     );
-    // Its sources are its events' domains, in order.
     assert!(
         flat(dispatch).contains("dispatch.for_domains(\"pages\")"),
         "{dispatch}"
@@ -631,7 +665,6 @@ const PUBLIC_IMPORTS: &[&str] = &[
     "from angzarr_client.router import Bug as Bug",
     "from angzarr_client.router import CommandContext as CommandContext",
     "from angzarr_client.router import PageContext as PageContext",
-    "from angzarr_client.router import Rejection as Rejection",
 ];
 /// `angzarr_client.router.__all__` at the pinned client.
 const ROUTER_ALL: &[&str] = &[
@@ -662,7 +695,14 @@ const ROUTER_ALL: &[&str] = &[
 
 #[test]
 fn test_the_generated_code_uses_only_the_clients_public_api() {
-    for files in [ledger(), table_player(), buy_in(), till()] {
+    for files in [
+        ledger(),
+        view(),
+        table_player(),
+        buy_in(),
+        till(),
+        buyin_python("policy-buyin-wallet", &[]),
+    ] {
         for f in files.iter().filter(|f| f.path.ends_with(".py")) {
             for line in f.source.lines() {
                 let import = line.starts_with("from angzarr_client")
@@ -691,7 +731,14 @@ fn test_the_generated_code_uses_only_the_clients_public_api() {
 /// The user's files of every kind name nothing of the harness.
 #[test]
 fn test_the_users_files_of_every_kind_name_nothing_of_the_harness() {
-    for files in [ledger(), table_player(), buy_in(), till()] {
+    for files in [
+        ledger(),
+        view(),
+        table_player(),
+        buy_in(),
+        till(),
+        buyin_python("policy-buyin-wallet", &[]),
+    ] {
         for f in files
             .iter()
             .filter(|f| f.owner == Owner::User && f.path.ends_with(".py"))
@@ -712,8 +759,7 @@ fn run_domain(domain: &str, script: &str) -> std::process::Output {
     std::fs::write(client.join("__init__.py"), "").unwrap();
     std::fs::write(
         client.join("router.py"),
-        "class Bug(Exception): ...\nclass CommandContext: ...\nclass PageContext: ...\n\
-         class Rejection(Exception): ...\n",
+        "class Bug(Exception): ...\nclass CommandContext: ...\nclass PageContext: ...\n",
     )
     .unwrap();
     std::fs::write(dir.join("domain.py"), domain).unwrap();
@@ -763,7 +809,7 @@ fn test_a_projectors_input_domain_is_its_one_source() {
     .unwrap_or_else(|e| panic!("{e:?}"));
     let dispatch = source(&files, "_angzarr.py");
     assert!(
-        flat(dispatch).contains("dispatch.for_domains(\"visits\")"),
+        flat(dispatch).contains("dispatch.for_domains(\"pages\")"),
         "{dispatch}"
     );
 }
@@ -826,24 +872,22 @@ fn test_a_policy_whose_target_takes_facts_only_sends_its_facts() {
 /// same descriptor.
 #[test]
 fn test_a_projectors_descriptor_lists_its_sources_in_order() {
-    let files = ledger();
+    let files = view();
     let descriptor = source(&files, "/_descriptor.py");
     let hex: String = descriptor
         .lines()
         .filter_map(|l| l.strip_prefix("        \"")?.strip_suffix('"'))
         .collect();
-    let input = |domain: &str| {
-        format!(
-            "1a{:02x}0a{:02x}{}",
-            domain.len() + 2,
-            domain.len(),
-            hex_of(domain)
-        )
+    // The projector's arm of the descriptor: its input domains, each a
+    // string, in the order of its dispatch's.
+    let sources = |domains: &[&str]| {
+        let inner: String = domains
+            .iter()
+            .map(|d| format!("0a{:02x}{}", d.len(), hex_of(d)))
+            .collect();
+        format!("32{:02x}{inner}", inner.len() / 2)
     };
-    assert!(
-        hex.contains(&format!("{}{}", input("table"), input("wallet"))),
-        "{hex}"
-    );
+    assert!(hex.contains(&sources(&["ledger", "audit"])), "{hex}");
 }
 
 // ------------------------------------------------------------- refusals
@@ -889,141 +933,96 @@ fn assert_parses(path: &str, source: &str) {
     );
 }
 
-/// A domain whose policies send commands handles the pass-through
-/// refusal (decision 14.31, the coordinator's `CommandRefused`) of each,
-/// every one declaring a `refuses` type (decision 14.76), in
-/// `on_refused_<command>`: the refused command, its typed refusal or None,
-/// the state and the context, returning the events that record it. The
-/// handler is optional, as item S built it; a generated policy always
-/// translates, so it serves a hand-written policy's pass-through.
 #[test]
-fn test_a_domain_handles_the_pass_through_refusal_of_each_command_its_policies_send() {
+fn test_a_domain_is_handed_no_pass_through_refusal() {
     let files = buyin_python("buyin", &[]);
     let logic = source(&files, "/logic.py");
-    assert_has(
-        logic,
-        &[
-            "def on_refused_hold(self, command: Hold, refusal: InsufficientFunds | None, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
-            "def on_refused_deposit(self, command: Deposit, refusal: DepositRefused | None, state: BuyInState, ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: ...",
-        ],
-    );
-    assert_has(
-        source(&files, "/logic_impl.py"),
-        &["raise NotImplementedError  # TODO: record the refusal of Hold"],
-    );
-    let domain = source(&files, "/domain.py");
-    for plain in ["class Hold:", "class InsufficientFunds:"] {
-        assert!(domain.contains(plain), "{plain}:\n{domain}");
+    // Retired (C-0613): the refusal of a command a policy sends goes to
+    // that policy's one callback, never to the source domain: no
+    // `on_refused_<command>`, no reference protocol, no optional method,
+    // and none of the target's types in the source's plain types.
+    for gone in ["on_refused", "Protocol", "BuyInRefusals", "refused("] {
+        assert!(!logic.contains(gone), "{gone}:\n{logic}");
     }
-    let dispatch = source(&files, "buy_in_angzarr.py");
-    assert_has(
-        dispatch,
-        &[
-            "\"buyin.v1.InsufficientFunds\": (_wallet.InsufficientFunds, _to_insufficient_funds)",
-            "entry = _TYPED_REFUSALS.get(payload.type_url.rpartition(\"/\")[2])",
-            "def _on_refused_hold(refused, state, cctx):",
-            "command = _to_hold(_decode(_wallet.Hold(), refused.command.page.command.payload))",
-            "typed = _typed_refusal(refused.refusal)",
-            "flags = logic.on_refused_hold(command, typed, _to_buy_in_state(state), cctx)",
-            "return _az.FactRecord(refused, tuple(_wire(flags)))",
-            "if hasattr(logic, \"on_refused_hold\"): dispatch.on_refused(\"buyin.v1.Hold\", _on_refused_hold)",
-            "if hasattr(logic, \"on_refused_deposit\"): dispatch.on_refused(\"buyin.v1.Deposit\", _on_refused_deposit)",
-        ],
-    );
-    assert_parses("buy_in_angzarr.py", dispatch);
+    let implementation = implementation(&files);
+    assert!(!implementation.source.contains("on_refused"));
+    assert!(!implementation.source.contains("optional"));
+    assert!(implementation.optional.is_empty());
+    assert!(implementation.selected.is_empty());
+    let domain = source(&files, "/domain.py");
+    for foreign in ["class Hold:", "class Deposit:", "class InsufficientFunds:"] {
+        assert!(!domain.contains(foreign), "{foreign}:\n{domain}");
+    }
+    let dispatch = source(&files, "buy_in_state_angzarr.py");
+    for gone in ["on_refused", "_typed_refusal", "_TYPED_REFUSALS", "hasattr"] {
+        assert!(!dispatch.contains(gone), "{gone}:\n{dispatch}");
+    }
+    assert_parses("buy_in_state_angzarr.py", dispatch);
     assert_parses("logic.py", logic);
 }
 
-/// A command the refusal switch translates reaches its source as the
-/// policy's fact, never as `CommandRefused`: the source's implementation is
-/// created with no `on_refused_<command>` for it, which stays optional in
-/// its interface; Deposit's, untranslated, stays.
-#[test]
-fn test_translate_drops_the_sources_pass_through_of_the_command_it_translates() {
-    let untranslated = buyin_python("buyin", &[]);
-    assert!(source(&untranslated, "/logic_impl.py").contains("def on_refused_hold("));
-    let files = buyin_python("buyin", &[translate_hold()]);
-    let implementation = source(&files, "/logic_impl.py");
-    assert!(
-        !implementation.contains("def on_refused_hold("),
-        "{implementation}"
-    );
-    assert!(
-        implementation.contains("def on_refused_deposit("),
-        "{implementation}"
-    );
-    assert!(source(&files, "/logic.py").contains("def on_refused_hold("));
-}
-
-/// A policy translates the refusal of every command of its target, in
-/// `<command>_refused` (decision 14.76; C-0612): taking the refused
-/// command, its typed refusal or None and the refused command's context,
-/// returning a fact of its source. Each is required, an abstract method of
-/// the interface; the implementation is created with each, the one the
-/// switch (`--translate`) names returning the fact it names; the dispatch
-/// registers each with the client's `on_refused`.
 #[test]
 fn test_a_policy_must_translate_each_refused_command() {
-    let files = buyin_python("policy-buyin-wallet", &[translate_hold()]);
+    let files = buyin_python("policy-buyin-wallet", &[]);
     let logic = source(&files, "/logic.py");
     assert!(!logic.contains("(Protocol):"), "{logic}");
+    // One callback, an abstract method: the command refused and the
+    // refusal, each a choice (a union a type checker holds exhaustive) of
+    // the target's commands and of their refusal messages, each once, and
+    // one of the source's facts out. It cannot decline: no None.
     assert_has(
         logic,
         &[
-            "@abstractmethod def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: ...",
-            "@abstractmethod def deposit_refused(self, command: Deposit, refusal: DepositRefused | None, ctx: CommandContext) -> HoldLost: ...",
+            "@abstractmethod def refused(self, command: Deposit | Hold, refusal: DepositRefused | InsufficientFunds, ctx: CommandContext) -> HoldLost: ...",
         ],
     );
+    assert_eq!(logic.matches("def refused(").count(), 1, "{logic}");
+    assert!(!logic.contains("_refused("), "{logic}");
+    assert!(!logic.contains("| None"), "{logic}");
     let implementation = source(&files, "/logic_impl.py");
     assert_has(
         implementation,
         &[
-            "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost: \
-             raise NotImplementedError # TODO: translate the refusal of Hold",
-            "def deposit_refused(self, command: Deposit, refusal: DepositRefused | None, ctx: CommandContext) -> HoldLost: \
-             raise NotImplementedError # TODO: translate the refusal of Deposit",
+            "def refused(self, command: Deposit | Hold, refusal: DepositRefused | InsufficientFunds, ctx: CommandContext) -> HoldLost: \
+             raise NotImplementedError # TODO: translate the refusal",
         ],
     );
+    assert_eq!(implementation.matches("def refused(").count(), 1);
     let domain = source(&files, "/domain.py");
     assert!(
         domain.contains("from angzarr_client.router import CommandContext as CommandContext"),
         "{domain}"
     );
-    let dispatch = source(&files, "buy_in_wallet_angzarr.py");
+    let dispatch = source(&files, "buy_in_wallet_policy_angzarr.py");
     assert_has(
         dispatch,
         &[
             "_FACTS = {_d.HoldLost: _from_hold_lost,}",
-            "def _hold_refused(refusal, ctx):",
-            "command = _to_hold(_decode(_wallet.Hold(), refusal.command.page.command.payload))",
+            "_TARGET_COMMANDS = {\"buyin.v1.Deposit\": (_wallet.Deposit, _to_deposit), \"buyin.v1.Hold\": (_wallet.Hold, _to_hold),}",
+            "def _refused(refusal, ctx):",
+            "command = _target_command(refusal.command.page.command.payload)",
             "typed = _typed_refusal(refusal.response.refusal)",
-            "return _fact(logic.hold_refused(command, typed, ctx))",
-            "dispatch.on_refused(\"buyin.v1.Hold\", _hold_refused)",
-            "dispatch.on_refused(\"buyin.v1.Deposit\", _deposit_refused)",
+            "return _fact(logic.refused(command, typed, ctx))",
+            "dispatch.on_refused(\"buyin.v1.Deposit\", _refused)",
+            "dispatch.on_refused(\"buyin.v1.Hold\", _refused)",
+            // A refusal that is not a typed one of the target is a bug, never
+            // a declined translation.
+            "raise _az.Bug(\"refused-command-unknown\")",
+            "raise _az.Bug(\"refusal-without-object\")",
+            "raise _az.Bug(\"refusal-unknown\")",
         ],
     );
     assert!(!dispatch.contains("hasattr"), "{dispatch}");
-    assert_parses("buy_in_wallet_angzarr.py", dispatch);
+    assert_parses("buy_in_wallet_policy_angzarr.py", dispatch);
     assert_parses("logic.py", logic);
 }
 
-/// The switch changes only the user's stub: the generated files are the
-/// same with it or without, and a stub it does not name returns any fact
-/// of the source.
 #[test]
-fn test_translate_names_only_the_fact_a_stub_returns() {
-    let plain = buyin_python("policy-buyin-wallet", &[]);
-    assert_has(
-        source(&plain, "/logic_impl.py"),
-        &[
-            "def hold_refused(self, command: Hold, refusal: InsufficientFunds | None, ctx: CommandContext) -> HoldLost:",
-        ],
-    );
-    let translated = buyin_python("policy-buyin-wallet", &[translate_hold()]);
-    for (a, b) in plain.iter().zip(&translated) {
-        if a.owner == Owner::Generated {
-            assert_eq!(a.source, b.source, "{}", a.path);
-        }
+fn test_translate_selects_nothing() {
+    for domain in ["policy-buyin-wallet", "buyin"] {
+        let plain = buyin_python(domain, &[]);
+        let translated = buyin_python(domain, &[translate_hold()]);
+        assert_eq!(plain, translated, "{domain}");
     }
 }
 
@@ -1043,22 +1042,24 @@ fn test_scaffold_python_refuses_translate_for_an_unknown_policy() {
     );
 }
 
-/// policy-player-table translates the table's refusal of a move into the
-/// player's RecordMoveRefused (decision 14.76): its dispatch registers a
-/// callback for each table command.
 #[test]
 fn test_a_policy_translates_into_its_sources_fact() {
     let files = blackjack(POLICIES, "policy-player-table");
     let domain = source(&files, "/domain.py");
     assert!(domain.contains("CommandContext"), "{domain}");
+    let logic = source(&files, "/logic.py");
+    assert_eq!(logic.matches("def refused(").count(), 1, "{logic}");
+    assert_has(logic, &["-> RecordMoveRefused: ..."]);
     let dispatch = source(&files, "player_table_policy_angzarr.py");
     assert_has(
         dispatch,
         &[
             "_FACTS = {_d.RecordMoveRefused: _from_record_move_refused,}",
-            "dispatch.on_refused(\"io.angzarr.examples.v1.Hit\", _hit_refused)",
+            "dispatch.on_refused(\"io.angzarr.examples.v1.Hit\", _refused)",
+            "dispatch.on_refused(\"io.angzarr.examples.v1.ConfirmSeat\", _refused)",
         ],
     );
+    assert_eq!(dispatch.matches("def _refused(").count(), 1);
 }
 
 /// The implementation's file, by suffix.
@@ -1069,38 +1070,33 @@ fn implementation(files: &[ScaffoldFile]) -> &ScaffoldFile {
         .expect("logic_impl.py")
 }
 
-/// A translating callback the switch selects returns the fact it selects;
-/// the reference protocol's, any fact of the source (the kinds ledger takes
-/// two).
 #[test]
-fn test_a_selected_translation_returns_the_fact_it_selects() {
-    let selection = Translate {
-        policy: "kinds.v1.LedgerAuditPolicy".to_string(),
-        command: "kinds.v1.Audit".to_string(),
-        fact: "kinds.v1.Arrived".to_string(),
-    };
-    const KINDS: &[&str] = &["kinds/v1/kinds.proto"];
+fn test_a_callback_returns_a_choice_of_the_sources_facts() {
     let files = scaffold_python(
-        &descriptors(KINDS),
-        KINDS,
+        &descriptors(&[KINDS]),
+        &[KINDS],
         &app("policy-ledger-audit"),
-        &[selection],
+        &[],
         &[],
     )
     .unwrap();
+    // The ledger takes two facts, and the audit's one command refuses two
+    // types: a choice each way.
+    assert_has(
+        source(&files, "/logic.py"),
+        &[
+            "def refused(self, command: Audit, refusal: PostRefused | Unreasoned, ctx: CommandContext) -> Arrived | Swept: ...",
+        ],
+    );
     let implementation = implementation(&files);
     assert_has(
         &implementation.source,
-        &["ctx: CommandContext) -> Arrived:"],
+        &["ctx: CommandContext) -> Arrived | Swept:"],
     );
     assert!(implementation.selected.is_empty());
     assert!(implementation.optional.is_empty());
-    assert_has(source(&files, "/logic.py"), &["-> Arrived | Swept: ..."]);
 }
 
-/// A policy has no optional callback: `--on-refused` selects nothing of a
-/// policy's, whose implementation is created with every callback, and the
-/// switch selects nothing either.
 #[test]
 fn test_a_policys_callbacks_are_never_selected() {
     let named = scaffold_python(
@@ -1112,41 +1108,62 @@ fn test_a_policys_callbacks_are_never_selected() {
     )
     .unwrap();
     let named = implementation(&named);
-    for callback in ["def deposit_refused(", "def hold_refused("] {
-        assert!(
-            named.source.contains(callback),
-            "{callback}:\n{}",
-            named.source
-        );
-    }
+    assert!(named.source.contains("def refused("), "{}", named.source);
     assert!(named.selected.is_empty());
-    let translated = buyin_python("policy-buyin-wallet", &[translate_hold()]);
-    assert!(implementation(&translated).selected.is_empty());
+    assert!(named.optional.is_empty());
 }
 
-/// A domain's refusal handlers are never the switch's to select: a
-/// translation leaves none selected; `--on-refused` selects the handler it
-/// names, which records events as every handler does, whatever the switch
-/// translates.
+/// A refusal is refused under the status its message declares
+/// (`(refusal_status)`, decision 14.95; there is no default), one number
+/// each of the six business statuses (`google.rpc.Code`).
 #[test]
-fn test_a_domains_handler_is_selected_by_on_refused_alone() {
-    let translated = buyin_python("buyin", &[translate_hold()]);
-    assert!(implementation(&translated).selected.is_empty());
-    let named = scaffold_python(
-        &descriptors(BUYIN),
-        BUYIN,
-        &app("buyin"),
-        &[translate_hold()],
-        &["buyin.v1.Hold".to_string()],
+fn test_a_refusal_is_refused_under_the_status_its_message_declares() {
+    let files = scaffold_python(&descriptors(STATUSES), STATUSES, &app("gate"), &[], &[]).unwrap();
+    let domain = source(&files, "/domain.py");
+    let out = run_domain(
+        domain,
+        "assert NotInRange().status() == 11\n\
+         assert BadInput().status() == 3\n\
+         assert Missing().status() == 5\n\
+         assert Taken().status() == 6\n\
+         assert Forbidden().status() == 7\n\
+         assert NotReady().status() == 9\n\
+         print('ok')\n",
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "ok\n");
+    // Read from the option: no default number stands in the source.
+    assert!(
+        !domain.contains("FAILED_PRECONDITION (9) where unmarked"),
+        "{domain}"
+    );
+}
+
+/// A policy whose target cannot refuse needs no path for a refusal
+/// (C-0861): no callback in its interface, no registration in its dispatch.
+#[test]
+fn test_a_policy_whose_target_cannot_refuse_has_no_refusal_callback() {
+    const UNREFUSED: &[&str] = &["unrefused/v1/unrefused.proto"];
+    let files = scaffold_python(
+        &descriptors(UNREFUSED),
+        UNREFUSED,
+        &app("policy-order-inventory"),
+        &[],
+        &[],
     )
     .unwrap();
-    let named = implementation(&named);
-    assert_eq!(named.selected, ["on_refused_hold"]);
-    assert_has(
-        &named.source,
-        &[
-            "ctx: CommandContext) -> list[BuyInStarted | BuyInHeld | BuyInFailed]: \
-           raise NotImplementedError # TODO: record the refusal of Hold",
-        ],
-    );
+    for (suffix, gone) in [
+        ("/logic.py", "refused("),
+        ("/logic_impl.py", "refused("),
+        ("order_to_inventory_policy_angzarr.py", "on_refused"),
+        ("order_to_inventory_policy_angzarr.py", "_typed_refusal"),
+        ("/domain.py", "CommandContext"),
+    ] {
+        let found = source(&files, suffix);
+        assert!(!found.contains(gone), "{suffix} has {gone}:\n{found}");
+    }
 }
