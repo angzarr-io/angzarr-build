@@ -143,20 +143,62 @@ fn a_projector_descriptor_takes_an_unowned_events_domain_from_the_entrys_overrid
     assert_eq!(audit.input_domains, ["audit"]);
 }
 
+/// shipping.proto's descriptors: its components' sources are derived from
+/// owners declared in orders.proto and fulfillment.proto.
+fn shipping() -> Vec<ComponentDescriptor> {
+    const SHIPPING: &str = "orders/v1/shipping.proto";
+    let set = common::descriptors(&[ORDERS, FULFILLMENT, SHIPPING]);
+    descriptors(&set, &[SHIPPING], VERSION)
+        .unwrap()
+        .iter()
+        .map(|d| ComponentDescriptor::decode(d.encoded.as_slice()).unwrap())
+        .collect()
+}
+
+fn shipped(name: &str) -> ComponentDescriptor {
+    shipping()
+        .into_iter()
+        .find(|d| d.name == name)
+        .unwrap_or_else(|| panic!("no descriptor of {name}"))
+}
+
 /// The owner of an event may be declared in another file than the
 /// component naming it (decision 14.78: the one aggregate or process
-/// manager of the descriptor set folding it).
+/// manager of the descriptor set folding it), and two events of one owner
+/// are one source.
 #[test]
 fn a_policys_source_is_derived_from_an_owner_in_another_file() {
-    const SHIPPING: &str = "orders/v1/shipping.proto";
-    let set = common::descriptors(&[ORDERS, SHIPPING]);
-    let all = descriptors(&set, &[SHIPPING], VERSION).unwrap();
-    assert_eq!(all.len(), 1);
-    let found = ComponentDescriptor::decode(all[0].encoded.as_slice()).unwrap();
-    assert_eq!(found.name, "policy-order-shipping");
-    let policy = policy(found);
+    let policy = policy(shipped("policy-order-shipping"));
     assert_eq!(policy.input_domain, "order");
     assert_eq!(policy.output_domain, "shipping");
+}
+
+/// A process manager owns the events it folds as an aggregate does.
+#[test]
+fn a_policys_source_is_a_process_managers_domain_when_it_owns_the_event() {
+    let policy = policy(shipped("policy-fulfillment-shipping"));
+    assert_eq!(policy.input_domain, "fulfillment");
+}
+
+/// A projector's sources are each owner's domain once, in the order of the
+/// events it names; an event no one owns, with no override, names none.
+#[test]
+fn a_projectors_sources_are_each_owners_domain_once_and_an_unowned_event_none() {
+    let board = projector(shipped("projector-shipping-board"));
+    assert_eq!(board.input_domains, ["order", "fulfillment"]);
+}
+
+#[test]
+fn only_the_files_asked_for_are_described() {
+    let names: Vec<String> = shipping().into_iter().map(|d| d.name).collect();
+    assert_eq!(
+        names,
+        [
+            "policy-order-shipping",
+            "policy-fulfillment-shipping",
+            "projector-shipping-board"
+        ]
+    );
 }
 
 #[test]

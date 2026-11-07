@@ -6,8 +6,8 @@ import "io/angzarr/v1/options.proto";
 // code (decision 14.52): generation fails.
 message ThingState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "things"
+    component_name: "things"
+    aggregate: {domain: "things"}
   };
 }
 

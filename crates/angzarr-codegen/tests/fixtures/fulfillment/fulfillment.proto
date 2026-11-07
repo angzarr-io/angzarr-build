@@ -38,6 +38,10 @@ message RecordStockReserved {
 
 message FulfillmentStarted {
   option (io.angzarr.v1.event) = {component: "fulfillment.FulfillmentState"};
+  // Translated by a policy declared in orders/v1/shipping.proto: a
+  // reference, skipped where that file is not generated.
+  option (io.angzarr.v1.event) = {component: "orders.v1.FulfillmentToShippingPolicy"};
+  option (io.angzarr.v1.event) = {component: "orders.v1.ShippingBoard"};
 
   string order = 1;
 }

@@ -26,8 +26,8 @@ pub enum Warning {
     /// ANZ103: a component no `(command)` or `(event)` entry names: it
     /// handles nothing (C-0517).
     Idle { component: String },
-    /// A process manager none of whose inputs sets `starts`: it could
-    /// never start an instance (C-0611).
+    /// A process manager listing no `starting_types`: it could never start
+    /// an instance (C-0611).
     NoStartingInput { component: String },
 }
 
@@ -97,8 +97,7 @@ fn of(component: &Component, components: &[Component]) -> Vec<Warning> {
     if component.inputs.is_empty() && component.events.is_empty() {
         found.push(Warning::Idle { component: name() });
     }
-    if component.kind == ComponentKind::ProcessManager && !component.inputs.iter().any(|i| i.starts)
-    {
+    if component.kind == ComponentKind::ProcessManager && component.starting_types.is_empty() {
         found.push(Warning::NoStartingInput { component: name() });
     }
     found

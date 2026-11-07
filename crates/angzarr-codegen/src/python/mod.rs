@@ -111,8 +111,8 @@ pub enum ProtoInput {
 pub struct PythonApp {
     /// What the project serves: a domain (its aggregate's or process
     /// manager's, e.g. `player`), or a component's name in an application
-    /// (`component_name`, else its kind's default: `policy-table-player`,
-    /// `projector-wallet-table-ledger`). The package is `angzarr_<domain>`,
+    /// (its `component_name`: `policy-table-player`,
+    /// `projector-wallet-ledger`). The package is `angzarr_<domain>`,
     /// the distribution and its script `angzarr-<domain>`.
     pub domain: String,
     pub protos: ProtoInput,

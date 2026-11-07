@@ -16,20 +16,12 @@ use crate::warnings::Warning;
 
 const COMPONENT: &str = "io.angzarr.v1.component";
 const COMMAND: &str = "io.angzarr.v1.command";
+const FACT: &str = "io.angzarr.v1.fact";
 const EVENT: &str = "io.angzarr.v1.event";
-const STATE: &str = "io.angzarr.v1.state";
-const RESOLUTION: &str = "io.angzarr.v1.ConflictResolution";
 const REFUSAL_STATUS: &str = "io.angzarr.v1.refusal_status";
-const COMMUTATIVE: &str = "CONFLICT_RESOLUTION_COMMUTATIVE";
 /// The one well-known type the domain layer maps (to angzarr-embedded's `Timestamp`).
 pub(crate) const TIMESTAMP: &str = "google.protobuf.Timestamp";
 const WELL_KNOWN: &str = "google.protobuf";
-
-/// `ComponentKind`'s numbers (types.proto).
-const AGGREGATE: i32 = 1;
-const POLICY: i32 = 2;
-const PROCESS_MANAGER: i32 = 3;
-const PROJECTOR: i32 = 4;
 
 /// A component kind a generator emits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -42,14 +34,25 @@ pub(crate) enum ComponentKind {
 }
 
 impl ComponentKind {
-    fn of(number: i32) -> Option<ComponentKind> {
-        match number {
-            AGGREGATE => Some(ComponentKind::Aggregate),
-            POLICY => Some(ComponentKind::Policy),
-            PROCESS_MANAGER => Some(ComponentKind::ProcessManager),
-            PROJECTOR => Some(ComponentKind::Projector),
-            _ => None,
-        }
+    /// The kind a `ComponentOptions` declares, by the arm of its `kind`
+    /// oneof that is set, with that arm's declaration (decision 14.78);
+    /// `None` when no arm is.
+    fn declared(options: &DynamicMessage) -> Option<(ComponentKind, DynamicMessage)> {
+        const ARMS: [(&str, ComponentKind); 4] = [
+            ("aggregate", ComponentKind::Aggregate),
+            ("process_manager", ComponentKind::ProcessManager),
+            ("policy", ComponentKind::Policy),
+            ("projector", ComponentKind::Projector),
+        ];
+        ARMS.into_iter().find_map(|(arm, kind)| {
+            if !options.has_field_by_name(arm) {
+                return None;
+            }
+            match options.get_field_by_name(arm).as_deref() {
+                Some(Value::Message(declaration)) => Some((kind, declaration.clone())),
+                _ => None,
+            }
+        })
     }
 
     /// The kind its name's default reads.
@@ -71,16 +74,6 @@ impl ComponentKind {
             ComponentKind::Aggregate | ComponentKind::ProcessManager
         )
     }
-
-    /// Its `ComponentKind` number (types.proto).
-    pub(crate) fn number(self) -> i32 {
-        match self {
-            ComponentKind::Aggregate => AGGREGATE,
-            ComponentKind::Policy => POLICY,
-            ComponentKind::ProcessManager => PROCESS_MANAGER,
-            ComponentKind::Projector => PROJECTOR,
-        }
-    }
 }
 
 /// The write side's kinds: what owns a policy's domains.
@@ -98,13 +91,15 @@ pub(crate) const ALL_KINDS: &[ComponentKind] = &[
     ComponentKind::Projector,
 ];
 
-/// One input of an aggregate or a process manager: a command, or a fact
-/// (`CommandOptions.fact`).
+/// One input of an aggregate or a process manager: a command (`(command)`),
+/// or a fact (`(fact)`, decision 14.91).
 pub(crate) struct Input {
     pub message: MessageDescriptor,
     pub emits: Vec<MessageDescriptor>,
     /// Its typed refusals; always empty for a fact.
     pub refuses: Vec<MessageDescriptor>,
+    /// Whether its component lists it among its `starting_types`
+    /// (derived: the declaration is the component's, not the input's).
     pub starts: bool,
     pub fact: bool,
 }
@@ -126,27 +121,29 @@ impl Input {
 pub(crate) struct Component {
     pub anchor: MessageDescriptor,
     pub kind: ComponentKind,
-    /// The generated names' stem: `ComponentOptions.name`, else the anchor's.
+    /// The generated names' stem: the anchor message's name.
     pub name: String,
-    /// Its name in an application (`ComponentOptions.component_name`, else
-    /// its kind's default: [`crate::component_name`]).
+    /// Its one required name in an application
+    /// (`ComponentOptions.component_name`, decision 14.87).
     pub component_name: String,
     /// The stream domain it owns (an aggregate's or a process manager's).
     pub domain: String,
-    /// A policy's source domain.
+    /// A policy's source domain, derived from the events it names.
     pub input_domain: String,
     /// A policy's target domain.
     pub output_domain: String,
+    /// A process manager's `starting_types`: the full names of the inputs
+    /// that may start an instance, as it declares them.
+    pub starting_types: Vec<String>,
     pub inputs: Vec<Input>,
     /// An aggregate's or a process manager's events (folded), or the events
-    /// a policy reacts to.
+    /// a policy or projector reacts to.
     pub events: Vec<MessageDescriptor>,
-    /// The source domains its `(event)` entries name, each once, in order;
-    /// a projector's are its `input_domains` (or its one `input_domain`)
-    /// when it lists them: its subscriptions.
+    /// A policy's or projector's source domains, each once, in the order
+    /// of the events it names: derived from their owners (decision 14.78).
+    /// Empty for an aggregate or a process manager, which subscribes to
+    /// nothing.
     pub sources: Vec<String>,
-    /// The conflict resolutions its state's `(state)` option lists.
-    pub resolutions: Vec<i32>,
 }
 
 impl Component {
@@ -389,67 +386,36 @@ fn declare(
     // Events first, so a command's `emits` can be checked against them.
     for message in &declaring {
         for consumer in markup.consumers(message) {
-            attach_event(&mut declared, message, &consumer)?;
+            attach_event(&mut declared, message, &consumer);
         }
-    }
-    for component in &declared {
-        component.check_projected()?;
     }
     for message in &declaring {
-        if let Some(command) = markup.command(message) {
-            markup.attach_input(&mut declared, message, &command, unapplied.as_deref_mut())?;
+        if let Some((input, fact)) = markup.input(message) {
+            markup.attach_input(
+                &mut declared,
+                message,
+                &input,
+                fact,
+                unapplied.as_deref_mut(),
+            )?;
         }
     }
-    check_refusal_statuses(&markup, files, &declaring)?;
-    let components: Vec<Component> = declared.into_iter().map(|d| d.component).collect();
-    check_refusal_paths(&components)?;
-    Ok(components)
-}
-
-/// Every command a policy of `components` may send has a refusal path
-/// (decision 14.76): nothing declares what a policy sends, so each command
-/// of its target names a `refuses` type, and its source, which a refusal
-/// is translated into a fact of, takes a fact. Checked where `components`
-/// hold the target (and the source); a domain declared elsewhere is held
-/// to it where it is generated with the policy.
-fn check_refusal_paths(components: &[Component]) -> Result<(), MarkupError> {
-    let policies = components
-        .iter()
-        .filter(|c| c.kind == ComponentKind::Policy);
-    for policy in policies {
-        let Some(target) = owner(components, &policy.output_domain) else {
-            continue;
-        };
-        let mut commands = target.inputs.iter().filter(|i| !i.fact).peekable();
-        if commands.peek().is_none() {
-            continue;
-        }
-        if let Some(command) = commands.find(|i| i.refuses.is_empty()) {
-            return Err(MarkupError::SentCommandRefusesNothing {
-                policy: policy.anchor.full_name().to_string(),
-                command: command.message.full_name().to_string(),
-            });
-        }
-        let source = owner(components, &policy.input_domain);
-        if source.is_some_and(|s| !s.inputs.iter().any(|i| i.fact)) {
-            return Err(MarkupError::SourceTakesNoFact {
-                policy: policy.anchor.full_name().to_string(),
-                domain: policy.input_domain.clone(),
-            });
-        }
+    let owners = markup.owners(&declaring);
+    for component in &mut declared {
+        component.derive_sources(&owners);
     }
-    Ok(())
+    Ok(declared.into_iter().map(|d| d.component).collect())
 }
 
 /// angzarr's declaration options as a descriptor set has them:
-/// `(component)`, and `(command)`, `(event)` and `(state)` where its
+/// `(component)`, and `(command)`, `(fact)` and `(event)` where its
 /// options.proto declares them.
 struct Markup<'a> {
     pool: &'a DescriptorPool,
     component: ExtensionDescriptor,
     command: Option<ExtensionDescriptor>,
+    fact: Option<ExtensionDescriptor>,
     event: Option<ExtensionDescriptor>,
-    state: Option<ExtensionDescriptor>,
 }
 
 impl<'a> Markup<'a> {
@@ -459,8 +425,8 @@ impl<'a> Markup<'a> {
             pool,
             component: pool.get_extension_by_name(COMPONENT)?,
             command: pool.get_extension_by_name(COMMAND),
+            fact: pool.get_extension_by_name(FACT),
             event: pool.get_extension_by_name(EVENT),
-            state: pool.get_extension_by_name(STATE),
         })
     }
 
@@ -469,9 +435,18 @@ impl<'a> Markup<'a> {
         values(message, Some(&self.component)).pop()
     }
 
-    /// The `(command)` `message` declares: it is an input.
-    fn command(&self, message: &MessageDescriptor) -> Option<DynamicMessage> {
-        values(message, self.command.as_ref()).pop()
+    /// The `(command)` or `(fact)` `message` declares, and whether it is
+    /// the fact: it is an input. A message declaring both is a command
+    /// here; refusing it is the resolver's.
+    fn input(&self, message: &MessageDescriptor) -> Option<(DynamicMessage, bool)> {
+        values(message, self.command.as_ref())
+            .pop()
+            .map(|command| (command, false))
+            .or_else(|| {
+                values(message, self.fact.as_ref())
+                    .pop()
+                    .map(|fact| (fact, true))
+            })
     }
 
     /// The `(event)` entries of `message`: each a component consuming it.
@@ -479,9 +454,44 @@ impl<'a> Markup<'a> {
         values(message, self.event.as_ref())
     }
 
-    /// The `(state)` `message` declares.
-    fn state(&self, message: &MessageDescriptor) -> Option<DynamicMessage> {
-        values(message, self.state.as_ref()).pop()
+    /// The domain of every aggregate and process manager of the set by its
+    /// anchor's full name.
+    fn domains(&self) -> BTreeMap<String, String> {
+        let mut domains = BTreeMap::new();
+        for file in self.pool.files() {
+            for message in file.messages() {
+                let Some(options) = self.component(&message) else {
+                    continue;
+                };
+                if let Some((kind, declaration)) = ComponentKind::declared(&options)
+                    && kind.is_domain()
+                {
+                    domains.insert(
+                        message.full_name().to_string(),
+                        string_field(&declaration, "domain"),
+                    );
+                }
+            }
+        }
+        domains
+    }
+
+    /// The domain of the owner of each event of `messages` the set has one
+    /// for, by the event's full name: the one aggregate or process manager
+    /// with an `(event)` entry folding it (decision 14.78).
+    fn owners(&self, messages: &[MessageDescriptor]) -> BTreeMap<String, String> {
+        let domains = self.domains();
+        let mut owners = BTreeMap::new();
+        for message in messages {
+            for consumer in self.consumers(message) {
+                if let Some(domain) = domains.get(&string_field(&consumer, "component")) {
+                    owners
+                        .entry(message.full_name().to_string())
+                        .or_insert_with(|| domain.clone());
+                }
+            }
+        }
+        owners
     }
 
     /// The component `message` declares, refusing a kind outside `kinds`;
@@ -492,118 +502,76 @@ impl<'a> Markup<'a> {
         message: &MessageDescriptor,
         kinds: &[ComponentKind],
     ) -> Result<Option<Declared>, CodegenError> {
-        let Some(declared) = self.component(message) else {
+        let Some(options) = self.component(message) else {
             return Ok(None);
         };
-        let number = enum_field(&declared, "kind");
-        // The markup is the write side: a projector beside it is skipped,
-        // not refused.
-        if number == PROJECTOR && !kinds.contains(&ComponentKind::Projector) {
-            return Ok(None);
-        }
-        let Some(kind) = ComponentKind::of(number).filter(|k| kinds.contains(k)) else {
+        let full_name = || message.full_name().to_string();
+        let Some((kind, declaration)) = ComponentKind::declared(&options) else {
+            // No arm of the kind oneof is set.
             return Err(MarkupError::UnsupportedKind {
-                component: message.full_name().to_string(),
-                kind: number,
+                component: full_name(),
+                kind: 0,
             }
             .into());
         };
-        let resolutions = self.resolutions(message)?;
-        let name = match string_field(&declared, "name") {
-            n if n.is_empty() => message.name().to_string(),
-            n => n,
-        };
-        let (domain, input_domain, output_domain) = (
-            string_field(&declared, "domain"),
-            string_field(&declared, "input_domain"),
-            string_field(&declared, "output_domain"),
-        );
-        match kind {
-            ComponentKind::ProcessManager if !output_domain.is_empty() => {
-                return Err(MarkupError::ProcessManagerOutputDomain {
-                    component: message.full_name().to_string(),
-                    domain: output_domain,
-                }
-                .into());
-            }
-            ComponentKind::Policy if output_domain.is_empty() => {
-                return Err(MarkupError::NoOutputDomain {
-                    component: message.full_name().to_string(),
-                }
-                .into());
-            }
-            _ => {}
+        // The markup is the write side: a projector beside it is skipped.
+        if !kinds.contains(&kind) {
+            return Ok(None);
         }
-        let listed = projector_sources(message, kind, &declared, &input_domain)?;
-        let component_name = crate::names::unchecked(&crate::names::NameOf {
-            kind: kind.name_kind(),
-            component_name: &string_field(&declared, "component_name"),
-            domain: &domain,
-            input_domain: &input_domain,
-            output_domain: &output_domain,
-            anchor: message.name(),
-        });
+        let output_domain = string_field(&declaration, "output_domain");
+        if kind == ComponentKind::Policy && output_domain.is_empty() {
+            return Err(MarkupError::NoOutputDomain {
+                component: full_name(),
+            }
+            .into());
+        }
+        let component_name = string_field(&options, "component_name");
         if !crate::names::well_formed(&component_name) {
             return Err(MarkupError::ComponentName {
-                component: message.full_name().to_string(),
+                component: full_name(),
                 name: component_name,
             }
             .into());
         }
         Ok(Some(Declared {
-            listed: listed.is_some(),
-            named: Vec::new(),
+            entries: Vec::new(),
             component: Component {
                 anchor: message.clone(),
                 kind,
-                name,
+                name: message.name().to_string(),
                 component_name,
-                domain,
-                input_domain,
+                domain: string_field(&declaration, "domain"),
+                input_domain: String::new(),
                 output_domain,
+                starting_types: strings_field(&declaration, "starting_types"),
                 inputs: Vec::new(),
                 events: Vec::new(),
-                sources: listed.unwrap_or_default(),
-                resolutions,
+                sources: Vec::new(),
             },
         }))
     }
 
-    /// A component's state's conflict resolutions (its `(state)` option's),
-    /// refusing COMMUTATIVE, which is not generated yet.
-    fn resolutions(&self, message: &MessageDescriptor) -> Result<Vec<i32>, MarkupError> {
-        let commutative = self
-            .pool
-            .get_enum_by_name(RESOLUTION)
-            .and_then(|e| e.get_value_by_name(COMMUTATIVE))
-            .map(|v| v.number());
-        let resolutions: Vec<i32> = self
-            .state(message)
-            .iter()
-            .flat_map(|state| list_field(state, "conflict_resolutions"))
-            .filter_map(|v| v.as_enum_number())
-            .collect();
-        if commutative.is_some_and(|c| resolutions.contains(&c)) {
-            return Err(MarkupError::Commutative {
-                component: message.full_name().to_string(),
-            });
-        }
-        Ok(resolutions)
-    }
-
-    /// The input the `(command)` `message` declares (`declared`) added to
-    /// the component it names, when that is generated here; refused when
-    /// nothing declares it.
+    /// The input the `(command)` or `(fact)` `message` declares
+    /// (`declared`) added to the component it names, when that is
+    /// generated here; refused when nothing declares it.
     fn attach_input(
         &self,
         components: &mut [Declared],
         message: &MessageDescriptor,
         declared: &DynamicMessage,
+        fact: bool,
         unapplied: Option<&mut Vec<Warning>>,
     ) -> Result<(), CodegenError> {
         let named = string_field(declared, "component");
         if let Some(owner) = Declared::named(components, &named) {
-            let input = command_input(self.pool, &owner.component, message, declared, unapplied)?;
+            let input = command_input(
+                self.pool,
+                &owner.component,
+                message,
+                declared,
+                fact,
+                unapplied,
+            )?;
             owner.component.inputs.push(input);
             return Ok(());
         }
@@ -640,15 +608,12 @@ fn values(message: &MessageDescriptor, ext: Option<&ExtensionDescriptor>) -> Vec
     }
 }
 
-/// A component as it is declared: its `(event)` entries' source domains
-/// held to the ones it lists, when it lists them.
+/// A component as it is declared, with the `(event)` entries naming it.
 struct Declared {
     component: Component,
-    /// A projector listing its sources (`input_domains`, or its one
-    /// `input_domain`): they are its `sources`, and every entry names one.
-    listed: bool,
-    /// The listed sources its entries named.
-    named: Vec<String>,
+    /// Each event it names, with the domain its entry overrides (empty:
+    /// none), in the order the set declares them.
+    entries: Vec<(MessageDescriptor, String)>,
 }
 
 impl Declared {
@@ -659,56 +624,32 @@ impl Declared {
             .find(|d| d.component.anchor.full_name() == full_name)
     }
 
-    /// `event`, of an `(event)` entry for this component naming `source`
-    /// (empty: unset), added to its events, and `source` to its sources or
-    /// held to its listed ones (an entry of one input_domain may leave it
-    /// unset).
-    fn attach(&mut self, event: &MessageDescriptor, source: String) -> Result<(), MarkupError> {
-        let component = &mut self.component;
-        if component.kind == ComponentKind::ProcessManager
-            && !source.is_empty()
-            && source != component.domain
-        {
-            return Err(MarkupError::ProcessManagerSubscribes {
-                component: component.anchor.full_name().to_string(),
-                event: event.full_name().to_string(),
-                domain: source,
-            });
+    /// `event`, of an `(event)` entry for this component, added to its
+    /// events; `domain` is the entry's override.
+    fn attach(&mut self, event: &MessageDescriptor, domain: String) {
+        if !self.component.events.contains(event) {
+            self.component.events.push(event.clone());
         }
-        if !component.events.contains(event) {
-            component.events.push(event.clone());
-        }
-        if !self.listed {
-            if !source.is_empty() && !component.sources.contains(&source) {
-                component.sources.push(source);
-            }
-            return Ok(());
-        }
-        let unset_of_one = source.is_empty() && component.input_domain == component.sources[0];
-        if !unset_of_one && !component.sources.contains(&source) {
-            return Err(MarkupError::UnlistedSource {
-                component: component.anchor.full_name().to_string(),
-                event: event.full_name().to_string(),
-                domain: source,
-            });
-        }
-        self.named.push(source);
-        Ok(())
+        self.entries.push((event.clone(), domain));
     }
 
-    /// Refuses a projector listing its sources in input_domains one of
-    /// which no `(event)` entry for it names.
-    fn check_projected(&self) -> Result<(), MarkupError> {
-        let component = &self.component;
-        if !self.listed || !component.input_domain.is_empty() {
-            return Ok(());
+    /// A policy's or projector's source domains, derived from the events it
+    /// names (decision 14.78): each event's owner's domain, else its
+    /// entry's override, each once, in order; a policy's `input_domain` is
+    /// the first. A component of another kind subscribes to nothing.
+    fn derive_sources(&mut self, owners: &BTreeMap<String, String>) {
+        let component = &mut self.component;
+        if component.kind.is_domain() {
+            return;
         }
-        match component.sources.iter().find(|d| !self.named.contains(d)) {
-            Some(unnamed) => Err(MarkupError::UnprojectedSource {
-                component: component.anchor.full_name().to_string(),
-                domain: unnamed.clone(),
-            }),
-            None => Ok(()),
+        for (event, domain) in &self.entries {
+            let source = owners.get(event.full_name()).unwrap_or(domain);
+            if !source.is_empty() && !component.sources.contains(source) {
+                component.sources.push(source.clone());
+            }
+        }
+        if component.kind == ComponentKind::Policy {
+            component.input_domain = component.sources.first().cloned().unwrap_or_default();
         }
     }
 }
@@ -716,27 +657,23 @@ impl Declared {
 /// The `(event)` entry `consumer` of `event` attached to the component it
 /// names. A consumer outside the set is a reference to a component
 /// generated elsewhere (decision 14.50), skipped.
-fn attach_event(
-    components: &mut [Declared],
-    event: &MessageDescriptor,
-    consumer: &DynamicMessage,
-) -> Result<(), MarkupError> {
-    match Declared::named(components, &string_field(consumer, "component")) {
-        Some(component) => component.attach(event, string_field(consumer, "domain")),
-        None => Ok(()),
+fn attach_event(components: &mut [Declared], event: &MessageDescriptor, consumer: &DynamicMessage) {
+    if let Some(component) = Declared::named(components, &string_field(consumer, "component")) {
+        component.attach(event, string_field(consumer, "domain"));
     }
 }
 
-/// The input the `(command)` `message` declares (`declared`) of
-/// `component`: its emits, held to the component's events (one it folds
-/// none of refused, or kept in `unapplied` and left out when that is
-/// given), and its refusals, each a message of `pool`
-/// in the command's own package.
+/// The input the `(command)` or `(fact)` `message` declares (`declared`;
+/// `fact` when it is the `(fact)`) of `component`: its emits, held to the
+/// component's events (one it folds none of refused, or kept in `unapplied`
+/// and left out when that is given), and its refusals, each a message of
+/// `pool` in the command's own package. A fact declares none.
 fn command_input(
     pool: &DescriptorPool,
     component: &Component,
     message: &MessageDescriptor,
     declared: &DynamicMessage,
+    fact: bool,
     mut unapplied: Option<&mut Vec<Warning>>,
 ) -> Result<Input, MarkupError> {
     let command = || message.full_name().to_string();
@@ -758,12 +695,7 @@ fn command_input(
             },
         }
     }
-    let fact = bool_field(declared, "fact");
-    let refused = strings_field(declared, "refuses");
-    if fact && !refused.is_empty() {
-        return Err(MarkupError::RefusesOnFact { message: command() });
-    }
-    let refuses = refused
+    let refuses = strings_field(declared, "refuses")
         .into_iter()
         .map(|refusal| {
             let found =
@@ -781,18 +713,14 @@ fn command_input(
             Ok(found)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let starts = bool_field(declared, "starts");
-    if starts && component.kind != ComponentKind::ProcessManager {
-        return Err(MarkupError::StartsOnNonProcessManager {
-            message: command(),
-            component: component.anchor.full_name().to_string(),
-        });
-    }
     Ok(Input {
         message: message.clone(),
         emits,
         refuses,
-        starts,
+        starts: component
+            .starting_types
+            .iter()
+            .any(|t| t == message.full_name()),
         fact,
     })
 }
@@ -813,92 +741,6 @@ pub(crate) fn refusal_status(value: &EnumValueDescriptor) -> i32 {
         return 0;
     }
     options.get_extension(&ext).as_enum_number().unwrap_or(0)
-}
-
-/// Every enum of `files`, nested ones too, each value marked with a
-/// `refusal_status` checked (C-0746): it must be a non-zero value of the
-/// nested `Reason` of a message some command of the set refuses with.
-fn check_refusal_statuses(
-    markup: &Markup,
-    files: &[&str],
-    declaring: &[MessageDescriptor],
-) -> Result<(), CodegenError> {
-    let pool = markup.pool;
-    let Some(status_ext) = pool.get_extension_by_name(REFUSAL_STATUS) else {
-        return Ok(());
-    };
-    let refused: BTreeSet<String> = declaring
-        .iter()
-        .filter_map(|message| markup.command(message))
-        .flat_map(|declared| strings_field(&declared, "refuses"))
-        .collect();
-    fn nested(message: MessageDescriptor, out: &mut Vec<EnumDescriptor>) {
-        out.extend(message.child_enums());
-        for child in message.child_messages() {
-            nested(child, out);
-        }
-    }
-    let mut enums = Vec::new();
-    for file in files {
-        if let Some(file) = pool.get_file_by_name(file) {
-            enums.extend(file.enums());
-            for message in file.messages() {
-                nested(message, &mut enums);
-            }
-        }
-    }
-    for e in enums {
-        let codes = e.parent_message().filter(|m| {
-            refused.contains(m.full_name()) && crate::common::refusal_reason(m).as_ref() == Some(&e)
-        });
-        for value in e.values() {
-            let marked = value.options().has_extension(&status_ext);
-            if marked && (codes.is_none() || value.number() == 0) {
-                return Err(MarkupError::RefusalStatusMisplaced {
-                    value: format!("{}.{}", e.full_name(), value.name()),
-                }
-                .into());
-            }
-        }
-    }
-    Ok(())
-}
-
-/// A projector's listed sources (decision 14.50): its `input_domains`, or
-/// its one `input_domain`; `None` for a projector listing neither (its
-/// entries name its sources) and for every other kind. Refused: both set,
-/// a domain listed twice, and `input_domains` on another kind.
-fn projector_sources(
-    message: &MessageDescriptor,
-    kind: ComponentKind,
-    declared: &DynamicMessage,
-    input_domain: &str,
-) -> Result<Option<Vec<String>>, MarkupError> {
-    let component = || message.full_name().to_string();
-    let domains = strings_field(declared, "input_domains");
-    if !domains.is_empty() && kind != ComponentKind::Projector {
-        return Err(MarkupError::InputDomainsOnNonProjector {
-            component: component(),
-        });
-    }
-    if !domains.is_empty() && !input_domain.is_empty() {
-        return Err(MarkupError::InputDomainsWithInputDomain {
-            component: component(),
-        });
-    }
-    for (i, domain) in domains.iter().enumerate() {
-        if domains[..i].contains(domain) {
-            return Err(MarkupError::DuplicateSource {
-                component: component(),
-                domain: domain.clone(),
-            });
-        }
-    }
-    Ok(match (kind, domains.is_empty(), input_domain.is_empty()) {
-        (ComponentKind::Projector, false, _) => Some(domains),
-        (ComponentKind::Projector, true, false) => Some(vec![input_domain.to_string()]),
-        _ => None,
-    })
 }
 
 /// The messages and enums reachable from a component's roots.
@@ -979,20 +821,6 @@ fn string_field(message: &DynamicMessage, name: &str) -> String {
     match message.get_field_by_name(name).as_deref() {
         Some(Value::String(s)) => s.clone(),
         _ => String::new(),
-    }
-}
-
-fn bool_field(message: &DynamicMessage, name: &str) -> bool {
-    matches!(
-        message.get_field_by_name(name).as_deref(),
-        Some(Value::Bool(true))
-    )
-}
-
-fn enum_field(message: &DynamicMessage, name: &str) -> i32 {
-    match message.get_field_by_name(name).as_deref() {
-        Some(Value::EnumNumber(n)) => *n,
-        _ => 0,
     }
 }
 

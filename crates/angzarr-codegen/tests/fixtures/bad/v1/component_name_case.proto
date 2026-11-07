@@ -5,6 +5,7 @@ import "io/angzarr/v1/options.proto";
 // A component_name with a capital.
 message ThingState {
   option (io.angzarr.v1.component) = {
-    component_name: "Thing"\n    aggregate: {domain: "things"}
+    component_name: "Thing"
+    aggregate: {domain: "things"}
   };
 }

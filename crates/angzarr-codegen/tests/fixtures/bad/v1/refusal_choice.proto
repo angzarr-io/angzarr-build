@@ -4,8 +4,8 @@ import "io/angzarr/v1/options.proto";
 
 message SlotState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "slots"
+    component_name: "slots"
+    aggregate: {domain: "slots"}
   };
 }
 

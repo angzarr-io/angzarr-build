@@ -4,9 +4,8 @@ import "io/angzarr/v1/options.proto";
 
 message ShelfState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "shelves"
-    name: "Shelf"
+    component_name: "shelves"
+    aggregate: {domain: "shelves"}
   };
 }
 

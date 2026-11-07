@@ -24,34 +24,14 @@ pub enum MarkupError {
     /// A component kind this generator does not emit yet.
     UnsupportedKind { component: String, kind: i32 },
     /// A state listing COMMUTATIVE, whose `changed` this generator does not
-    /// emit yet.
-    Commutative { component: String },
     /// A fact (`(command).fact`) declaring `refuses`: a fact cannot be
-    /// refused.
-    RefusesOnFact { message: String },
-    /// `input_domains` on a component that is not a projector.
-    InputDomainsOnNonProjector { component: String },
-    /// A projector setting both `input_domains` and `input_domain`.
-    InputDomainsWithInputDomain { component: String },
-    /// A projector listing one source domain twice.
-    DuplicateSource { component: String, domain: String },
     /// A projector's `(event)` entry whose domain (empty: unset) is not one
-    /// of its listed sources.
-    UnlistedSource {
-        component: String,
-        event: String,
-        domain: String,
-    },
-    /// A projector listing a source domain no `(event)` entry names.
-    UnprojectedSource { component: String, domain: String },
     /// A component's name in an application (declared, or its kind's
     /// default) that is not lower-case ASCII letters, digits and `-`,
     /// starting with a letter.
     ComponentName { component: String, name: String },
     /// A command of a policy's target declaring no `refuses`: a policy may
     /// send any command of its target, and every command it sends has a
-    /// refusal path (decision 14.76; C-0798).
-    SentCommandRefusesNothing { policy: String, command: String },
     /// A policy whose target takes a command, sourced from a domain that
     /// takes no fact: its refusal callback answers one of its source's
     /// facts (decision 14.76; C-0799).
@@ -70,14 +50,10 @@ pub enum MarkupError {
     },
     /// A process manager declaring an `output_domain`: its decisions reach
     /// other domains through policies from its domain (decision 14.31;
-    /// C-0605).
-    ProcessManagerOutputDomain { component: String, domain: String },
     /// A policy declaring no `output_domain`: its one destination (C-0582).
     NoOutputDomain { component: String },
     /// An input of a component other than a process manager setting
     /// `starts`: only a process manager's input starts an instance
-    /// (C-0606).
-    StartsOnNonProcessManager { message: String, component: String },
     /// A command's `refuses` naming a message of another package, another
     /// domain's: a command refuses with its own domain's types (C-0626).
     ForeignRefusal { command: String, refusal: String },
@@ -99,21 +75,7 @@ impl Diagnostic for MarkupError {
             MarkupError::UnknownRefusal { .. } => code!("unknown-refusal"),
             MarkupError::UnownedDomain { .. } => code!("unowned-domain"),
             MarkupError::UnsupportedKind { .. } => code!("unsupported-kind"),
-            MarkupError::Commutative { .. } => code!("commutative"),
-            MarkupError::RefusesOnFact { .. } => code!("refuses-on-fact"),
-            MarkupError::InputDomainsOnNonProjector { .. } => {
-                code!("input-domains-on-non-projector")
-            }
-            MarkupError::InputDomainsWithInputDomain { .. } => {
-                code!("input-domains-with-input-domain")
-            }
-            MarkupError::DuplicateSource { .. } => code!("duplicate-source"),
-            MarkupError::UnlistedSource { .. } => code!("unlisted-source"),
-            MarkupError::UnprojectedSource { .. } => code!("unprojected-source"),
             MarkupError::ComponentName { .. } => code!("component-name"),
-            MarkupError::SentCommandRefusesNothing { .. } => {
-                code!("sent-command-refuses-nothing")
-            }
             MarkupError::SourceTakesNoFact { .. } => code!("source-takes-no-fact"),
             MarkupError::RefusalStatusMisplaced { .. } => {
                 code!("refusal-status-misplaced")
@@ -121,13 +83,7 @@ impl Diagnostic for MarkupError {
             MarkupError::ProcessManagerSubscribes { .. } => {
                 code!("process-manager-subscribes")
             }
-            MarkupError::ProcessManagerOutputDomain { .. } => {
-                code!("process-manager-output-domain")
-            }
             MarkupError::NoOutputDomain { .. } => code!("no-output-domain"),
-            MarkupError::StartsOnNonProcessManager { .. } => {
-                code!("starts-on-non-process-manager")
-            }
             MarkupError::ForeignRefusal { .. } => code!("foreign-refusal"),
         }
     }
@@ -145,21 +101,7 @@ impl Diagnostic for MarkupError {
                     ("kind", (*kind).into()),
                 ]
             }
-            E::Commutative { component }
-            | E::InputDomainsOnNonProjector { component }
-            | E::InputDomainsWithInputDomain { component } => texts![component],
-            E::RefusesOnFact { message } => texts![message],
-            E::DuplicateSource { component, domain }
-            | E::UnprojectedSource { component, domain } => {
-                texts![component, domain]
-            }
-            E::UnlistedSource {
-                component,
-                event,
-                domain,
-            } => texts![component, event, domain],
             E::ComponentName { component, name } => texts![component, name],
-            E::SentCommandRefusesNothing { policy, command } => texts![policy, command],
             E::SourceTakesNoFact { policy, domain } => texts![policy, domain],
             E::RefusalStatusMisplaced { value } => texts![value],
             E::ProcessManagerSubscribes {
@@ -167,9 +109,7 @@ impl Diagnostic for MarkupError {
                 event,
                 domain,
             } => texts![component, event, domain],
-            E::ProcessManagerOutputDomain { component, domain } => texts![component, domain],
             E::NoOutputDomain { component } => texts![component],
-            E::StartsOnNonProcessManager { message, component } => texts![message, component],
             E::ForeignRefusal { command, refusal } => texts![command, refusal],
         }
     }
@@ -199,38 +139,9 @@ pub(super) fn samples() -> Vec<MarkupError> {
             component: text("component"),
             kind: 4,
         },
-        E::Commutative {
-            component: text("component"),
-        },
-        E::RefusesOnFact {
-            message: text("message"),
-        },
-        E::InputDomainsOnNonProjector {
-            component: text("component"),
-        },
-        E::InputDomainsWithInputDomain {
-            component: text("component"),
-        },
-        E::DuplicateSource {
-            component: text("component"),
-            domain: text("domain"),
-        },
-        E::UnlistedSource {
-            component: text("component"),
-            event: text("event"),
-            domain: text("domain"),
-        },
-        E::UnprojectedSource {
-            component: text("component"),
-            domain: text("domain"),
-        },
         E::ComponentName {
             component: text("component"),
             name: text("name"),
-        },
-        E::SentCommandRefusesNothing {
-            policy: text("policy"),
-            command: text("command"),
         },
         E::SourceTakesNoFact {
             policy: text("policy"),
@@ -244,15 +155,7 @@ pub(super) fn samples() -> Vec<MarkupError> {
             event: text("event"),
             domain: text("domain"),
         },
-        E::ProcessManagerOutputDomain {
-            component: text("component"),
-            domain: text("domain"),
-        },
         E::NoOutputDomain {
-            component: text("component"),
-        },
-        E::StartsOnNonProcessManager {
-            message: text("message"),
             component: text("component"),
         },
         E::ForeignRefusal {

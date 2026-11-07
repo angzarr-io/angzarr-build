@@ -45,8 +45,9 @@ fn test_component_names_are_the_blackjack_spec_names() {
     assert_eq!(at("BuyInState").1, NameKind::ProcessManager);
     assert_eq!(at("TablePlayerPolicy").2, "policy-table-player");
     assert_eq!(at("TablePlayerPolicy").3, "");
-    assert_eq!(at("LedgerProjection").2, "projector-wallet-table-ledger");
-    assert_eq!(at("LedgerProjection").1, NameKind::Projector);
+    assert_eq!(at("WalletLedgerProjection").2, "projector-wallet-ledger");
+    assert_eq!(at("TableLedgerProjection").2, "projector-table-ledger");
+    assert_eq!(at("TableLedgerProjection").1, NameKind::Projector);
 }
 
 #[test]

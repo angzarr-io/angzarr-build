@@ -4,9 +4,8 @@ import "io/angzarr/v1/options.proto";
 
 message CrateState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_AGGREGATE
-    domain: "crates"
-    name: "Crate"
+    component_name: "crates"
+    aggregate: {domain: "crates"}
   };
 }
 

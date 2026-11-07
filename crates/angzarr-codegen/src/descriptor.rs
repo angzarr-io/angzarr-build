@@ -1,29 +1,28 @@
 //! Each component's whole `ComponentDescriptor` (types.proto), generated
 //! at build time from its protos (decision 14.42): its name in an
-//! application (decision 14.50) and kind, the
-//! domains it subscribes to, its state's type and resolved conflict
-//! resolutions, a process manager's starting type names, a policy's output
-//! domain, and the build's version as its rules version. The business
+//! application (decision 14.87), the build's version as its rules version,
+//! and, in the arm of its kind (decision 14.78), what that kind has: an
+//! aggregate's domain and state, a process manager's domain, state and
+//! starting types, a policy's derived input domain and its output domain,
+//! a projector's derived input domains. Types are named by their
+//! fully-qualified name, never a type URL (decision 14.101). The business
 //! process answers `ComponentService.Describe` with it unchanged; the
 //! coordinator validates it.
 //!
-//! It is built as a dynamic message of the descriptor set's own
-//! `io.angzarr.v1.ComponentDescriptor` (angzarr's protos are always in the
-//! set: options.proto imports types.proto) and kept encoded, so each
-//! language's generated code holds the same bytes whatever version of the
-//! wire types it is built against.
+//! It is built as angzarr-proto's `ComponentDescriptor` (the descriptor set
+//! need not hold it: options.proto does not import types.proto) and kept
+//! encoded, so each language's generated code holds the same bytes.
 
+use angzarr_proto::v1::component_descriptor::Kind;
+use angzarr_proto::v1::{
+    AggregateDescriptor, ComponentDescriptor, PolicyDescriptor, ProcessManagerDescriptor,
+    ProjectorDescriptor, StateDescriptor,
+};
 use prost_reflect::prost::Message;
-use prost_reflect::{DescriptorPool, DynamicMessage, ReflectMessage, Value};
 use quote::quote;
 
-use crate::error::{CodegenError, ProtoError};
-use crate::model::{self, ALL_KINDS, Component};
-
-const COMPONENT_DESCRIPTOR: &str = "io.angzarr.v1.ComponentDescriptor";
-/// `ConflictResolution`'s implicit base (types.proto): STRICT and
-/// AGGREGATE_HANDLES, which every state supports.
-const BASE_RESOLUTIONS: [i32; 2] = [2, 3];
+use crate::error::CodegenError;
+use crate::model::{self, ALL_KINDS, Component, ComponentKind};
 
 /// One component's generated descriptor.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -31,7 +30,7 @@ pub struct Descriptor {
     /// The component's anchor message, e.g. `orders.v1.OrderState`.
     pub component: String,
     /// `ComponentDescriptor.name`: the component's name in an application
-    /// (`component_name`, else its kind's default, decision 14.50).
+    /// (its `component_name`, decision 14.87).
     pub name: String,
     /// The `ComponentDescriptor`, encoded.
     pub encoded: Vec<u8>,
@@ -57,116 +56,51 @@ pub(crate) fn build(
     rules_version: &str,
 ) -> Result<Vec<(Component, Descriptor)>, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
-    let pool = model::decode(descriptor_set)?;
-    components
+    Ok(components
         .into_iter()
         .map(|component| {
-            let encoded = encode(&pool, &component, rules_version)?;
             let descriptor = Descriptor {
                 component: component.anchor.full_name().to_string(),
                 name: component.component_name.clone(),
-                encoded,
+                encoded: encode(&component, rules_version),
             };
-            Ok((component, descriptor))
+            (component, descriptor)
         })
-        .collect()
+        .collect())
 }
 
-/// `component`'s `ComponentDescriptor`, encoded.
-fn encode(
-    pool: &DescriptorPool,
-    component: &Component,
-    rules_version: &str,
-) -> Result<Vec<u8>, CodegenError> {
-    let mut descriptor = new(pool, COMPONENT_DESCRIPTOR)?;
-    set(
-        &mut descriptor,
-        "name",
-        Value::String(component.component_name.clone()),
-    )?;
-    set(
-        &mut descriptor,
-        "kind",
-        Value::EnumNumber(component.kind.number()),
-    )?;
-    let mut inputs = Vec::new();
-    for domain in subscriptions(component) {
-        let mut target = new(pool, "io.angzarr.v1.Target")?;
-        set(&mut target, "domain", Value::String(domain))?;
-        inputs.push(Value::Message(target));
-    }
-    set(&mut descriptor, "inputs", Value::List(inputs))?;
-    set(
-        &mut descriptor,
-        "rules_version",
-        Value::String(rules_version.to_string()),
-    )?;
-    if component.kind.is_domain() {
-        let mut options = new(pool, "io.angzarr.v1.StateOptions")?;
-        let mut resolutions: Vec<i32> = BASE_RESOLUTIONS
-            .into_iter()
-            .chain(component.resolutions.iter().copied())
-            .collect();
-        resolutions.sort_unstable();
-        resolutions.dedup();
-        set(
-            &mut options,
-            "conflict_resolutions",
-            Value::List(resolutions.into_iter().map(Value::EnumNumber).collect()),
-        )?;
-        let mut state = new(pool, "io.angzarr.v1.StateDescriptor")?;
-        set(
-            &mut state,
-            "type_url",
-            Value::String(format!("/{}", component.anchor.full_name())),
-        )?;
-        set(&mut state, "options", Value::Message(options))?;
-        set(&mut descriptor, "state", Value::Message(state))?;
-    }
-    let starting = component
-        .inputs
-        .iter()
-        .filter(|i| i.starts)
-        .map(|i| Value::String(i.message.full_name().to_string()))
-        .collect();
-    set(&mut descriptor, "starting_types", Value::List(starting))?;
-    set(
-        &mut descriptor,
-        "output_domain",
-        Value::String(component.output_domain.clone()),
-    )?;
-    Ok(descriptor.encode_to_vec())
-}
-
-/// The domains a component subscribes to: its `input_domain`, else its
-/// sources (a projector's `input_domains`, else the domains of its
-/// `(event)` entries, in order). An aggregate or a process manager has
-/// neither.
-fn subscriptions(component: &Component) -> Vec<String> {
-    if component.input_domain.is_empty() {
-        component.sources.clone()
-    } else {
-        vec![component.input_domain.clone()]
-    }
-}
-
-/// An empty message of the set's `name`.
-fn new(pool: &DescriptorPool, name: &str) -> Result<DynamicMessage, ProtoError> {
-    pool.get_message_by_name(name)
-        .map(DynamicMessage::new)
-        .ok_or_else(|| ProtoError::Descriptors {
-            detail: format!("the set declares no {name}"),
+/// `component`'s `ComponentDescriptor`, encoded: its name and the build's
+/// version, and in the arm of its kind what that kind has.
+fn encode(component: &Component, rules_version: &str) -> Vec<u8> {
+    let state = || {
+        Some(StateDescriptor {
+            type_name: component.anchor.full_name().to_string(),
         })
-}
-
-/// `message.field = value`, refused when the set's message has no such
-/// field: angzarr's protos in the set are older than this generator.
-fn set(message: &mut DynamicMessage, field: &str, value: Value) -> Result<(), ProtoError> {
-    message
-        .try_set_field_by_name(field, value)
-        .map_err(|e| ProtoError::Descriptors {
-            detail: format!("{}: {e}", message.descriptor().full_name()),
-        })
+    };
+    let kind = match component.kind {
+        ComponentKind::Aggregate => Kind::Aggregate(AggregateDescriptor {
+            domain: component.domain.clone(),
+            state: state(),
+        }),
+        ComponentKind::ProcessManager => Kind::ProcessManager(ProcessManagerDescriptor {
+            domain: component.domain.clone(),
+            state: state(),
+            starting_types: component.starting_types.clone(),
+        }),
+        ComponentKind::Policy => Kind::Policy(PolicyDescriptor {
+            input_domain: component.input_domain.clone(),
+            output_domain: component.output_domain.clone(),
+        }),
+        ComponentKind::Projector => Kind::Projector(ProjectorDescriptor {
+            input_domains: component.sources.clone(),
+        }),
+    };
+    ComponentDescriptor {
+        name: component.component_name.clone(),
+        rules_version: rules_version.to_string(),
+        kind: Some(kind),
+    }
+    .encode_to_vec()
 }
 
 /// The Rust build layer's descriptors (`angzarr-descriptors.rs`): every

@@ -85,7 +85,7 @@ pub struct AppSeed {
     /// The protos' include directories, as the build script names them.
     pub includes: Vec<String>,
     /// The language of each component not in Rust, by its name in the
-    /// application (`component_name`, else its kind's default), a domain's
+    /// application (its `component_name`), a domain's
     /// also by its domain: a Python one is served by a child process, the
     /// project of `angzarr scaffold python` (`dir` and its
     /// `angzarr-<project>` entry point). Every other component is Rust, in
