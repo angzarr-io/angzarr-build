@@ -181,7 +181,7 @@ fn a_policys_source_is_a_process_managers_domain_when_it_owns_the_event() {
 }
 
 /// A projector's sources are each owner's domain once, in the order of the
-/// events it names; an event no one owns, with no override, names none.
+/// events it names.
 #[test]
 fn a_projectors_sources_are_each_owners_domain_once_and_an_unowned_event_none() {
     let board = projector(shipped("projector-shipping-board"));

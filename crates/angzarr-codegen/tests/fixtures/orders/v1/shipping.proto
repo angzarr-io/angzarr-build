@@ -34,11 +34,6 @@ message OrderPacked {
   string customer = 1;
 }
 
-// An event nothing owns and no entry names a domain for: it adds no source.
-message Stray {
-  option (io.angzarr.v1.event) = {component: "orders.v1.ShippingBoard"};
-}
-
 // A policy of a process manager's event: the owner is the process manager,
 // declared in fulfillment.proto, whose event names this policy there.
 message FulfillmentToShippingPolicy {

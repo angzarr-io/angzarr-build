@@ -11,6 +11,8 @@ use prost_reflect::{
     MessageDescriptor, Value,
 };
 
+mod resolve;
+
 use crate::error::{CodegenError, MarkupError, ProtoError, UseError};
 use crate::warnings::Warning;
 
@@ -324,7 +326,7 @@ fn packages(
 }
 
 /// Every component declared in `files`, in declaration order, refusing a
-/// kind outside `kinds`.
+/// kind outside `kinds`, and a declaration the resolver refuses.
 pub(crate) fn components(
     descriptor_set: &[u8],
     files: &[&str],
@@ -337,23 +339,24 @@ pub(crate) fn components(
 /// held as generation holds it, but a command's `emits` naming an event its
 /// component folds none of, which generation refuses
 /// ([`MarkupError::UnknownEmit`]) and a lint warns of
-/// ([`Warning::UnappliedEmit`]), that emit left out.
+/// ([`Warning::UnappliedEmit`]), that emit left out; and the consumers
+/// skipped as outside the generation, warned of.
 pub(crate) fn declarations(
     descriptor_set: &[u8],
     files: &[&str],
 ) -> Result<(Vec<Component>, Vec<Warning>), CodegenError> {
-    let mut unapplied = Vec::new();
-    let components = declare(descriptor_set, files, ALL_KINDS, Some(&mut unapplied))?;
-    Ok((components, unapplied))
+    let mut warnings = Vec::new();
+    let components = declare(descriptor_set, files, ALL_KINDS, Some(&mut warnings))?;
+    Ok((components, warnings))
 }
 
 /// The components declared in `files`, an unapplied emit refused, or kept
-/// in `unapplied` when it is given.
+/// in `warnings` when it is given (with the consumers skipped).
 fn declare(
     descriptor_set: &[u8],
     files: &[&str],
     kinds: &[ComponentKind],
-    mut unapplied: Option<&mut Vec<Warning>>,
+    mut warnings: Option<&mut Vec<Warning>>,
 ) -> Result<Vec<Component>, CodegenError> {
     let pool = decode(descriptor_set)?;
     let mut messages = Vec::new();
@@ -383,10 +386,17 @@ fn declare(
     for message in &messages {
         declared.extend(markup.declared(message, kinds)?);
     }
+    resolve::one_option(&markup, &declaring)?;
     // Events first, so a command's `emits` can be checked against them.
     for message in &declaring {
         for consumer in markup.consumers(message) {
-            attach_event(&mut declared, message, &consumer);
+            let skipped = attach_event(&mut declared, message, &consumer);
+            if let (Some(skipped), Some(warnings)) = (skipped, warnings.as_deref_mut()) {
+                warnings.push(Warning::ConsumerSkipped {
+                    consumer: skipped,
+                    event: message.full_name().to_string(),
+                });
+            }
         }
     }
     for message in &declaring {
@@ -396,7 +406,7 @@ fn declare(
                 message,
                 &input,
                 fact,
-                unapplied.as_deref_mut(),
+                warnings.as_deref_mut(),
             )?;
         }
     }
@@ -404,6 +414,7 @@ fn declare(
     for component in &mut declared {
         component.derive_sources(&owners);
     }
+    resolve::check(&markup, &declaring, &messages, &declared)?;
     Ok(declared.into_iter().map(|d| d.component).collect())
 }
 
@@ -416,6 +427,8 @@ struct Markup<'a> {
     command: Option<ExtensionDescriptor>,
     fact: Option<ExtensionDescriptor>,
     event: Option<ExtensionDescriptor>,
+    /// `(refusal_status)`, where the set's options.proto has one.
+    refusal_status: Option<ExtensionDescriptor>,
 }
 
 impl<'a> Markup<'a> {
@@ -427,7 +440,19 @@ impl<'a> Markup<'a> {
             command: pool.get_extension_by_name(COMMAND),
             fact: pool.get_extension_by_name(FACT),
             event: pool.get_extension_by_name(EVENT),
+            refusal_status: pool.get_extension_by_name(REFUSAL_STATUS),
         })
+    }
+
+    /// The `(refusal_status)` `message` declares, as its `RefusalStatus`
+    /// number (0 for `REFUSAL_STATUS_UNSPECIFIED`); `None` when it declares
+    /// none.
+    fn status(&self, message: &MessageDescriptor) -> Option<i32> {
+        let ext = self.refusal_status.as_ref()?;
+        let options = message.options();
+        options
+            .has_extension(ext)
+            .then(|| options.get_extension(ext).as_enum_number().unwrap_or(0))
     }
 
     /// The `(component)` `message` declares.
@@ -656,10 +681,19 @@ impl Declared {
 
 /// The `(event)` entry `consumer` of `event` attached to the component it
 /// names. A consumer outside the set is a reference to a component
-/// generated elsewhere (decision 14.50), skipped.
-fn attach_event(components: &mut [Declared], event: &MessageDescriptor, consumer: &DynamicMessage) {
-    if let Some(component) = Declared::named(components, &string_field(consumer, "component")) {
-        component.attach(event, string_field(consumer, "domain"));
+/// generated elsewhere (decision 14.50), skipped: its name is returned.
+fn attach_event(
+    components: &mut [Declared],
+    event: &MessageDescriptor,
+    consumer: &DynamicMessage,
+) -> Option<String> {
+    let name = string_field(consumer, "component");
+    match Declared::named(components, &name) {
+        Some(component) => {
+            component.attach(event, string_field(consumer, "domain"));
+            None
+        }
+        None => Some(name),
     }
 }
 

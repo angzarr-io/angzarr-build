@@ -19,6 +19,10 @@ message Book {
   };
 }
 
-message Taken {}
+message Taken {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
+}
 
-message BookRefuses {}
+message BookRefuses {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_FAILED_PRECONDITION;
+}
