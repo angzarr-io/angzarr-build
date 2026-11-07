@@ -18,6 +18,8 @@ use cucumber::writer::Stats as _;
 mod declarations;
 #[path = "spec/generation.rs"]
 mod generation;
+#[path = "spec/interfaces.rs"]
+mod interfaces;
 #[path = "spec/protos.rs"]
 mod protos;
 #[path = "spec/tags.rs"]

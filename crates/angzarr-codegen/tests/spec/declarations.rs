@@ -28,10 +28,12 @@ fn kind_of(words: &str) -> &'static str {
 }
 
 /// A stateful component `name` owning `domain`, and what the scenario says
-/// of it after: an input, an event it folds, or that it names nothing.
+/// of it after: an input (or two, `commands "a" and "b"`) with the events it
+/// emits, an event it folds, or that it names nothing.
 #[given(
-    regex = r#"^(an aggregate|a process manager) "([\w-]+)" owning domain "([\w-]+)"(?: with (?:the )?(?:(command|fact|message|input) )?"([^"]+)"| that folds "([^"]+)"(?: and takes no fact)?| that takes no fact| that no \(command\), \(fact\) or \(event\) entry names)?$"#
+    regex = r#"^(an aggregate|a process manager) "([\w-]+)" owning domain "([\w-]+)"(?: with (?:the )?(?:(command|fact|message|input)s? )?"([^"]+)"(?: and "([^"]+)")?(?: whose emits lists "([^"]+)")?| that folds "([^"]+)"(?: and takes no fact)?| that takes no fact| that no \(command\), \(fact\) or \(event\) entry names)?$"#
 )]
+#[allow(clippy::too_many_arguments)]
 fn stateful(
     w: &mut Generator,
     words: String,
@@ -39,26 +41,55 @@ fn stateful(
     domain: String,
     kind: String,
     input: String,
+    second: String,
+    emits: String,
     folded: String,
 ) {
     w.component(&name, kind_of(&words), &domain).domain = Some(domain.clone());
+    let component = w.named(&name);
     match kind.as_str() {
         "message" => {
             w.protos.message(&full(&input));
         }
         _ if !input.is_empty() => {
-            let input = w.input(&input, &name);
-            input.fact = kind == "fact";
+            for input in [input, second].iter().filter(|i| !i.is_empty()) {
+                let declared = w.input(input, &name);
+                declared.fact = kind == "fact";
+            }
+            if !emits.is_empty() {
+                // An emitted event is one of the component's: it folds it.
+                let input = w.last_input.clone().expect("an input");
+                let event = full(&emits);
+                w.protos
+                    .message(&input)
+                    .input
+                    .as_mut()
+                    .expect("an input")
+                    .emits
+                    .push(event.clone());
+                w.protos
+                    .message(&event)
+                    .events
+                    .push((component.clone(), None));
+            }
         }
         _ => {}
     }
     if !folded.is_empty() {
-        let component = w.named(&name);
         w.protos
             .message(&full(&folded))
             .events
             .push((component, None));
     }
+}
+
+/// A process manager with an input, and the option the input carries.
+#[given(
+    regex = r#"^a process manager "([\w-]+)" owning domain "([\w-]+)" with input "([^"]+)" carrying \((command|fact)\)$"#
+)]
+fn pm_carrying(w: &mut Generator, name: String, domain: String, input: String, option: String) {
+    w.component(&name, "PROCESS_MANAGER", &domain).domain = Some(domain.clone());
+    w.input(&input, &name).fact = option == "fact";
 }
 
 #[given(
@@ -308,16 +339,29 @@ fn no_message(w: &mut Generator, message: String) {
     assert!(!w.protos.messages.contains_key(&message), "{message}");
 }
 
-#[given(regex = r#"^"([^"]+)" refuses with "([^"]+)"$"#)]
-fn refuses_with(w: &mut Generator, command: String, refusal: String) {
+#[given(regex = r#"^"([^"]+)" refuses with "([^"]+)"(?: and "([^"]+)")?$"#)]
+fn refuses_with(w: &mut Generator, command: String, refusal: String, second: String) {
+    for refusal in [refusal, second].iter().filter(|r| !r.is_empty()) {
+        let input = w
+            .protos
+            .message(&full(&command))
+            .input
+            .as_mut()
+            .expect("a command");
+        input.refuses.push(full(refusal));
+        w.protos.message(&full(refusal));
+    }
+}
+
+#[given(regex = r#"^"([^"]+)" declares no refuses$"#)]
+fn declares_no_refuses(w: &mut Generator, command: String) {
     let input = w
         .protos
         .message(&full(&command))
         .input
-        .as_mut()
+        .as_ref()
         .expect("a command");
-    input.refuses.push(full(&refusal));
-    w.protos.message(&full(&refusal));
+    assert!(input.refuses.is_empty(), "{command} refuses");
 }
 
 #[given(

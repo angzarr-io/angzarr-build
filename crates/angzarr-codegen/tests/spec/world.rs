@@ -2,7 +2,9 @@
 //! generated from (the descriptors) or linted (the declarations' rules and
 //! warnings), and what came of it.
 
-use angzarr_codegen::{CodegenError, Descriptor, Warning, descriptors, warnings};
+use angzarr_codegen::{
+    CodegenError, Descriptor, Warning, adapters, descriptors, markup_domain, warnings,
+};
 use angzarr_proto::v1::ComponentDescriptor;
 use prost::Message as _;
 
@@ -26,6 +28,19 @@ pub struct Generator {
     pub last_input: Option<String>,
     /// What linting the protos warned of.
     pub warnings: Vec<Warning>,
+    /// The refusal a scenario had its handler refuse with, by full name.
+    pub last_refusal: Option<String>,
+    /// The Rust handler interfaces generated of the protos.
+    pub layers: Option<Result<Layers, CodegenError>>,
+}
+
+/// The Rust layers a scenario's protos generate: the domain layer of every
+/// package (the handler interfaces, one trait per component), the adapters
+/// (each handler's attribute and signature).
+#[derive(Debug, Default)]
+pub struct Layers {
+    pub domain: String,
+    pub adapters: String,
 }
 
 /// What generation made.
@@ -172,6 +187,46 @@ impl Generator {
             }
         });
         self.outcome = Some(outcome);
+    }
+
+    /// The handler interfaces generated of the protos, as `angzarr-cli`
+    /// scaffolds them.
+    pub fn generate_interfaces(&mut self) {
+        let files = self.protos.files();
+        let set = compile(&files);
+        let names: Vec<&str> = files.keys().map(String::as_str).collect();
+        let packages: Vec<String> = files
+            .keys()
+            .map(|f| f.trim_end_matches(".proto").to_string())
+            .collect();
+        let wire: Vec<(&str, &str)> = packages
+            .iter()
+            .map(|p| (p.as_str(), "crate::wire"))
+            .collect();
+        let made = || -> Result<Layers, CodegenError> {
+            let domain = markup_domain(&set, &names, &wire)?
+                .into_iter()
+                .map(|g| g.source)
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(Layers {
+                domain,
+                adapters: adapters(&set, &names, &[])?,
+            })
+        };
+        self.layers = Some(made());
+    }
+
+    /// The interfaces generated, generating them if no step did; panics if
+    /// generation refused.
+    pub fn interfaces(&mut self) -> &Layers {
+        if self.layers.is_none() {
+            self.generate_interfaces();
+        }
+        match self.layers.as_ref().expect("generated") {
+            Ok(layers) => layers,
+            Err(error) => panic!("generation refused: {error:?}"),
+        }
     }
 
     /// What generation made; panics if it refused.
