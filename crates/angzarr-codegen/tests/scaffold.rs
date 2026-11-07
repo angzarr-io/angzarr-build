@@ -12,8 +12,8 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, Existing, MarkupError, Notes, Owner, ScaffoldFile, Translate, UseError, adapters,
-    complete, markup_domain, scaffold,
+    CodegenError, Existing, Notes, Owner, ScaffoldFile, Translate, UseError, adapters, complete,
+    markup_domain, scaffold,
 };
 use common::*;
 
@@ -310,17 +310,6 @@ fn test_scaffold_refuses_translate_to_a_command_of_its_source() {
         Err(CodegenError::Use(UseError::TranslateNotAFact {
             policy: "buyin.v1.BuyInWalletPolicy".to_string(),
             fact: "buyin.v1.RecordHeld".to_string(),
-        }))
-    );
-}
-
-#[test]
-fn test_scaffold_refuses_refuses_on_a_fact() {
-    const FILE: &str = "bad/v1/refusing_fact.proto";
-    assert_eq!(
-        scaffold(&descriptors(&[FILE]), &[FILE], &[]),
-        Err(CodegenError::Markup(MarkupError::RefusesOnFact {
-            message: "bad.v1.Happened".to_string(),
         }))
     );
 }

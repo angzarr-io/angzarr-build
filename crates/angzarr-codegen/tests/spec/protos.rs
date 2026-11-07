@@ -10,23 +10,27 @@ use std::process::Command;
 
 use angzarr_test_dir::TestDir;
 
-/// A component's `ComponentOptions`.
+/// A component's `ComponentOptions`: its one name and the arm of its kind.
 #[derive(Clone, Debug, Default)]
 pub struct Component {
+    /// `AGGREGATE`, `PROCESS_MANAGER`, `POLICY` or `PROJECTOR`.
     pub kind: String,
+    /// `component_name`; none declares none.
+    pub component_name: Option<String>,
     pub domain: Option<String>,
-    pub input_domain: Option<String>,
     pub output_domain: Option<String>,
+    pub starting_types: Vec<String>,
 }
 
-/// A command's or fact's `CommandOptions`.
+/// A command's `CommandOptions`, or a fact's `FactOptions`.
 #[derive(Clone, Debug, Default)]
 pub struct Input {
     pub component: String,
     pub emits: Vec<String>,
+    /// A command's only.
     pub refuses: Vec<String>,
+    /// Declared by `(fact)`, not `(command)`.
     pub fact: bool,
-    pub starts: bool,
 }
 
 /// One message, with its options.
@@ -36,18 +40,12 @@ pub struct Message {
     pub input: Option<Input>,
     /// Its `(event)` entries: the component, and the domain it names.
     pub events: Vec<(String, Option<String>)>,
-    /// Its nested `Reason` enum's values, each with its `(refusal_status)`.
-    pub reasons: Vec<(String, Option<String>)>,
 }
 
-/// A top-level enum's values, each with its `(refusal_status)`.
-pub type Enum = Vec<(String, Option<String>)>;
-
-/// Every message and enum a scenario declared, by full name.
+/// Every message a scenario declared, by full name.
 #[derive(Clone, Debug, Default)]
 pub struct Protos {
     pub messages: BTreeMap<String, Message>,
-    pub enums: BTreeMap<String, Enum>,
 }
 
 /// A domain's package: its name with no `-`.
@@ -69,24 +67,21 @@ fn list(items: &[String]) -> String {
     format!("[{}]", quoted.join(", "))
 }
 
-fn status(status: &Option<String>) -> String {
-    status
-        .as_ref()
-        .map(|s| format!(" [(io.angzarr.v1.refusal_status) = {s}]"))
-        .unwrap_or_default()
-}
-
 fn component_option(c: &Component) -> String {
-    let mut out = format!("    kind: COMPONENT_KIND_{}\n", c.kind);
-    for (key, value) in [
-        ("domain", &c.domain),
-        ("input_domain", &c.input_domain),
-        ("output_domain", &c.output_domain),
-    ] {
+    let mut out = String::new();
+    if let Some(name) = &c.component_name {
+        let _ = writeln!(out, "    component_name: \"{name}\"");
+    }
+    let mut arm = String::new();
+    for (key, value) in [("domain", &c.domain), ("output_domain", &c.output_domain)] {
         if let Some(value) = value {
-            let _ = writeln!(out, "    {key}: \"{value}\"");
+            let _ = write!(arm, " {key}: \"{value}\"");
         }
     }
+    if !c.starting_types.is_empty() {
+        let _ = write!(arm, " starting_types: {}", list(&c.starting_types));
+    }
+    let _ = writeln!(out, "    {}: {{{arm} }}", c.kind.to_lowercase());
     format!("  option (io.angzarr.v1.component) = {{\n{out}  }};\n")
 }
 
@@ -98,12 +93,8 @@ fn input_option(i: &Input) -> String {
     if !i.refuses.is_empty() {
         let _ = writeln!(out, "    refuses: {}", list(&i.refuses));
     }
-    for (key, set) in [("fact", i.fact), ("starts", i.starts)] {
-        if set {
-            let _ = writeln!(out, "    {key}: true");
-        }
-    }
-    format!("  option (io.angzarr.v1.command) = {{\n{out}  }};\n")
+    let option = if i.fact { "fact" } else { "command" };
+    format!("  option (io.angzarr.v1.{option}) = {{\n{out}  }};\n")
 }
 
 fn event_option((component, domain): &(String, Option<String>)) -> String {
@@ -112,17 +103,6 @@ fn event_option((component, domain): &(String, Option<String>)) -> String {
         .map(|d| format!(" domain: \"{d}\""))
         .unwrap_or_default();
     format!("  option (io.angzarr.v1.event) = {{component: \"{component}\"{domain}}};\n")
-}
-
-fn reason_enum(values: &[(String, Option<String>)]) -> String {
-    let mut out = String::from("  enum Reason {\n    REASON_UNSPECIFIED = 0");
-    let zero = values.iter().find(|(v, _)| v == "REASON_UNSPECIFIED");
-    let _ = writeln!(out, "{};", zero.map(|(_, s)| status(s)).unwrap_or_default());
-    for (n, (value, marked)) in (1..).zip(values.iter().filter(|(v, _)| v != "REASON_UNSPECIFIED"))
-    {
-        let _ = writeln!(out, "    {value} = {n}{};", status(marked));
-    }
-    out + "  }\n  Reason reason = 1;\n"
 }
 
 fn message(name: &str, m: &Message) -> String {
@@ -135,18 +115,6 @@ fn message(name: &str, m: &Message) -> String {
     out += &m.input.as_ref().map(input_option).unwrap_or_default();
     for event in &m.events {
         out += &event_option(event);
-    }
-    if !m.reasons.is_empty() {
-        out += &reason_enum(&m.reasons);
-    }
-    out + "}\n\n"
-}
-
-fn top_enum(name: &str, values: &Enum) -> String {
-    let prefix = name.to_uppercase();
-    let mut out = format!("enum {name} {{\n  {prefix}_UNSPECIFIED = 0;\n");
-    for (n, (value, marked)) in (1..).zip(values) {
-        let _ = writeln!(out, "  {value} = {n}{};", status(marked));
     }
     out + "}\n\n"
 }
@@ -171,12 +139,6 @@ impl Protos {
             text(
                 full,
                 message(full.rsplit_once('.').expect("a full name").1, m),
-            );
-        }
-        for (full, values) in &self.enums {
-            text(
-                full,
-                top_enum(full.rsplit_once('.').expect("a full name").1, values),
             );
         }
         files

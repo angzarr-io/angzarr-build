@@ -29,21 +29,44 @@ const UNBOUND_BUILT: Tag = Tag {
     why: "a built binary's behaviour: no binding builds and runs the generated code",
 };
 
-/// What the generated handlers' code says, read as Rust: no binding reads
-/// it yet beyond a handler's markup.
+/// The resolver's generation-time failures and lints over the declarations
+/// (stage 2 of the generator rewrite): the options model and the descriptor
+/// (stage 1) read the declarations, and these rules refuse them.
+const UNBOUND_RESOLVER: Tag = Tag {
+    name: "unbound_resolver_lint",
+    why: "the resolver's failures and lints over the declarations: stage 2 of the generator rewrite",
+};
+
+/// What the generated handlers' code says, in every language the
+/// generator writes (stage 3 of the generator rewrite): no binding reads
+/// it yet.
 const UNBOUND_GENERATED: Tag = Tag {
     name: "unbound_generated_code",
-    why: "the generated code's shape: no binding reads it yet",
+    why: "the generated code's shape: the output generators are stage 3 of the generator rewrite",
 };
 
 /// Every tagged scenario, by ID or outline row, in the tier's file order.
 const TAGGED: &[(&str, Tag)] = &[
     // component_options.feature
+    ("C-0604", UNBOUND_RESOLVER),
+    ("C-0855", UNBOUND_RESOLVER),
+    ("C-0856", UNBOUND_RESOLVER),
+    ("C-0857", UNBOUND_RESOLVER),
+    ("C-0858", UNBOUND_RESOLVER),
+    ("C-0860", UNBOUND_RESOLVER),
     ("C-0612", UNBOUND_GENERATED),
-    ("C-0623", UNBOUND_GENERATED),
+    ("C-0861", UNBOUND_GENERATED),
     ("C-0625", UNBOUND_GENERATED),
-    ("C-0745", UNBOUND_BUILT),
-    ("C-0650", UNBOUND_GENERATED),
+    ("C-0745", UNBOUND_GENERATED),
+    ("C-0862", UNBOUND_RESOLVER),
+    ("C-0746", UNBOUND_RESOLVER),
+    ("C-0863", UNBOUND_RESOLVER),
+    ("C-0648", UNBOUND_GENERATED),
+    ("C-0864", UNBOUND_GENERATED),
+    ("C-0865", UNBOUND_RESOLVER),
+    ("C-0794", UNBOUND_GENERATED),
+    ("C-0797", UNBOUND_GENERATED),
+    ("C-0799", UNBOUND_RESOLVER),
     // descriptor.feature
     ("C-0565", UNBOUND_BUILT),
 ];

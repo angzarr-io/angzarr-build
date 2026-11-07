@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+// A policy in a file of its own, reacting to an event whose owner, the
+// order aggregate, is declared in another file of the set (orders.proto):
+// its source is still derived from that owner.
+package orders.v1;
+
+import "io/angzarr/v1/options.proto";
+import "orders/v1/orders.proto";
+
+message OrderToShippingPolicy {
+  option (io.angzarr.v1.component) = {
+    component_name: "policy-order-shipping"
+    policy: {output_domain: "shipping"}
+  };
+}
+
+// An event of the order domain, as the shipping policy sees it: reached
+// from its own file's marker.
+message OrderShipped {
+  option (io.angzarr.v1.event) = {component: "orders.v1.OrderToShippingPolicy"};
+  option (io.angzarr.v1.event) = {component: "orders.v1.OrderState"};
+
+  string customer = 1;
+}

@@ -1,11 +1,8 @@
 //! The generator a scenario runs: the protos it declares, compiled, then
-//! linted (every check generation makes: the descriptors, the domain
-//! layer, the scaffold) or generated from, and what came of it.
+//! generated from (the descriptors) or linted (the declarations' rules and
+//! warnings), and what came of it.
 
-use angzarr_codegen::{
-    CodegenError, Descriptor, ProtoInput, PythonApp, Translate, Warning, adapters, component_names,
-    descriptors, markup_domain, scaffold, scaffold_python, warnings,
-};
+use angzarr_codegen::{CodegenError, Descriptor, Warning, descriptors, warnings};
 use angzarr_proto::v1::ComponentDescriptor;
 use prost::Message as _;
 
@@ -17,10 +14,8 @@ pub const VERSION: &str = "1.4.2+build.7";
 #[derive(Debug, Default, cucumber::World)]
 pub struct Generator {
     pub protos: Protos,
-    /// Each component by the name a scenario gives it, its full name.
+    /// Each component by the name a scenario gives it, its anchor's full name.
     pub names: std::collections::BTreeMap<String, String>,
-    /// The policy translate selections generation runs with.
-    pub translate: Vec<Translate>,
     /// What linting or generating came to.
     pub outcome: Option<Result<Generated, CodegenError>>,
     /// The build's version, if the scenario names one.
@@ -31,35 +26,70 @@ pub struct Generator {
     pub last_input: Option<String>,
     /// What linting the protos warned of.
     pub warnings: Vec<Warning>,
-    /// The protos as [`Generator::lint`] compiled them: the descriptor set
-    /// and its files, for a scenario reading the Python scaffold too.
-    pub compiled: Option<(Vec<u8>, Vec<String>)>,
 }
 
 /// What generation made.
 #[derive(Debug, Default)]
 pub struct Generated {
     pub descriptors: Vec<Descriptor>,
-    /// The generated adapters: the markup each component's handlers carry.
-    pub adapters: String,
+}
+
+/// `order-to-inventory` as `OrderToInventory`, the anchor message a
+/// scenario's component name stands for; a name that is a message's
+/// already is one.
+pub fn anchor_of(name: &str) -> String {
+    name.split('-')
+        .map(|word| {
+            let mut chars = word.chars();
+            chars
+                .next()
+                .map(|c| c.to_ascii_uppercase().to_string() + chars.as_str())
+                .unwrap_or_default()
+        })
+        .collect()
+}
+
+/// `OrderState` as `order-state`, `order-to-inventory` as itself: the
+/// `component_name` a scenario's name stands for.
+pub fn component_name_of(name: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in name.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('-');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 impl Generator {
-    /// A component `name` of `kind` owning `domain`.
+    /// A component `name` of `kind` in the package of `domain`, declared
+    /// by its anchor message, named as the scenario's name stands for.
     pub fn component(
         &mut self,
         name: &str,
         kind: &str,
         domain: &str,
     ) -> &mut crate::protos::Component {
-        let full = format!("{}.{name}", package(domain));
-        self.names.insert(name.to_string(), full.clone());
+        let full = format!("{}.{}", package(domain), anchor_of(name));
+        self.declare(name, &full, kind)
+    }
+
+    /// A component `name` of `kind` anchored on the message `full`.
+    pub fn declare(&mut self, name: &str, full: &str, kind: &str) -> &mut crate::protos::Component {
+        self.names.insert(name.to_string(), full.to_string());
         self.last_component = Some(name.to_string());
-        let message = self.protos.message(&full);
+        let component_name = component_name_of(name);
+        let message = self.protos.message(full);
         message
             .component
             .get_or_insert_with(|| crate::protos::Component {
                 kind: kind.to_string(),
+                component_name: Some(component_name),
                 ..Default::default()
             })
     }
@@ -80,34 +110,44 @@ impl Generator {
         })
     }
 
-    /// The protos compiled, and every generation check run on them.
-    pub fn lint(&mut self) {
+    /// The event `name` (`order.OrderPlaced`) consumed by `component`.
+    /// Its owner is the aggregate or process manager of its package's
+    /// domain, which folds it unless a scenario said otherwise: the
+    /// scenarios that name only the consumer leave the folding implied.
+    pub fn consumed(&mut self, event: &str, component: &str) {
+        let event = full(event);
+        let consumer = self.named(component);
+        let folded = self.protos.messages.get(&event).is_some_and(|m| {
+            m.events.iter().any(|(named, _)| {
+                self.protos
+                    .messages
+                    .get(named)
+                    .and_then(|c| c.component.as_ref())
+                    .is_some_and(|c| c.kind == "AGGREGATE" || c.kind == "PROCESS_MANAGER")
+            })
+        });
+        let event_package = event.rsplit_once('.').map(|(p, _)| p.to_string());
+        let owner = self.protos.messages.iter().find_map(|(name, m)| {
+            let c = m.component.as_ref()?;
+            let owns = matches!(c.kind.as_str(), "AGGREGATE" | "PROCESS_MANAGER")
+                && c.domain.as_deref().map(package) == event_package;
+            owns.then(|| name.clone())
+        });
+        let message = self.protos.message(&event);
+        if !folded && let Some(owner) = owner {
+            message.events.push((owner, None));
+        }
+        message.events.push((consumer, None));
+    }
+
+    /// The protos compiled and generated from: the descriptors.
+    pub fn generate(&mut self) {
         let files = self.protos.files();
         let set = compile(&files);
         let names: Vec<&str> = files.keys().map(String::as_str).collect();
-        let wire: Vec<(String, String)> = files
-            .keys()
-            .map(|f| {
-                (
-                    f.trim_end_matches(".proto").to_string(),
-                    "crate::wire".to_string(),
-                )
-            })
-            .collect();
-        let wire: Vec<(&str, &str)> = wire.iter().map(|(p, w)| (p.as_str(), w.as_str())).collect();
         let version = self.version.clone().unwrap_or_else(|| VERSION.to_string());
-        self.compiled = Some((set.clone(), files.keys().cloned().collect()));
-        let outcome = descriptors(&set, &names, &version).and_then(|descriptors| {
-            markup_domain(&set, &names, &wire)?;
-            // The user's files `angzarr scaffold rust` writes: their checks.
-            scaffold(&set, &names, &self.translate)?;
-            let adapters = adapters(&set, &names, &[])?;
-            Ok(Generated {
-                descriptors,
-                adapters,
-            })
-        });
-        self.outcome = Some(outcome);
+        self.outcome =
+            Some(descriptors(&set, &names, &version).map(|descriptors| Generated { descriptors }));
     }
 
     /// The protos compiled and linted as `angzarr lint app` lints them: the
@@ -124,41 +164,9 @@ impl Generator {
             // generation refuses what a lint only warns of.
             Generated {
                 descriptors: descriptors(&set, &names, &version).unwrap_or_default(),
-                adapters: String::new(),
             }
         });
         self.outcome = Some(outcome);
-    }
-
-    /// The Python scaffold of the component named `name` (the scenario's
-    /// name for it), from the protos [`Generator::lint`] compiled: each
-    /// file's path and text.
-    pub fn python(&self, name: &str) -> Vec<(String, String)> {
-        let (set, files) = self.compiled.as_ref().expect("the protos compiled");
-        let files: Vec<&str> = files.iter().map(String::as_str).collect();
-        let full = self.named(name);
-        let served = component_names(set, &files)
-            .expect("the components' names")
-            .into_iter()
-            .find(|c| c.component == full)
-            .map(|c| {
-                if c.domain.is_empty() {
-                    c.name
-                } else {
-                    c.domain
-                }
-            })
-            .unwrap_or_else(|| panic!("no component {full}"));
-        let app = PythonApp {
-            domain: served,
-            protos: ProtoInput::Directory("protos".to_string()),
-            rules_version: VERSION.to_string(),
-        };
-        scaffold_python(set, &files, &app, &self.translate, &[])
-            .expect("the Python scaffold")
-            .into_iter()
-            .map(|f| (f.path, f.source))
-            .collect()
     }
 
     /// What generation made; panics if it refused.
@@ -177,10 +185,14 @@ impl Generator {
         }
     }
 
-    /// The only component's descriptor.
-    pub fn only_descriptor(&self) -> ComponentDescriptor {
+    /// The descriptor of the component the scenario declared last, decoded.
+    pub fn descriptor(&self) -> ComponentDescriptor {
+        let subject = self.named(&self.last_component.clone().expect("a component"));
         let all = &self.generated().descriptors;
-        assert_eq!(all.len(), 1, "{all:?}");
-        ComponentDescriptor::decode(all[0].encoded.as_slice()).expect("an encoded descriptor")
+        let found = all
+            .iter()
+            .find(|d| d.component == subject)
+            .unwrap_or_else(|| panic!("no descriptor of {subject} in {all:?}"));
+        ComponentDescriptor::decode(found.encoded.as_slice()).expect("an encoded descriptor")
     }
 }

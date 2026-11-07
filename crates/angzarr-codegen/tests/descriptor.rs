@@ -10,7 +10,8 @@ mod common;
 use angzarr_codegen::{
     Descriptor, LICENCE_HEADER, ProtoInput, PythonApp, descriptors, descriptors_rs, scaffold_python,
 };
-use angzarr_proto::v1::{ComponentDescriptor, ComponentKind, ConflictResolution, Target};
+use angzarr_proto::v1::component_descriptor::Kind;
+use angzarr_proto::v1::{ComponentDescriptor, StateDescriptor};
 use common::*;
 use prost::Message;
 
@@ -38,105 +39,124 @@ fn descriptor(name: &str) -> ComponentDescriptor {
     ComponentDescriptor::decode(found.encoded.as_slice()).expect("an encoded ComponentDescriptor")
 }
 
-fn domains(inputs: &[Target]) -> Vec<&str> {
-    inputs.iter().map(|t| t.domain.as_str()).collect()
+/// The aggregate arm of `d`.
+fn aggregate(d: ComponentDescriptor) -> angzarr_proto::v1::AggregateDescriptor {
+    match d.kind {
+        Some(Kind::Aggregate(a)) => a,
+        other => panic!("not an aggregate: {other:?}"),
+    }
+}
+
+/// The process manager arm of `d`.
+fn process_manager(d: ComponentDescriptor) -> angzarr_proto::v1::ProcessManagerDescriptor {
+    match d.kind {
+        Some(Kind::ProcessManager(p)) => p,
+        other => panic!("not a process manager: {other:?}"),
+    }
+}
+
+/// The policy arm of `d`.
+fn policy(d: ComponentDescriptor) -> angzarr_proto::v1::PolicyDescriptor {
+    match d.kind {
+        Some(Kind::Policy(p)) => p,
+        other => panic!("not a policy: {other:?}"),
+    }
+}
+
+/// The projector arm of `d`.
+fn projector(d: ComponentDescriptor) -> angzarr_proto::v1::ProjectorDescriptor {
+    match d.kind {
+        Some(Kind::Projector(p)) => p,
+        other => panic!("not a projector: {other:?}"),
+    }
 }
 
 // C-0715
 #[test]
-fn a_policy_descriptor_names_its_input_and_output_domain() {
-    let policy = descriptor("policy-order-inventory");
-    assert_eq!(policy.kind, ComponentKind::Policy as i32);
-    assert_eq!(domains(&policy.inputs), ["order"]);
+fn a_policy_descriptor_names_its_derived_input_domain_and_its_output_domain() {
+    let d = descriptor("policy-order-inventory");
+    assert_eq!(d.rules_version, VERSION);
+    let policy = policy(d);
+    assert_eq!(policy.input_domain, "order");
     assert_eq!(policy.output_domain, "inventory");
-    assert_eq!(policy.state, None);
-    assert!(policy.starting_types.is_empty());
-    assert_eq!(policy.rules_version, VERSION);
 }
 
 // C-0535
 #[test]
-fn the_generated_descriptor_carries_the_build_version_and_the_state_type() {
+fn the_generated_descriptor_carries_the_build_version_and_the_states_name() {
     let order = descriptor("order");
     assert_eq!(order.name, "order");
-    assert_eq!(order.kind, ComponentKind::Aggregate as i32);
     assert_eq!(order.rules_version, VERSION);
-    let state = order.state.expect("an aggregate's state");
-    assert_eq!(state.type_url, "/orders.v1.OrderState");
-    // The implicit base alone, in enum-number order.
+    let aggregate = aggregate(order);
+    assert_eq!(aggregate.domain, "order");
+    // A name, not a type URL (decision 14.101).
     assert_eq!(
-        state
-            .options
-            .expect("the resolved options")
-            .conflict_resolutions,
-        [
-            ConflictResolution::Strict as i32,
-            ConflictResolution::AggregateHandles as i32
-        ]
+        aggregate.state,
+        Some(StateDescriptor {
+            type_name: "orders.v1.OrderState".to_string()
+        })
     );
-    // An aggregate subscribes to nothing.
-    assert!(order.inputs.is_empty());
-    assert!(order.starting_types.is_empty());
-    assert_eq!(order.output_domain, "");
 }
 
+// C-0716, C-0866
 #[test]
-fn a_listed_base_resolution_is_not_repeated() {
-    // FulfillmentState lists STRICT, already in the base.
-    let state = descriptor("pmg-fulfillment").state.expect("a PM's state");
-    assert_eq!(state.type_url, "/fulfillment.FulfillmentState");
+fn a_process_manager_descriptor_names_its_domain_state_and_starting_types() {
+    let pm = process_manager(descriptor("pmg-fulfillment"));
+    assert_eq!(pm.domain, "fulfillment");
     assert_eq!(
-        state
-            .options
-            .expect("the resolved options")
-            .conflict_resolutions,
-        [
-            ConflictResolution::Strict as i32,
-            ConflictResolution::AggregateHandles as i32
-        ]
+        pm.state,
+        Some(StateDescriptor {
+            type_name: "fulfillment.FulfillmentState".to_string()
+        })
     );
+    // C-0607: copied from the declaration, names and no type URL.
+    assert_eq!(pm.starting_types, ["fulfillment.StartFulfillment"]);
 }
 
 // C-0716
 #[test]
-fn only_a_policy_descriptor_carries_an_output_domain() {
-    for (name, kind) in [
-        ("order", ComponentKind::Aggregate),
-        ("pmg-fulfillment", ComponentKind::ProcessManager),
-        ("projector-order-summary-view", ComponentKind::Projector),
-    ] {
-        let d = descriptor(name);
-        assert_eq!(d.kind, kind as i32, "{name}'s kind");
-        assert_eq!(d.output_domain, "", "{name} carries no output domain");
-    }
+fn each_kinds_descriptor_is_the_arm_of_its_kind() {
+    let kind = |name: &str| match descriptor(name).kind {
+        Some(Kind::Aggregate(_)) => "aggregate",
+        Some(Kind::ProcessManager(_)) => "process_manager",
+        Some(Kind::Policy(_)) => "policy",
+        Some(Kind::Projector(_)) => "projector",
+        None => "none",
+    };
+    assert_eq!(kind("order"), "aggregate");
+    assert_eq!(kind("pmg-fulfillment"), "process_manager");
+    assert_eq!(kind("policy-order-inventory"), "policy");
+    assert_eq!(kind("projector-order-summary-view"), "projector");
 }
 
-// C-0607, with the bare type names of decision 14.41.
+// C-0867, decision 14.78
 #[test]
-fn a_process_manager_descriptor_lists_its_starting_type_names() {
-    let pm = descriptor("pmg-fulfillment");
-    assert_eq!(pm.starting_types, ["fulfillment.StartFulfillment"]);
-    assert!(
-        pm.inputs.is_empty(),
-        "a process manager subscribes to nothing"
-    );
-    assert_eq!(pm.rules_version, VERSION);
-}
-
-#[test]
-fn a_projector_descriptor_subscribes_to_its_events_domains_and_has_no_state() {
-    let summary = descriptor("projector-order-summary-view");
-    assert_eq!(domains(&summary.inputs), ["order"]);
-    assert_eq!(summary.state, None);
-    assert!(summary.starting_types.is_empty());
+fn a_projector_descriptor_lists_the_domains_of_the_events_it_names() {
+    // Derived from the owner of the event it names, the order aggregate.
+    let summary = projector(descriptor("projector-order-summary-view"));
+    assert_eq!(summary.input_domains, ["order"]);
 }
 
 #[test]
-fn a_projector_descriptor_subscribes_to_its_input_domain_when_it_names_one() {
-    assert_eq!(
-        domains(&descriptor("projector-audit-trail-view").inputs),
-        ["audit"]
-    );
+fn a_projector_descriptor_takes_an_unowned_events_domain_from_the_entrys_override() {
+    let audit = projector(descriptor("projector-audit-trail-view"));
+    assert_eq!(audit.input_domains, ["audit"]);
+}
+
+/// The owner of an event may be declared in another file than the
+/// component naming it (decision 14.78: the one aggregate or process
+/// manager of the descriptor set folding it).
+#[test]
+fn a_policys_source_is_derived_from_an_owner_in_another_file() {
+    const SHIPPING: &str = "orders/v1/shipping.proto";
+    let set = common::descriptors(&[ORDERS, SHIPPING]);
+    let all = descriptors(&set, &[SHIPPING], VERSION).unwrap();
+    assert_eq!(all.len(), 1);
+    let found = ComponentDescriptor::decode(all[0].encoded.as_slice()).unwrap();
+    assert_eq!(found.name, "policy-order-shipping");
+    let policy = policy(found);
+    assert_eq!(policy.input_domain, "order");
+    assert_eq!(policy.output_domain, "shipping");
 }
 
 #[test]

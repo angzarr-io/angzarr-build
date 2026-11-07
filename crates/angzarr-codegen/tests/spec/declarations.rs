@@ -1,10 +1,9 @@
 //! Givens declaring the protos: components and their `ComponentOptions`,
-//! the `(command)` and `(event)` entries naming them, and refusals' codes
-//! with their `(refusal_status)`.
+//! and the `(command)`, `(fact)` and `(event)` entries naming them.
 
 use cucumber::given;
 
-use crate::protos::{full, package};
+use crate::protos::full;
 use crate::world::Generator;
 
 /// `domain`'s aggregate, `<Domain>State`.
@@ -17,104 +16,182 @@ fn state_of(domain: &str) -> String {
     format!("{first}{}State", chars.as_str())
 }
 
-#[given(
-    regex = r#"^an aggregate "(\w+)" owning domain "([\w-]+)"(?: with (command|fact|message) "([^"]+)")?$"#
-)]
-fn aggregate(w: &mut Generator, name: String, domain: String, kind: String, input: String) {
-    w.component(&name, "AGGREGATE", &domain).domain = Some(domain.clone());
-    match kind.as_str() {
-        "command" => {
-            w.input(&input, &name);
-        }
-        "fact" => w.input(&input, &name).fact = true,
-        "message" => {
-            w.protos.message(&full(&input));
-        }
-        _ => {}
+/// The scenarios' kinds of component, as they name them.
+fn kind_of(words: &str) -> &'static str {
+    match words {
+        "an aggregate" => "AGGREGATE",
+        "a process manager" => "PROCESS_MANAGER",
+        "a policy" => "POLICY",
+        "a projector" => "PROJECTOR",
+        other => panic!("no kind {other}"),
     }
 }
 
-/// An aggregate with one input emitting one event of its own, folded by it
-/// (decision 14.75; C-0797).
+/// A stateful component `name` owning `domain`, and what the scenario says
+/// of it after: an input, an event it folds, or that it names nothing.
 #[given(
-    regex = r#"^an aggregate "(\w+)" owning domain "([\w-]+)" with (command|fact) "([^"]+)" whose \(command\)\.emits lists "([^"]+)"$"#
+    regex = r#"^(an aggregate|a process manager) "([\w-]+)" owning domain "([\w-]+)"(?: with (?:(command|fact|message|input) )?"([^"]+)"| that folds "([^"]+)"| that takes no fact| that no \(command\), \(fact\) or \(event\) entry names)?$"#
 )]
-fn aggregate_emitting(
+fn stateful(
     w: &mut Generator,
+    words: String,
     name: String,
     domain: String,
     kind: String,
     input: String,
-    event: String,
+    folded: String,
 ) {
-    aggregate(w, name.clone(), domain, kind, input);
-    let input = w.last_input.clone().expect("the input");
-    let component = w.named(&name);
-    w.protos
-        .message(&input)
-        .input
-        .as_mut()
-        .expect("an input")
-        .emits
-        .push(full(&event));
-    w.protos
-        .message(&full(&event))
-        .events
-        .push((component, None));
+    w.component(&name, kind_of(&words), &domain).domain = Some(domain.clone());
+    match kind.as_str() {
+        "message" => {
+            w.protos.message(&full(&input));
+        }
+        _ if !input.is_empty() => {
+            let input = w.input(&input, &name);
+            input.fact = kind == "fact";
+        }
+        _ => {}
+    }
+    if !folded.is_empty() {
+        let component = w.named(&name);
+        w.protos
+            .message(&full(&folded))
+            .events
+            .push((component, None));
+    }
 }
 
-/// An aggregate with no input at all, so it takes no fact to translate a
-/// refusal into (decision 14.76; C-0799).
-#[given(regex = r#"^an aggregate "(\w+)" owning domain "([\w-]+)" that takes no fact$"#)]
-fn aggregate_without_facts(w: &mut Generator, name: String, domain: String) {
-    aggregate(w, name, domain, String::new(), String::new());
+#[given(
+    regex = r#"^(an aggregate|a process manager)(?: component)? "(\w+)" owning domain "([\w-]+)" whose state message is "([^"]+)"$"#
+)]
+fn with_state(w: &mut Generator, words: String, name: String, domain: String, state: String) {
+    w.declare(&name, &full(&state), kind_of(&words)).domain = Some(domain);
+}
+
+#[given(regex = r#"^(an aggregate|a process manager|a projector) component "([\w-]+)"$"#)]
+fn component_of_kind(w: &mut Generator, words: String, name: String) {
+    let kind = kind_of(&words);
+    let component = w.component(&name, kind, &name);
+    if kind != "PROJECTOR" {
+        component.domain = Some(name);
+    }
+}
+
+#[given(
+    regex = r#"^an aggregate anchored on "([^"]+)" owning domain "([\w-]+)" whose component_name is (empty|"[^"]*")$"#
+)]
+fn anchored(w: &mut Generator, anchor: String, domain: String, name: String) {
+    let component = w.declare(&anchor, &full(&anchor), "AGGREGATE");
+    component.domain = Some(domain);
+    component.component_name = Some(name.trim_matches('"').replace("empty", ""));
 }
 
 #[given(regex = r#"^aggregates owning domains "([\w-]+)" and "([\w-]+)"$"#)]
 fn aggregates(w: &mut Generator, first: String, second: String) {
     for domain in [first, second] {
-        aggregate(w, state_of(&domain), domain, String::new(), String::new());
+        let name = state_of(&domain);
+        w.component(&name, "AGGREGATE", &domain).domain = Some(domain.clone());
     }
 }
 
 #[given(
-    regex = r#"^an? POLICY component "(\w+)" triggered by domain "([\w-]+)" with (?:output_domain "([\w-]+)"|no output_domain)$"#
+    regex = r#"^aggregates "(\w+)" owning domain "([\w-]+)" and "(\w+)" owning domain "([\w-]+)"$"#
 )]
-fn policy(w: &mut Generator, name: String, input: String, output: String) {
-    let component = w.component(&name, "POLICY", &input);
-    component.input_domain = Some(input);
-    component.output_domain = (!output.is_empty()).then_some(output);
+fn two_aggregates(w: &mut Generator, first: String, a: String, second: String, b: String) {
+    for (name, domain) in [(first, a), (second, b)] {
+        w.component(&name, "AGGREGATE", &domain).domain = Some(domain.clone());
+    }
+}
+
+/// A policy, in a package of its own: it owns no domain.
+#[given(
+    regex = r#"^a policy "([\w-]+)" with (?:output_domain "([\w-]+)"|no output_domain)(?: whose \(event\) entries name "([^"]+)")?$"#
+)]
+fn policy(w: &mut Generator, name: String, output: String, event: String) {
+    w.component(&name, "POLICY", "policies").output_domain = Some(output).filter(|o| !o.is_empty());
+    if !event.is_empty() {
+        w.consumed(&event, &name);
+    }
+}
+
+#[given(regex = r#"^a projector "([\w-]+)" whose \(event\) entries name "([^"]+)" and "([^"]+)"$"#)]
+fn projector(w: &mut Generator, name: String, first: String, second: String) {
+    w.component(&name, "PROJECTOR", "projectors");
+    w.consumed(&first, &name);
+    w.consumed(&second, &name);
+}
+
+/// The component declared by `name` has `declared` starting types.
+#[given(regex = r#"^"([\w-]+)" declares starting_types "([^"]+)"$"#)]
+fn starting_types(w: &mut Generator, name: String, listed: String) {
+    let anchor = w.named(&name);
+    let listed = full(&listed);
+    w.protos
+        .message(&anchor)
+        .component
+        .as_mut()
+        .expect("a component")
+        .starting_types
+        .push(listed);
+}
+
+#[given(regex = r#"^"([\w-]+)" declares no starting_types$"#)]
+fn no_starting_types(w: &mut Generator, name: String) {
+    let anchor = w.named(&name);
+    let component = w
+        .protos
+        .message(&anchor)
+        .component
+        .as_mut()
+        .expect("a component");
+    assert!(component.starting_types.is_empty());
+}
+
+#[given(regex = r#"^"([\w-]+)" takes the command "([^"]+)" and the fact "([^"]+)"$"#)]
+fn takes(w: &mut Generator, name: String, command: String, fact: String) {
+    w.input(&command, &name);
+    w.input(&fact, &name).fact = true;
+}
+
+#[given(regex = r#"^the message "([^"]+)" carries \((command|fact)\) naming "(\w+)"$"#)]
+fn carries(w: &mut Generator, message: String, option: String, component: String) {
+    w.input(&message, &component).fact = option == "fact";
 }
 
 #[given(
-    regex = r#"^a POLICY component "(\w+)" with input domain "([\w-]+)" and output domain "([\w-]+)"$"#
+    regex = r#"^an \(event\) entry for "([^"]+)" naming "([\w-]+)" with the domain override "([\w-]+)"$"#
 )]
-fn policy_between(w: &mut Generator, name: String, input: String, output: String) {
-    policy(w, name, input, output);
-}
-
-#[given(
-    regex = r#"^a PROCESS_MANAGER component "(\w+)" owning domain "([\w-]+)"(?: with output_domain "([\w-]+)")?$"#
-)]
-fn process_manager(w: &mut Generator, name: String, domain: String, output: String) {
-    let component = w.component(&name, "PROCESS_MANAGER", &domain);
-    component.domain = Some(domain);
-    component.output_domain = (!output.is_empty()).then_some(output);
-}
-
-#[given(regex = r#"^a process manager "(\w+)" owning domain "([\w-]+)" with input "([^"]+)"$"#)]
-fn process_manager_with_input(w: &mut Generator, name: String, domain: String, input: String) {
-    process_manager(w, name.clone(), domain, String::new());
-    w.input(&input, &name);
-}
-
-#[given(regex = r#"^an \(event\) entry for "([^"]+)" naming "(\w+)" with domain "([\w-]+)"$"#)]
-fn event_entry(w: &mut Generator, event: String, component: String, domain: String) {
+fn event_override(w: &mut Generator, event: String, component: String, domain: String) {
     let component = w.named(&component);
     w.protos
         .message(&full(&event))
         .events
         .push((component, Some(domain)));
+}
+
+#[given(regex = r#"^no \(event\) entry for "([^"]+)" names "(\w+)"$"#)]
+fn no_event_entry(w: &mut Generator, event: String, component: String) {
+    let component = w.named(&component);
+    let message = w.protos.message(&full(&event));
+    message.events.retain(|(named, _)| *named != component);
+}
+
+#[given(regex = r#"^no component in the descriptor set folds "([^"]+)"$"#)]
+fn no_folder(w: &mut Generator, event: String) {
+    let event = full(&event);
+    let entries = w.protos.message(&event).events.clone();
+    for (component, _) in entries {
+        let kind = w
+            .protos
+            .messages
+            .get(&component)
+            .and_then(|m| m.component.as_ref())
+            .map(|c| c.kind.clone());
+        assert!(
+            !matches!(kind.as_deref(), Some("AGGREGATE" | "PROCESS_MANAGER")),
+            "{component} folds {event}"
+        );
+    }
 }
 
 #[given(
@@ -139,123 +216,7 @@ fn command_listing(
     }
 }
 
-#[given(regex = r#"^"([^"]+)" (?:refuses with "([^"]+)"|declares no refuses)$"#)]
-fn refuses_or_not(w: &mut Generator, command: String, refusal: String) {
-    if refusal.is_empty() {
-        return;
-    }
-    let name = full(&command);
-    let input = w
-        .protos
-        .message(&name)
-        .input
-        .as_mut()
-        .unwrap_or_else(|| panic!("{name} is no input"));
-    input.refuses.push(full(&refusal));
-    w.protos.message(&full(&refusal));
-}
-
-#[given(regex = r#"^a \(command\) entry for "([^"]+)" naming "(\w+)" that sets starts$"#)]
-fn starting_entry(w: &mut Generator, command: String, component: String) {
-    w.input(&command, &component).starts = true;
-}
-
-#[given(regex = r#"^its \(command\) entry for "([^"]+)" (sets starts|does not)$"#)]
-fn its_entry(w: &mut Generator, command: String, sets: String) {
-    let component = last_component(w);
-    w.input(&command, &component).starts = sets == "sets starts";
-}
-
-/// The component declared last, by the name the scenario gave it.
-fn last_component(w: &Generator) -> String {
-    w.last_component.clone().expect("a component")
-}
-
-#[given(
-    regex = r#"^the input "([^"]+)" for "(\w+)" has \(command\)\.fact (true|false)( and \(command\)\.starts true)?$"#
-)]
-fn input_fact(w: &mut Generator, input: String, component: String, fact: String, starts: String) {
-    let input = w.input(&input, &component);
-    input.fact = fact == "true";
-    input.starts = !starts.is_empty();
-}
-
-#[given(regex = r#"^its \(command\)\.refuses lists "([^"]+)"$"#)]
-fn its_refuses(w: &mut Generator, refusal: String) {
-    let name = w.last_input.clone().expect("an input");
-    if let Some(input) = w.protos.message(&name).input.as_mut() {
-        input.refuses.push(full(&refusal));
-    }
-}
-
-#[given(
-    regex = r#"^the value (\w+) of enum "([^"]+)", no refusal's Reason is marked \(refusal_status\) (\w+)$"#
-)]
-fn marked_elsewhere(w: &mut Generator, value: String, enumeration: String, status: String) {
-    w.protos
-        .enums
-        .insert(full(&enumeration), vec![(value, Some(status))]);
-}
-
-#[given(
-    regex = r#"^the zero value REASON_UNSPECIFIED of "([^"]+)"'s Reason is marked \(refusal_status\) (\w+)$"#
-)]
-fn marked_zero(w: &mut Generator, refusal: String, status: String) {
-    let reasons = &mut w.protos.message(&full(&refusal)).reasons;
-    reasons.push(("REASON_UNSPECIFIED".to_string(), Some(status)));
-    reasons.push(("REASON_TAKEN".to_string(), None));
-}
-
-#[given(regex = r#"^an "([\w-]+)" aggregate component whose state message is "([^"]+)"$"#)]
-fn aggregate_with_state(w: &mut Generator, domain: String, state: String) {
-    w.names.insert(domain.clone(), state.clone());
-    let message = w.protos.message(&state);
-    message.component = Some(crate::protos::Component {
-        kind: "AGGREGATE".to_string(),
-        domain: Some(domain),
-        ..Default::default()
-    });
-}
-
 #[given(regex = r#"^the business binary is built as version "([^"]+)"$"#)]
 fn built_as(w: &mut Generator, version: String) {
     w.version = Some(version);
-}
-
-#[given(regex = r#"^a (AGGREGATE|PROCESS_MANAGER|PROJECTOR) component "(\w+)"$"#)]
-fn component_of_kind(w: &mut Generator, kind: String, name: String) {
-    let domain = package(&name.to_lowercase());
-    let component = w.component(&name, &kind, &domain);
-    match kind.as_str() {
-        "PROJECTOR" => component.input_domain = Some("order".to_string()),
-        _ => component.domain = Some(domain),
-    }
-}
-
-#[given(regex = r#"^no \(event\) entry for "([^"]+)" names "(\w+)"$"#)]
-fn no_event_entry(w: &mut Generator, event: String, component: String) {
-    let component = w.named(&component);
-    let message = w.protos.message(&full(&event));
-    message.events.retain(|(named, _)| *named != component);
-}
-
-#[given(regex = r#"^no \(command\) entry naming "(\w+)" sets starts$"#)]
-fn none_starts(w: &mut Generator, component: String) {
-    let component = w.named(&component);
-    for message in w.protos.messages.values_mut() {
-        if let Some(input) = message.input.as_mut().filter(|i| i.component == component) {
-            input.starts = false;
-        }
-    }
-}
-
-#[given(
-    regex = r#"^a (AGGREGATE|PROCESS_MANAGER|POLICY|PROJECTOR) component "(\w+)" that no \(command\) or \(event\) entry names$"#
-)]
-fn idle(w: &mut Generator, kind: String, name: String) {
-    match kind.as_str() {
-        // A policy declares both its domains (C-0582).
-        "POLICY" => policy(w, name, "order".to_string(), "inventory".to_string()),
-        _ => component_of_kind(w, kind, name),
-    }
 }

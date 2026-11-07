@@ -52,7 +52,7 @@ source = "git+https://github.com/angzarr-io/angzarr?rev=44143e65f0c61fa7720b0ca5
 [[package]]
 name = "angzarr-embedded-host-config"
 version = "0.1.0"
-source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=58e898dbee12c67159fb9dbb33227a5006c8f0f4#58e898dbee12c67159fb9dbb33227a5006c8f0f4"
+source = "git+https://github.com/angzarr-io/angzarr-embedded?rev=e3e22db85b0bdb806a8a31267e1915a3a7cef809#e3e22db85b0bdb806a8a31267e1915a3a7cef809"
 dependencies = [
  "angzarr-yaml",
  "serde",

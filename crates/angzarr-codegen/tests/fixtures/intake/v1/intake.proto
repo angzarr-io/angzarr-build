@@ -9,29 +9,28 @@ import "io/angzarr/v1/options.proto";
 
 message IntakeState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_PROCESS_MANAGER
-    domain: "intake"
-    name: "Intake"
+    component_name: "pmg-intake"
+    process_manager: {
+      domain: "intake"
+      starting_types: ["intake.v1.StartIntake"]
+    }
   };
 
   bool started = 1;
 }
 
 message StartIntake {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "intake.v1.IntakeState"
     emits: "intake.v1.IntakeStarted"
-    starts: true
-    fact: true
   };
   string id = 1;
 }
 
 message RecordArrival {
-  option (io.angzarr.v1.command) = {
+  option (io.angzarr.v1.fact) = {
     component: "intake.v1.IntakeState"
     emits: "intake.v1.Arrived"
-    fact: true
   };
   string id = 1;
 }

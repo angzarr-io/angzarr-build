@@ -186,21 +186,6 @@ fn test_markup_domain_accepts_policy_components() {
     assert!(!generated.is_empty());
 }
 
-#[test]
-fn test_markup_domain_refuses_refuses_on_a_fact() {
-    const FILE: &str = "bad/v1/refusing_fact.proto";
-    assert_eq!(
-        markup_domain(
-            &descriptors(&[FILE]),
-            &[FILE],
-            &[("bad.v1", "::bad_proto::v1")]
-        ),
-        Err(CodegenError::Markup(MarkupError::RefusesOnFact {
-            message: "bad.v1.Happened".to_string(),
-        }))
-    );
-}
-
 /// A message named as one of the names the domain layer gives the
 /// runtime's types (`Context`, `PolicyContext`, `CommandContext`,
 /// `Rejection`, `Bug`, `Failed`, `BusinessStatus`, `RetryableStatus`) is
@@ -542,16 +527,6 @@ fn test_markup_domain_refuses_a_nested_type() {
         CodegenError::Proto(ProtoError::NestedType {
             message: "bad.v1.Poke".to_string(),
             nested: "bad.v1.Poke.Inner".to_string(),
-        })
-    );
-}
-
-#[test]
-fn test_markup_domain_refuses_a_commutative_state() {
-    assert_eq!(
-        refusal("bad/v1/commutative.proto"),
-        CodegenError::Markup(MarkupError::Commutative {
-            component: "bad.v1.ThingState".to_string(),
         })
     );
 }

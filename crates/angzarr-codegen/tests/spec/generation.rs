@@ -3,11 +3,12 @@
 //! them (`angzarr_codegen::warnings`): a declaration the contract forbids
 //! refused, its exit status non-zero, and its warnings, which leave the
 //! status 0; the tier's warning labels (`ANZ100`) are the crate's codes
-//! ([`coded`]). Generating runs every check generation makes: the
-//! descriptors, the domain layer, the scaffold and the adapters.
+//! ([`coded`]). Generating the component's descriptor is the `descriptors`
+//! the build writes.
 
-use angzarr_codegen::{CodegenError, Warning};
+use angzarr_codegen::{CodegenError, MarkupError, Warning};
 use angzarr_diagnostic::Diagnostic as _;
+use angzarr_proto::v1::component_descriptor::Kind;
 use cucumber::{then, when};
 
 use crate::protos::full;
@@ -23,8 +24,7 @@ fn args(error: &CodegenError) -> Vec<String> {
 }
 
 /// Whether `arg` names `wanted`: each of its dot-separated parts, in
-/// order (`table.TableRefused.REASON_UNSPECIFIED` names the nested
-/// `table.TableRefused.Reason.REASON_UNSPECIFIED`).
+/// order.
 fn names_in(arg: &str, wanted: &str) -> bool {
     let mut parts = arg.split(['.', '"', '(', ')', ' ']);
     wanted.split('.').all(|w| parts.any(|p| p == w))
@@ -43,11 +43,9 @@ fn linted(w: &mut Generator) {
     w.lint_protos();
 }
 
-#[when(
-    regex = r"^(?:the component's descriptor is generated|the handler interfaces are generated|angzarr-cli scaffolds the component)$"
-)]
+#[when("the component's descriptor is generated")]
 fn generate(w: &mut Generator) {
-    w.lint();
+    w.generate();
 }
 
 #[then("lint exits with status 0")]
@@ -56,7 +54,7 @@ fn zero(w: &mut Generator) {
 }
 
 /// Whether `warning` names `name` (a full name, or its last part).
-fn warns_of(warning: &angzarr_codegen::Warning, name: &str) -> bool {
+fn warns_of(warning: &Warning, name: &str) -> bool {
     let full = full(name);
     warning
         .args()
@@ -77,16 +75,31 @@ fn coded(label: &str) -> fn(&Warning) -> bool {
     }
 }
 
-#[then(
-    regex = r#"^lint reports (?:warning (ANZ\d+)|a warning) naming (?:command )?"([^"]+)"(.*)$"#
-)]
-fn warning_naming(w: &mut Generator, label: String, name: String, _rest: String) {
-    let named = w.named(&name);
-    let code = (!label.is_empty()).then(|| coded(&label));
+/// The warning `is` of `component`, naming each quoted name of `rest` too.
+fn assert_warned(w: &Generator, is: fn(&Warning) -> bool, component: &str, rest: &str) {
+    let named = w.named(component);
+    let quoted: Vec<&str> = rest.split('"').skip(1).step_by(2).collect();
     let found = w.warnings.iter().any(|warning| {
-        code.is_none_or(|is| is(warning)) && (warns_of(warning, &named) || warns_of(warning, &name))
+        is(warning)
+            && (warns_of(warning, &named) || warns_of(warning, component))
+            && quoted.iter().all(|q| warns_of(warning, q))
     });
-    assert!(found, "no warning {label} naming {name}: {:?}", w.warnings);
+    assert!(found, "no warning for {component}{rest}: {:?}", w.warnings);
+}
+
+#[then(regex = r#"^lint reports warning (ANZ\d+) naming (?:command )?"([^"]+)"(.*)$"#)]
+fn warning_naming(w: &mut Generator, label: String, name: String, rest: String) {
+    assert_warned(w, coded(&label), &name, &rest);
+}
+
+#[then(regex = r#"^lint reports a warning naming "([^"]+)" and its empty starting_types$"#)]
+fn warning_starting_types(w: &mut Generator, name: String) {
+    assert_warned(
+        w,
+        |w| matches!(w, Warning::NoStartingInput { .. }),
+        &name,
+        "",
+    );
 }
 
 #[then("lint exits with a non-zero status")]
@@ -95,13 +108,31 @@ fn non_zero(w: &mut Generator) {
 }
 
 #[then(regex = r#"^lint reports an error naming "([^"]+)"(.*)$"#)]
-fn error_naming(w: &mut Generator, name: String, _rest: String) {
+fn error_naming(w: &mut Generator, name: String, rest: String) {
     let named = w.named(&name);
     let error = w.refused();
     assert!(
         names(error, &named) || names(error, &name),
         "{error:?} names no {name}"
     );
+    for quoted in rest.split('"').skip(1).step_by(2) {
+        assert!(names(error, quoted), "{error:?} names no {quoted}");
+    }
+    // The error is the one the scenario describes, not another that names
+    // the same declaration.
+    let why = |is: fn(&MarkupError) -> bool| matches!(error, CodegenError::Markup(m) if is(m));
+    let expected = if rest.contains("its component_name") {
+        Some(why(|m| matches!(m, MarkupError::ComponentName { .. })))
+    } else if rest.contains("its missing output_domain") {
+        Some(why(|m| matches!(m, MarkupError::NoOutputDomain { .. })))
+    } else if rest.contains("unresolved refuses type") {
+        Some(why(|m| matches!(m, MarkupError::UnknownRefusal { .. })))
+    } else if rest.contains("its refuses type") {
+        Some(why(|m| matches!(m, MarkupError::ForeignRefusal { .. })))
+    } else {
+        None
+    };
+    assert_ne!(expected, Some(false), "{error:?} is not the error of{rest}");
 }
 
 #[then(regex = r#"^lint reports no error for "([^"]+)"$"#)]
@@ -109,281 +140,110 @@ fn no_error(w: &mut Generator, _name: String) {
     let _ = w.generated();
 }
 
-#[then(
-    regex = r#"^(?:the|the PM's) descriptor lists (?:starting type "([^"]+)"|"([^"]+)" among its starting types)$"#
-)]
-fn starting_type(w: &mut Generator, listed: String, among: String) {
-    let wanted = full(if listed.is_empty() { &among } else { &listed });
-    let descriptor = w.only_descriptor();
-    assert!(
-        descriptor.starting_types.contains(&wanted),
-        "{:?}",
-        descriptor.starting_types
-    );
-}
-
-#[then("the descriptor lists no input domains")]
-fn no_inputs(w: &mut Generator) {
-    assert!(w.only_descriptor().inputs.is_empty());
-}
-
 #[then(regex = r#"^the descriptor carries rules version "([^"]+)"$"#)]
 fn rules_version(w: &mut Generator, version: String) {
-    assert_eq!(w.only_descriptor().rules_version, version);
+    assert_eq!(w.descriptor().rules_version, version);
 }
 
-#[then(regex = r#"^the descriptor carries the state type "([^"]+)"$"#)]
-fn state_type(w: &mut Generator, state: String) {
-    let descriptor = w.only_descriptor();
-    assert_eq!(descriptor.state.map(|s| s.type_url), Some(state));
-}
-
-#[then(regex = r#"^the descriptor lists input domain "([\w-]+)" only$"#)]
-fn input_only(w: &mut Generator, domain: String) {
-    let inputs: Vec<String> = w
-        .only_descriptor()
-        .inputs
-        .into_iter()
-        .map(|t| t.domain)
-        .collect();
-    assert_eq!(inputs, [domain]);
-}
-
-#[then(regex = r#"^the descriptor carries output domain "([\w-]+)"$"#)]
-fn output_domain(w: &mut Generator, domain: String) {
-    assert_eq!(w.only_descriptor().output_domain, domain);
-}
-
-#[then("the descriptor carries no state")]
-fn no_state(w: &mut Generator) {
-    assert_eq!(w.only_descriptor().state, None);
-}
-
-#[then("the descriptor carries no output domain")]
-fn no_output_domain(w: &mut Generator) {
-    assert_eq!(w.only_descriptor().output_domain, "");
-}
-
-/// The adapter method that handles `input`, its markup through its return
-/// type, as one line.
-fn handler(w: &Generator, input: &str) -> String {
-    let name = full(input);
-    let bare = name.rsplit('.').next().unwrap_or_default();
-    let adapters: String = w.generated().adapters.split_whitespace().collect();
-    let at = ["handles_cmd", "handles_fact"]
-        .iter()
-        .find_map(|markup| adapters.find(&format!("#[{markup}({bare}")))
-        .unwrap_or_else(|| panic!("no handler of {bare} in {adapters}"));
-    let rest = &adapters[at..];
-    rest[..rest.find('{').unwrap_or(rest.len())].to_string()
-}
-
-#[then(regex = r#"^its handler for "([^"]+)" is marked (#\[handles_cmd\]|#\[handles_fact\])$"#)]
-fn marked(w: &mut Generator, input: String, markup: String) {
-    // `#[handles_cmd]` as the adapter writes it, with its type: `#[handles_cmd(`.
-    let opening = format!("{}(", markup.trim_end_matches(']'));
-    let handler = handler(w, &input);
-    assert!(handler.starts_with(&opening), "{handler}");
-}
-
-#[then(regex = r#"^that handler (may|may not) refuse$"#)]
-fn may_refuse(w: &mut Generator, may: String) {
-    let input = w.last_input.clone().expect("an input");
-    let handler = handler(w, &input);
-    assert_eq!(handler.contains("->Result<"), may == "may", "{handler}");
-}
-
-/// `text` with its whitespace removed: generated code read as one line.
-fn squeezed(text: &str) -> String {
-    text.split_whitespace().collect()
-}
-
-/// The text of the Python file of `files` whose path ends with `suffix`.
-fn python_file<'a>(files: &'a [(String, String)], suffix: &str) -> &'a str {
-    files
-        .iter()
-        .find(|(path, _)| path.ends_with(suffix))
-        .map(|(_, text)| text.as_str())
-        .unwrap_or_else(|| panic!("no {suffix} in {:?}", files.iter().map(|f| &f.0)))
-}
-
-/// The entries of the Python table `name` (`_COMMANDS = { .. }`), squeezed.
-fn python_table(text: &str, name: &str) -> String {
-    let text = squeezed(text);
-    let open = format!("{name}={{");
-    let at = text
-        .find(&open)
-        .unwrap_or_else(|| panic!("no table {name} in {text}"));
-    let rest = &text[at + open.len()..];
-    rest[..rest.find('}').unwrap_or(rest.len())].to_string()
-}
-
-#[then(regex = r#"^the reaction of "(\w+)" to "([^"]+)" may return "([^"]+)"$"#)]
-fn reaction_returns(w: &mut Generator, policy: String, event: String, output: String) {
-    let bare = full(&output)
-        .rsplit('.')
-        .next()
-        .unwrap_or_default()
-        .to_string();
-    // Rust: the adapter's reaction takes it from what the interface returns.
-    let adapters = squeezed(&w.generated().adapters);
-    assert!(
-        adapters.contains(&format!("Output::{bare}(output)=>")),
-        "the Rust reaction takes no {bare}: {adapters}"
-    );
-    // Python: the logic's reaction is typed to return it.
-    let files = w.python(&policy);
-    let logic = squeezed(python_file(&files, "/logic.py"));
-    let event = full(&event)
-        .rsplit('.')
-        .next()
-        .unwrap_or_default()
-        .to_string();
-    let reaction = format!("def{}(", snake(&event));
-    let at = logic
-        .find(&reaction)
-        .unwrap_or_else(|| panic!("no reaction {reaction} in {logic}"));
-    // The interface's method, through its ` ...` body.
-    let rest = &logic[at..];
-    let method = &rest[..rest.find("...").unwrap_or(rest.len())];
-    let returns = &method[method.find("->").unwrap_or(method.len())..];
-    assert!(
-        returns.contains(&bare),
-        "the Python reaction returns no {bare}: {method}"
-    );
-}
-
-#[then(regex = r#"^the generated code of "(\w+)" sends "([^"]+)" as a (Command|Fact)$"#)]
-fn sends_as(w: &mut Generator, policy: String, output: String, arm: String) {
-    let bare = full(&output)
-        .rsplit('.')
-        .next()
-        .unwrap_or_default()
-        .to_string();
-    // Rust: the arm the adapter's reaction builds it in.
-    let adapters = squeezed(&w.generated().adapters);
-    let call = if arm == "Fact" { "fact" } else { "to" };
-    // prettyplease may brace the arm's body.
-    let sent = format!("commands.{call}(root,output)");
-    assert!(
-        adapters.contains(&format!("Output::{bare}(output)=>{sent}"))
-            || adapters.contains(&format!("Output::{bare}(output)=>{{{sent}}}")),
-        "the Rust reaction does not send {bare} as a {arm}: {adapters}"
-    );
-    // Python: the table the dispatch sends it from.
-    let files = w.python(&policy);
-    let dispatch = python_file(&files, &format!("{}_angzarr.py", snake(&policy)));
-    let entry = format!("_d.{bare}:");
-    let (from, other) = if arm == "Fact" {
-        ("_SENT_FACTS", "_COMMANDS")
-    } else {
-        ("_COMMANDS", "_SENT_FACTS")
+#[then(regex = r#"^its aggregate arm carries domain "([\w-]+)" and state type_name "([^"]+)"$"#)]
+fn aggregate_arm(w: &mut Generator, domain: String, state: String) {
+    let Some(Kind::Aggregate(aggregate)) = w.descriptor().kind else {
+        panic!("no aggregate arm");
     };
-    assert!(
-        python_table(dispatch, from).contains(&entry),
-        "the Python dispatch does not send {bare} as a {arm}: {dispatch}"
-    );
-    assert!(
-        !python_table(dispatch, other).contains(&entry),
-        "the Python dispatch sends {bare} in both arms: {dispatch}"
-    );
+    assert_eq!(aggregate.domain, domain);
+    assert_eq!(aggregate.state.map(|s| s.type_name), Some(state));
 }
 
-#[then(regex = r#"^"(\w+)" (is given|is not given) a handler of the refusal of "([^"]+)"$"#)]
-fn refusal_handler(w: &mut Generator, domain: String, given: String, command: String) {
-    // The Python scaffold's: its logic's on_refused_<command>, and the
-    // dispatch's registration of it. Rust's generated domain layer gives no
-    // domain a refusal handler.
-    let name = full(&command);
-    let bare = name.rsplit('.').next().unwrap_or_default().to_string();
-    let files = w.python(&domain);
-    let logic = python_file(&files, "/logic.py");
-    let method = format!("def on_refused_{}(", snake(&bare));
-    let dispatch = python_file(&files, &format!("{}_angzarr.py", snake(&domain)));
-    let registered = squeezed(dispatch).contains(&format!("dispatch.on_refused(\"{name}\""));
-    let expected = given == "is given";
-    assert_eq!(logic.contains(&method), expected, "{method} in {logic}");
-    assert_eq!(
-        registered, expected,
-        "the refusal of {name} registered in {dispatch}"
-    );
+#[then(
+    regex = r#"^the descriptor's policy arm carries input_domain "([\w-]+)" and output_domain "([\w-]+)"$"#
+)]
+fn policy_arm(w: &mut Generator, input: String, output: String) {
+    let Some(Kind::Policy(policy)) = w.descriptor().kind else {
+        panic!("no policy arm");
+    };
+    assert_eq!((policy.input_domain, policy.output_domain), (input, output));
 }
 
-/// `BuyInWallet` as `buy_in_wallet`, as the generator names a method or a
-/// module.
-fn snake(camel: &str) -> String {
-    let mut out = String::new();
-    let chars: Vec<char> = camel.chars().collect();
-    for (i, c) in chars.iter().enumerate() {
-        if c.is_ascii_uppercase() && i > 0 {
-            let before = chars[i - 1];
-            let after = chars.get(i + 1);
-            if before.is_ascii_lowercase()
-                || before.is_ascii_digit()
-                || (before.is_ascii_uppercase() && after.is_some_and(char::is_ascii_lowercase))
-            {
-                out.push('_');
-            }
-        }
-        out.push(c.to_ascii_lowercase());
+/// The name of the arm `kind` is.
+fn arm(kind: &Option<Kind>) -> &'static str {
+    match kind {
+        Some(Kind::Aggregate(_)) => "aggregate",
+        Some(Kind::ProcessManager(_)) => "process_manager",
+        Some(Kind::Policy(_)) => "policy",
+        Some(Kind::Projector(_)) => "projector",
+        None => "none",
     }
-    out
 }
 
-/// The Rust adapter's handler of `input` and what follows it to the next
-/// handler, squeezed: its markup, signature and body.
-fn handler_body(w: &Generator, input: &str) -> String {
-    let name = full(input);
-    let bare = name.rsplit('.').next().unwrap_or_default();
-    let adapters = squeezed(&w.generated().adapters);
-    let at = ["handles_cmd", "handles_fact"]
-        .iter()
-        .find_map(|markup| adapters.find(&format!("#[{markup}({bare}")))
-        .unwrap_or_else(|| panic!("no handler of {bare} in {adapters}"));
-    let rest = &adapters[at + 1..];
-    rest[..rest.find("#[").unwrap_or(rest.len())].to_string()
+#[then("the descriptor has no aggregate, process_manager or projector arm")]
+fn only_policy(w: &mut Generator) {
+    assert_eq!(arm(&w.descriptor().kind), "policy");
 }
 
-#[then(regex = r#"^the (\w+) handler returns a list of the component's events$"#)]
-fn returns_a_list(w: &mut Generator, message: String) {
-    let input = w.last_input.clone().expect("an input");
-    assert!(input.ends_with(&message), "{input}");
-    let component = w.last_component.clone().expect("a component");
-    let bare = component.rsplit('.').next().unwrap_or_default().to_string();
-    // Rust: the interface's list, each event a step of the markup (the
-    // adapter's one helper of its domain's events).
-    let body = handler_body(w, &input);
-    assert!(
-        body.contains("Self::emitted::<") || body.contains("Self::recorded("),
-        "{body}"
-    );
-    let adapters = squeezed(&w.generated().adapters);
-    assert!(
-        adapters.contains(&format!("(events:Vec<{bare}Event>")),
-        "{adapters}"
-    );
-    // Python: the logic's signature returns a list.
-    let files = w.python(&bare);
-    let logic = squeezed(python_file(&files, "/logic.py"));
-    let method = format!("def{}(", snake(&message));
-    let at = logic
-        .find(&method)
-        .unwrap_or_else(|| panic!("no {method} in {logic}"));
-    let signature = &logic[at..at + logic[at..].find(":...").unwrap_or(0)];
-    assert!(signature.contains(")->list["), "{signature}");
-}
-
-#[then("it may return an empty list")]
-fn may_be_empty(w: &mut Generator) {
-    let input = w.last_input.clone().expect("an input");
-    // An empty list folds to no event: the markup's `of(None)`, in the
-    // helper the handler maps through.
-    let body = handler_body(w, &input);
-    let adapters = squeezed(&w.generated().adapters);
-    let empty = if body.contains("Self::recorded(") {
-        "Record::of(None::<"
-    } else {
-        "Emit::of(None::<"
+#[then(regex = r#"^the descriptor's (\w+) arm is set, carrying (.+)$"#)]
+fn arm_is_set(w: &mut Generator, wanted: String, carrying: String) {
+    let kind = w.descriptor().kind;
+    assert_eq!(arm(&kind), wanted);
+    let carried = match kind {
+        Some(Kind::Aggregate(a)) => !a.domain.is_empty() && a.state.is_some(),
+        Some(Kind::ProcessManager(p)) => !p.domain.is_empty() && p.state.is_some(),
+        Some(Kind::Projector(_)) => carrying == "input_domains only",
+        other => panic!("{other:?}"),
     };
-    assert!(adapters.contains(empty), "{empty} in {adapters}");
+    assert!(carried, "{wanted} does not carry {carrying}");
+}
+
+#[then("no other kind arm is set")]
+fn no_other_arm(_w: &mut Generator) {
+    // The kind is a oneof: the arm asserted is the only one.
+}
+
+#[then(
+    regex = r#"^(?:its|the descriptor's) process_manager arm (?:carries|names) domain "([\w-]+)"$"#
+)]
+fn pm_domain(w: &mut Generator, domain: String) {
+    assert_eq!(pm(w).domain, domain);
+}
+
+#[then(regex = r#"^it names domain "([\w-]+)"$"#)]
+fn it_names_domain(w: &mut Generator, domain: String) {
+    assert_eq!(pm(w).domain, domain);
+}
+
+fn pm(w: &Generator) -> angzarr_proto::v1::ProcessManagerDescriptor {
+    let Some(Kind::ProcessManager(pm)) = w.descriptor().kind else {
+        panic!("no process_manager arm");
+    };
+    pm
+}
+
+#[then(regex = r#"^its state type_name is "([^"]+)"$"#)]
+fn pm_state(w: &mut Generator, state: String) {
+    assert_eq!(pm(w).state.map(|s| s.type_name), Some(full(&state)));
+}
+
+#[then(regex = r#"^its starting_types are "([^"]+)", a name with no type URL prefix$"#)]
+fn pm_starting_types(w: &mut Generator, wanted: String) {
+    let starting = pm(w).starting_types;
+    assert_eq!(starting, [full(&wanted)]);
+    assert!(starting.iter().all(|t| !t.starts_with('/')));
+}
+
+#[then(regex = r#"^the descriptor's process_manager arm lists starting type "([^"]+)" only$"#)]
+fn pm_lists_only(w: &mut Generator, wanted: String) {
+    assert_eq!(pm(w).starting_types, [full(&wanted)]);
+}
+
+#[then(regex = r#"^the PM's descriptor lists "([^"]+)" among its starting types$"#)]
+fn pm_lists(w: &mut Generator, wanted: String) {
+    let starting = pm(w).starting_types;
+    assert!(starting.contains(&full(&wanted)), "{starting:?}");
+}
+
+#[then(regex = r#"^its projector arm lists input_domains "([\w-]+)" and "([\w-]+)"$"#)]
+fn projector_domains(w: &mut Generator, first: String, second: String) {
+    let Some(Kind::Projector(projector)) = w.descriptor().kind else {
+        panic!("no projector arm");
+    };
+    assert_eq!(projector.input_domains, [first, second]);
 }

@@ -2,10 +2,9 @@ syntax = "proto3";
 package bad.v1;
 import "io/angzarr/v1/options.proto";
 
-// A component of no kind: none the generator emits.
+// A component of no kind: the kind oneof unset.
 message ThingState {
   option (io.angzarr.v1.component) = {
-    kind: COMPONENT_KIND_UNSPECIFIED
-    domain: "things"
+    component_name: "thing"
   };
 }
