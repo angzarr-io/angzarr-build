@@ -1056,12 +1056,15 @@ impl Adapter {
 /// continuation step (the markup takes no event enum as is). One of each per domain, generated
 /// only where an input takes it, so no handler repeats the fold.
 fn steps(component: &Component) -> TokenStream {
+    let enum_name = format_ident!("{}Event", component.name);
+    // The empty decision starts from an event type: the domain's first, or
+    // with none its own event type, which the domain layer makes a
+    // `DomainMessage` for the purpose.
     let first = component
         .events
         .first()
         .map(|e| ident(e.name()))
-        .unwrap_or_else(|| format_ident!("Rejection"));
-    let enum_name = format_ident!("{}Event", component.name);
+        .unwrap_or_else(|| enum_name.clone());
     let arms = |component: &Component| -> Vec<TokenStream> {
         component
             .events

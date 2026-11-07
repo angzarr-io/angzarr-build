@@ -128,6 +128,13 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
             }
         });
     }
+    for component in package
+        .components
+        .iter()
+        .filter(|c| c.kind.is_domain() && c.events.is_empty())
+    {
+        items.extend(no_events_message(component, wire));
+    }
     let file: syn::File = syn::parse2(items).expect("the emitter writes valid Rust");
     let mut out = prettyplease::unparse(&file);
     for interface in &package.interfaces {
@@ -135,6 +142,31 @@ pub(crate) fn markup_package(package: &Package, wire: &syn::Path) -> String {
         out.push_str(interface);
     }
     out
+}
+
+/// The event type of a domain with no events (`{Component}Event`, an enum
+/// with no value) as a `DomainMessage`, which the markup's `Emit::of` takes
+/// of nothing else: the adapter's empty decision is `Emit::of(None::<..>)`
+/// of it. Its wire type is the domain's state message, a prost message
+/// with a type URL no event of the domain has; nothing decodes to it.
+fn no_events_message(component: &crate::model::Component, wire: &syn::Path) -> TokenStream {
+    let root = root();
+    let events = format_ident!("{}Event", component.name);
+    let state = ident(component.anchor.name());
+    let anchor = component.anchor.full_name();
+    quote! {
+        impl #root::markup::DomainMessage for #events {
+            type Wire = #wire::#state;
+
+            fn to_wire(&self) -> #wire::#state {
+                match *self {}
+            }
+
+            fn from_wire(_wire: #wire::#state) -> Result<Self, #root::WireError> {
+                Err(#root::WireError::Missing { message: #anchor, field: "event" })
+            }
+        }
+    }
 }
 
 /// The prost settings the domain layer is generated for, checked where the
