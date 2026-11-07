@@ -10,8 +10,8 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, Existing, MarkupError, Owner, ProtoInput, PythonApp, ScaffoldFile, Translate,
-    UseError, complete, refusal_key, scaffold_python,
+    CodegenError, Existing, MarkupError, Owner, ProtoInput, PythonApp, ScaffoldFile, complete,
+    refusal_key, scaffold_python,
 };
 use common::*;
 
@@ -35,7 +35,7 @@ fn app(domain: &str) -> PythonApp {
 }
 
 fn blackjack(file: &str, domain: &str) -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BLACKJACK), &[file], &app(domain), &[], &[])
+    scaffold_python(&descriptors(BLACKJACK), &[file], &app(domain))
         .unwrap_or_else(|e| panic!("{file} as {domain}: {e:?}"))
 }
 
@@ -91,8 +91,6 @@ fn view() -> Vec<ScaffoldFile> {
         &descriptors(&[KINDS]),
         &[KINDS],
         &app("projector-ledger-view"),
-        &[],
-        &[],
     )
     .unwrap()
 }
@@ -205,8 +203,6 @@ fn test_a_command_with_no_emits_returns_a_list_of_any_of_its_domains_events() {
         &descriptors(&["kinds/v1/kinds.proto"]),
         &["kinds/v1/kinds.proto"],
         &app("ledger"),
-        &[],
-        &[],
     )
     .unwrap();
     assert_has(
@@ -220,7 +216,7 @@ fn test_a_command_with_no_emits_returns_a_list_of_any_of_its_domains_events() {
 
 #[test]
 fn test_a_command_with_no_emits_of_a_domain_with_no_events_returns_none() {
-    let files = scaffold_python(&descriptors(BARE), BARE, &app("bare"), &[], &[]).unwrap();
+    let files = scaffold_python(&descriptors(BARE), BARE, &app("bare")).unwrap();
     assert_has(
         source(&files, "/logic.py"),
         &[
@@ -391,7 +387,7 @@ fn test_a_process_manager_is_scaffolded_with_its_fact() {
 // ------------------------------------------------ refusals, lists
 
 fn till() -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(TILL), TILL, &app("till"), &[], &[]).unwrap()
+    scaffold_python(&descriptors(TILL), TILL, &app("till")).unwrap()
 }
 
 /// A decision returns a list of its events (decision 14.75; C-0797) or one
@@ -505,8 +501,7 @@ fn test_a_refusals_reason_enum_is_its_rejection_code() {
 #[test]
 fn test_a_refusals_key_is_the_same_in_python_as_in_rust() {
     const KINDS: &str = "kinds/v1/kinds.proto";
-    let files =
-        scaffold_python(&descriptors(&[KINDS]), &[KINDS], &app("ledger"), &[], &[]).unwrap();
+    let files = scaffold_python(&descriptors(&[KINDS]), &[KINDS], &app("ledger")).unwrap();
     let domain = source(&files, "/domain.py");
     let cases = [
         (
@@ -619,7 +614,7 @@ fn hex_of(text: &str) -> String {
 fn test_a_component_declaring_no_name_is_refused_with_no_default() {
     const FILE: &str = "bad/v1/component_name_empty.proto";
     assert_eq!(
-        scaffold_python(&descriptors(&[FILE]), &[FILE], &app("things"), &[], &[]),
+        scaffold_python(&descriptors(&[FILE]), &[FILE], &app("things")),
         Err(CodegenError::Markup(MarkupError::ComponentName {
             component: "bad.v1.ThingState".to_string(),
             name: String::new(),
@@ -636,8 +631,6 @@ fn test_a_projectors_sources_are_its_events_domains() {
         &descriptors(&[FILE]),
         &[FILE],
         &app("projector-http-server-view"),
-        &[],
-        &[],
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
     let dispatch = source(&files, "_angzarr.py");
@@ -702,7 +695,7 @@ fn test_the_generated_code_uses_only_the_clients_public_api() {
         table_player(),
         buy_in(),
         till(),
-        buyin_python("policy-buyin-wallet", &[]),
+        buyin_python("policy-buyin-wallet"),
     ] {
         for f in files.iter().filter(|f| f.path.ends_with(".py")) {
             for line in f.source.lines() {
@@ -738,7 +731,7 @@ fn test_the_users_files_of_every_kind_name_nothing_of_the_harness() {
         table_player(),
         buy_in(),
         till(),
-        buyin_python("policy-buyin-wallet", &[]),
+        buyin_python("policy-buyin-wallet"),
     ] {
         for f in files
             .iter()
@@ -804,8 +797,6 @@ fn test_a_projectors_input_domain_is_its_one_source() {
         &descriptors(&[FILE]),
         &[FILE],
         &app("projector-page-counter"),
-        &[],
-        &[],
     )
     .unwrap_or_else(|e| panic!("{e:?}"));
     let dispatch = source(&files, "_angzarr.py");
@@ -844,14 +835,8 @@ fn test_a_map_converts_each_value_by_its_kind() {
 #[test]
 fn test_a_policy_whose_target_takes_facts_only_sends_its_facts() {
     const FILE: &str = "pyshop/v1/views.proto";
-    let files = scaffold_python(
-        &descriptors(&[FILE]),
-        &[FILE],
-        &app("policy-pages-tally"),
-        &[],
-        &[],
-    )
-    .unwrap_or_else(|e| panic!("{e:?}"));
+    let files = scaffold_python(&descriptors(&[FILE]), &[FILE], &app("policy-pages-tally"))
+        .unwrap_or_else(|e| panic!("{e:?}"));
     let logic = source(&files, "/logic.py");
     assert_has(logic, &["-> list[tuple[bytes, Tallied]]: ..."]);
     let dispatch = source(&files, "pages_tally_policy_angzarr.py");
@@ -896,19 +881,9 @@ fn test_a_projectors_descriptor_lists_its_sources_in_order() {
 /// The toy buy-in (`tests/fixtures/buyin`): the buy-in process manager is
 /// the source of the BuyInWallet policy, whose target, the wallet, takes
 /// Deposit and Hold, Hold refusing with InsufficientFunds.
-fn buyin_python(domain: &str, translate: &[Translate]) -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BUYIN), BUYIN, &app(domain), translate, &[])
+fn buyin_python(domain: &str) -> Vec<ScaffoldFile> {
+    scaffold_python(&descriptors(BUYIN), BUYIN, &app(domain))
         .unwrap_or_else(|e| panic!("{domain}: {e:?}"))
-}
-
-/// The refusal switch set to translate BuyInWallet's Hold into the
-/// buy-in's own HoldLost, as the Rust scaffold's tests set it.
-fn translate_hold() -> Translate {
-    Translate {
-        policy: "buyin.v1.BuyInWalletPolicy".to_string(),
-        command: "buyin.v1.Hold".to_string(),
-        fact: "buyin.v1.HoldLost".to_string(),
-    }
 }
 
 /// `source` parses as Python (python3's `ast`).
@@ -936,7 +911,7 @@ fn assert_parses(path: &str, source: &str) {
 
 #[test]
 fn test_a_domain_is_handed_no_pass_through_refusal() {
-    let files = buyin_python("buyin", &[]);
+    let files = buyin_python("buyin");
     let logic = source(&files, "/logic.py");
     // Retired (C-0613): the refusal of a command a policy sends goes to
     // that policy's one callback, never to the source domain: no
@@ -964,7 +939,7 @@ fn test_a_domain_is_handed_no_pass_through_refusal() {
 
 #[test]
 fn test_a_policy_must_translate_each_refused_command() {
-    let files = buyin_python("policy-buyin-wallet", &[]);
+    let files = buyin_python("policy-buyin-wallet");
     let logic = source(&files, "/logic.py");
     assert!(!logic.contains("(Protocol):"), "{logic}");
     // One callback, an abstract method: the command refused and the
@@ -1023,31 +998,6 @@ fn test_a_policy_must_translate_each_refused_command() {
 }
 
 #[test]
-fn test_translate_selects_nothing() {
-    for domain in ["policy-buyin-wallet", "buyin"] {
-        let plain = buyin_python(domain, &[]);
-        let translated = buyin_python(domain, &[translate_hold()]);
-        assert_eq!(plain, translated, "{domain}");
-    }
-}
-
-/// A translate selection the protos do not support is refused, as the
-/// Rust scaffold refuses it.
-#[test]
-fn test_scaffold_python_refuses_translate_for_an_unknown_policy() {
-    let selection = Translate {
-        policy: "buyin.v1.Nowhere".to_string(),
-        ..translate_hold()
-    };
-    assert_eq!(
-        scaffold_python(&descriptors(BUYIN), BUYIN, &app("buyin"), &[selection], &[]),
-        Err(CodegenError::Use(UseError::TranslateUnknownPolicy {
-            policy: "buyin.v1.Nowhere".to_string()
-        }))
-    );
-}
-
-#[test]
 fn test_a_policy_translates_into_its_sources_fact() {
     let files = blackjack(POLICIES, "policy-player-table");
     let domain = source(&files, "/domain.py");
@@ -1081,8 +1031,6 @@ fn test_a_callback_returns_a_choice_of_the_sources_facts() {
         &descriptors(&[KINDS]),
         &[KINDS],
         &app("policy-ledger-audit"),
-        &[],
-        &[],
     )
     .unwrap();
     // The ledger takes two facts, and the audit's one command refuses two
@@ -1102,28 +1050,12 @@ fn test_a_callback_returns_a_choice_of_the_sources_facts() {
     assert!(implementation.optional.is_empty());
 }
 
-#[test]
-fn test_a_policys_callbacks_are_never_selected() {
-    let named = scaffold_python(
-        &descriptors(BUYIN),
-        BUYIN,
-        &app("policy-buyin-wallet"),
-        &[],
-        &["buyin.v1.Deposit".to_string()],
-    )
-    .unwrap();
-    let named = implementation(&named);
-    assert!(named.source.contains("def refused("), "{}", named.source);
-    assert!(named.selected.is_empty());
-    assert!(named.optional.is_empty());
-}
-
 /// A refusal is refused under the status its message declares
 /// (`(refusal_status)`, decision 14.95; there is no default), one number
 /// each of the six business statuses (`google.rpc.Code`).
 #[test]
 fn test_a_refusal_is_refused_under_the_status_its_message_declares() {
-    let files = scaffold_python(&descriptors(STATUSES), STATUSES, &app("gate"), &[], &[]).unwrap();
+    let files = scaffold_python(&descriptors(STATUSES), STATUSES, &app("gate")).unwrap();
     let domain = source(&files, "/domain.py");
     let out = run_domain(
         domain,
@@ -1154,7 +1086,7 @@ fn test_a_refusal_is_refused_under_the_status_its_message_declares() {
 /// neither added again nor reported obsolete.
 #[test]
 fn test_complete_finds_a_policys_refusal_callback_by_its_name() {
-    let fresh = implementation(&buyin_python("policy-buyin-wallet", &[])).clone();
+    let fresh = implementation(&buyin_python("policy-buyin-wallet")).clone();
     let callback = "    def refused(\n        self,\n        command: Deposit | Hold,\n        refusal: DepositRefused | InsufficientFunds,\n        ctx: CommandContext,\n    ) -> HoldLost:\n        raise NotImplementedError  # TODO: translate the refusal\n";
     assert!(fresh.source.contains(callback), "{}", fresh.source);
     let without = fresh.source.replace(&format!("\n{callback}"), "");
@@ -1185,8 +1117,6 @@ fn test_a_policy_whose_target_cannot_refuse_has_no_refusal_callback() {
         &descriptors(UNREFUSED),
         UNREFUSED,
         &app("policy-order-inventory"),
-        &[],
-        &[],
     )
     .unwrap();
     for (suffix, gone) in [

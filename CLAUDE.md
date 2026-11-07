@@ -28,8 +28,16 @@ fetches it. `just check-submodules-clean` guards it against stray edits.
 
 The end-to-end fixtures under `crates/angzarr-build/tests/local/` and
 `crates/angzarr-codegen/tests/golden/app/` are workspaces of their own, with
-their own angzarr-embedded and router pins, moved with the family above;
-`tests/local.rs`'s three `#[ignore]`d tests build and run the first.
+their own angzarr-embedded and router pins, moved with the family above
+(the golden manifests' is `angzarr_codegen::ANGZARR_EMBEDDED_REV`).
+`tests/local.rs` builds the apps under `tests/local` with cargo, in one
+shared target directory: `buyin-app` and `kinds-app` (generated layer plus
+components with their bodies written; built and run), `blackjack-app` and
+`bare-app` (the blackjack example's protos, and a domain with no events: the
+generated layer plus the scaffold of the day, written there fresh and never
+committed, type-checked). They build the embedded runtime, so they are
+`#[ignore]`d from a plain `cargo test` and from mutation runs: `just test`
+runs them after the rest, `just test-slow` alone.
 
 ## Errors are localizable
 

@@ -1,8 +1,7 @@
 //! What the descriptor set declares, as the emitters need it: components,
 //! their inputs (commands and facts) and events, and every message and enum
 //! they reach. Every refusal of the protos happens here, so an emitter only
-//! writes; the scaffold's own checks (translate selections, the user's
-//! markup) are the scaffold's.
+//! writes; the scaffold's own checks (the user's markup) are the scaffold's.
 
 use std::collections::{BTreeMap, BTreeSet};
 

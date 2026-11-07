@@ -13,9 +13,15 @@ default:
 build:
     cargo build --workspace --all-targets
 
-# Run every test.
+# Run every test: the quick ones, then the slow ones (`test-slow`).
 test:
     cargo test --workspace
+    cargo test --workspace -- --ignored
+
+# The `#[ignore]`d tests alone: tests/local.rs builds the fixture apps against
+# angzarr-embedded and angzarr-router (a cold cache fetches and builds them).
+test-slow:
+    cargo test --workspace -- --ignored
 
 # `just test` runs every package's; this is the quick loop on one crate.
 # Arguments after a `--` go to the test binaries, as with cargo test: `just

@@ -7,8 +7,8 @@
 //!   `(event)`, `(component)` and the rest) breaking a rule of the
 //!   generated domain layer;
 //! - [`UseError`]: a use of the protos they cannot serve: a file, wire
-//!   path, translate selection or Python domain asked for, or a user's
-//!   file read back that does not match them;
+//!   path or Python domain asked for, or a user's file read back that does
+//!   not match them;
 //! - [`AppError`]: an application's host config or manifest
 //!   (`angzarr scaffold app`).
 //!

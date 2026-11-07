@@ -49,8 +49,7 @@ pub struct ScaffoldFile {
     /// callbacks its interface offers and never requires. Every other
     /// method of `source` is required.
     pub optional: Vec<String>,
-    /// The optional methods selected for it (`--translate`,
-    /// `--on-refused`), by name: each is in `source`, and is added to an
+    /// The optional methods selected for it, by name: each is in `source`, and is added to an
     /// existing file that lacks it.
     pub selected: Vec<String>,
 }
@@ -123,38 +122,18 @@ pub struct PinDrift {
     pub cli: String,
 }
 
-/// angzarr-cli's refusal switch (backlog OB-7), set to translate for one
-/// command of one policy, a selection checked against the protos
-/// ([`check_translate`]). It selects nothing now: a policy has one refusal
-/// callback over all of its target's refusals (decision 14.89), and the spec
-/// retires the switch (C-0623); the type stays until its callers do.
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Translate {
-    /// The policy's anchor message, e.g. `buyin.v1.BuyInWalletPolicy`.
-    pub policy: String,
-    /// A command of the policy's target, e.g. `buyin.v1.Hold`.
-    pub command: String,
-    /// A command or fact of the policy's source, e.g. `buyin.v1.HoldLost`.
-    pub fact: String,
-}
-
 /// The scaffold of every component declared in `files`: its
 /// implementation (`<component>_impl.rs`), the user's, of its generated
 /// interface; and the interface an earlier scaffold wrote beside it
 /// (`<component>.rs`), now the domain layer's, [`Owner::Obsolete`]. Every
 /// method is required, a policy's refusal callback too (decisions 14.89, 14.99),
-/// so each is stubbed; `translate`'s selections are checked against the
-/// protos.
+/// so each is stubbed.
 ///
 /// A policy is scaffolded when an aggregate or a process manager of the
 /// descriptor set owns each of its `input_domain` and `output_domain`.
-pub fn scaffold(
-    descriptor_set: &[u8],
-    files: &[&str],
-    translate: &[Translate],
-) -> Result<Vec<ScaffoldFile>, CodegenError> {
+pub fn scaffold(descriptor_set: &[u8], files: &[&str]) -> Result<Vec<ScaffoldFile>, CodegenError> {
     let components = model::components(descriptor_set, files, ALL_KINDS)?;
-    let pool = checked_pool(descriptor_set, translate)?;
+    let pool = model::pool_components(descriptor_set)?;
     let mut out = Vec::new();
     for component in &components {
         if component.kind == ComponentKind::Policy && !component.is_connected(&pool) {
@@ -178,51 +157,6 @@ pub fn scaffold(
         ));
     }
     Ok(crate::headed_files(out))
-}
-
-/// Every marked-up component of the descriptor set
-/// ([`model::pool_components`]), each of `translate`'s selections checked
-/// against them ([`check_translate`]).
-pub(crate) fn checked_pool(
-    descriptor_set: &[u8],
-    translate: &[Translate],
-) -> Result<Vec<Component>, CodegenError> {
-    let pool = model::pool_components(descriptor_set)?;
-    for selection in translate {
-        check_translate(&pool, selection)?;
-    }
-    Ok(pool)
-}
-
-/// `selection`'s policy is a policy, its command one its target decides,
-/// and its fact a fact its source ingests.
-fn check_translate(components: &[Component], selection: &Translate) -> Result<(), UseError> {
-    let policy = components
-        .iter()
-        .find(|c| c.kind == ComponentKind::Policy && c.anchor.full_name() == selection.policy)
-        .ok_or_else(|| UseError::TranslateUnknownPolicy {
-            policy: selection.policy.clone(),
-        })?;
-    let takes = owner(components, &policy.output_domain)
-        .and_then(|target| target.input(&selection.command))
-        .is_some_and(|input| !input.fact);
-    if !takes {
-        return Err(UseError::TranslateNotATargetCommand {
-            policy: selection.policy.clone(),
-            command: selection.command.clone(),
-        });
-    }
-    match owner(components, &policy.input_domain).and_then(|source| source.input(&selection.fact)) {
-        None => Err(UseError::TranslateNotASourceFact {
-            policy: selection.policy.clone(),
-            fact: selection.fact.clone(),
-        }),
-        Some(input) if !input.fact => Err(UseError::TranslateNotAFact {
-            policy: selection.policy.clone(),
-            fact: selection.fact.clone(),
-        }),
-        Some(_) => Ok(()),
-    }
 }
 
 /// One method of a component's interface: its name, receiver,

@@ -95,8 +95,8 @@ pub use python::{
     scaffold_python,
 };
 pub use scaffold::{
-    Completion, Existing, Notes, Owner, PinDrift, ScaffoldFile, Translate, adapters, complete,
-    markup_domain, register, register_only, scaffold, stand_ins,
+    Completion, Existing, Notes, Owner, PinDrift, ScaffoldFile, adapters, complete, markup_domain,
+    register, register_only, scaffold, stand_ins,
 };
 
 /// The modules of the prost types of `files`' packages, nested as the

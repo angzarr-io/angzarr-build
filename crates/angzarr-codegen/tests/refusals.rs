@@ -52,7 +52,7 @@ fn test_the_kinds_adapters_match_the_golden_file() {
 
 #[test]
 fn test_the_kinds_scaffold_matches_the_golden_files() {
-    for file in scaffold(&descriptors(&[KINDS]), &[KINDS], &[])
+    for file in scaffold(&descriptors(&[KINDS]), &[KINDS])
         .unwrap()
         .iter()
         .filter(|f| f.owner == angzarr_codegen::Owner::User)

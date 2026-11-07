@@ -30,7 +30,7 @@ fn player_app() -> PythonApp {
 /// blackjack protos are in the descriptor set (a policy and a projector
 /// name the player's events), not scaffolded.
 fn player() -> Vec<ScaffoldFile> {
-    scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &player_app(), &[], &[]).unwrap()
+    scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &player_app()).unwrap()
 }
 
 fn file<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
@@ -286,7 +286,7 @@ fn test_scaffold_python_refuses_a_message_named_as_a_reserved_name() {
         domain: "things".to_string(),
         ..player_app()
     };
-    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[], &[]);
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app);
     assert!(
         matches!(&refused, Err(CodegenError::Proto(ProtoError::ReservedName { message, name }))
             if message == "bad.v1.Context" && name == "Context"),
@@ -302,7 +302,7 @@ fn test_scaffold_python_refuses_a_message_named_bug() {
         domain: "things".to_string(),
         ..player_app()
     };
-    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app, &[], &[]);
+    let refused = scaffold_python(&descriptors(&[FILE]), &[FILE], &app);
     assert!(
         matches!(&refused, Err(CodegenError::Proto(ProtoError::ReservedName { message, name }))
             if message == "bad.v1.Bug" && name == "Bug"),
@@ -335,7 +335,7 @@ fn test_scaffold_python_refuses_a_domain_the_protos_do_not_declare() {
         ..player_app()
     };
     assert_eq!(
-        scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[], &[]),
+        scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app),
         Err(CodegenError::Use(UseError::PythonNoDomain {
             domain: "nowhere".to_string()
         }))
@@ -405,28 +405,6 @@ fn test_complete_adds_only_the_absent_required_methods_to_the_class() {
 #[test]
 fn test_complete_of_a_kept_class_reports_what_it_lacks() {
     let fresh = file(&player(), IMPL).clone();
-    let completion = complete(&fresh, USER_IMPL, Existing::Keep).unwrap();
-    assert_eq!(completion.completed, None);
-    assert_eq!(completion.notes.lacks, ["apply_move_decided"]);
-}
-
-/// `--on-refused` selected a domain's pass-through refusal handler, which
-/// the model retires (a policy translates the refusal itself): it names
-/// nothing now, so a domain's implementation is created with no handler it
-/// names and completing an existing one adds none.
-#[test]
-fn test_on_refused_selects_no_handler_of_a_domain() {
-    let selected = scaffold_python(
-        &descriptors(BLACKJACK),
-        &[PLAYER],
-        &player_app(),
-        &[],
-        &["io.angzarr.examples.v1.Hit".to_string()],
-    )
-    .unwrap();
-    let fresh = file(&selected, IMPL).clone();
-    assert!(fresh.selected.is_empty(), "{:?}", fresh.selected);
-    assert_eq!(fresh.source, file(&player(), IMPL).source);
     let completion = complete(&fresh, USER_IMPL, Existing::Keep).unwrap();
     assert_eq!(completion.completed, None);
     assert_eq!(completion.notes.lacks, ["apply_move_decided"]);
@@ -660,8 +638,6 @@ fn basket() -> Vec<ScaffoldFile> {
         &descriptors(BASKET),
         &["pyshop/v1/basket.proto"],
         &basket_app(),
-        &[],
-        &[],
     )
     .unwrap()
 }
@@ -802,14 +778,7 @@ fn test_scaffold_python_scaffolds_a_command_with_a_typed_refusal() {
         domain: "wallet".to_string(),
         ..basket_app()
     };
-    let files = scaffold_python(
-        &descriptors(BUYIN),
-        &["buyin/v1/wallet.proto"],
-        &app,
-        &[],
-        &[],
-    )
-    .unwrap();
+    let files = scaffold_python(&descriptors(BUYIN), &["buyin/v1/wallet.proto"], &app).unwrap();
     let logic = &file(&files, "src/angzarr_wallet/_gen/logic.py").source;
     assert!(
         logic.contains(") -> list[Held] | InsufficientFunds: ..."),

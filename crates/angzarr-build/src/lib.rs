@@ -23,7 +23,7 @@ use angzarr_diagnostic::{Arg, Diagnostic, catalog, code};
 
 pub use angzarr_codegen::{
     ANGZARR_BUILD_GIT, ANGZARR_EMBEDDED_REV, AppLint, AppSeed, DomainCrate, Existing, Exposure,
-    Linted, Notes, PinDrift, ProtoInput, PythonApp, RetrySeed, Translate, Warning,
+    Linted, Notes, PinDrift, ProtoInput, PythonApp, RetrySeed, Warning,
 };
 
 /// This crate's en-US messages: its package name, and its catalog, each id
@@ -365,9 +365,8 @@ pub enum Scaffolded {
 }
 
 /// The markup scaffold of every component in `protos`, one file each
-/// under `src` (see `angzarr_codegen::scaffold`), `translate`'s selections
-/// checked against them (every Rust method is required, a policy's refusal
-/// callbacks too, so nothing is optional to select). An absent file is
+/// under `src` (see `angzarr_codegen::scaffold`; every Rust method is
+/// required, a policy's refusal callback too). An absent file is
 /// written; an existing one is the user's, kept, or completed with
 /// `Existing::Complete`. Every file is decided before any is written, so a
 /// refusal writes none.
@@ -375,33 +374,26 @@ pub fn scaffold_into(
     src: &Path,
     protos: &[&str],
     includes: &[&str],
-    translate: &[Translate],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
-    let files =
-        angzarr_codegen::scaffold(&bytes, protos, translate).map_err(BuildError::Codegen)?;
+    let files = angzarr_codegen::scaffold(&bytes, protos).map_err(BuildError::Codegen)?;
     write_scaffold(src, files, existing)
 }
 
 /// The uv project of one Python domain (see
 /// `angzarr_codegen::scaffold_python`) under `root`, as [`scaffold_into`]
-/// writes a Rust scaffold: a user's file once, a generated file every time,
-/// `translate` being the refusal switch's translate selections and
-/// `on_refused` the refused commands whose callbacks are written (by full
-/// name).
+/// writes a Rust scaffold: a user's file once, a generated file every time.
 pub fn scaffold_python_into(
     root: &Path,
     protos: &[&str],
     includes: &[&str],
     app: &PythonApp,
-    translate: &[Translate],
-    on_refused: &[String],
     existing: Existing,
 ) -> Result<Vec<Scaffolded>, BuildError> {
     let bytes = scaffold_descriptors(protos, includes)?;
-    let files = angzarr_codegen::scaffold_python(&bytes, protos, app, translate, on_refused)
-        .map_err(BuildError::Codegen)?;
+    let files =
+        angzarr_codegen::scaffold_python(&bytes, protos, app).map_err(BuildError::Codegen)?;
     write_scaffold(root, files, existing)
 }
 

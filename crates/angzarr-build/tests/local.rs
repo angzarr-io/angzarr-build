@@ -116,7 +116,7 @@ fn assert_complete_scaffold(app: &Path, protos: &[&str], components: &[&str], in
     for file in components {
         std::fs::copy(app.join("src").join(file), src.join(file)).unwrap();
     }
-    let mut done = scaffold_into(&src, protos, includes, &[], Existing::Complete).unwrap();
+    let mut done = scaffold_into(&src, protos, includes, Existing::Complete).unwrap();
     done.sort_by_key(|d| format!("{d:?}"));
     // Each is kept as it is, lacking nothing: every method is required
     // (decision 14.76), so none is optional.
@@ -260,7 +260,7 @@ fn assert_scaffold_type_checks(
             std::fs::remove_file(path).unwrap();
         }
     }
-    let written = scaffold_into(&src, protos, includes, &[], Existing::Complete).unwrap();
+    let written = scaffold_into(&src, protos, includes, Existing::Complete).unwrap();
     let mut files: Vec<String> = written
         .iter()
         .filter_map(|d| match d {

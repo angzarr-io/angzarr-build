@@ -42,7 +42,7 @@ fn empty_dir() -> TestDir {
 }
 
 fn scaffold(src: &Path, existing: Existing) -> Vec<Scaffolded> {
-    let mut done = scaffold_into(src, BUYIN, &[&fixtures()], &[], existing).unwrap();
+    let mut done = scaffold_into(src, BUYIN, &[&fixtures()], existing).unwrap();
     done.sort_by_key(|d| format!("{d:?}"));
     done
 }
@@ -159,7 +159,7 @@ fn test_scaffold_into_with_complete_refuses_an_input_the_proto_contradicts() {
         .unwrap()
         .replace("_fact: &HoldLost", "_cmd: &HoldLost");
     std::fs::write(&path, &mine).unwrap();
-    let error = scaffold_into(&src, BUYIN, &[&fixtures()], &[], Existing::Complete)
+    let error = scaffold_into(&src, BUYIN, &[&fixtures()], Existing::Complete)
         .expect_err("a mismatched marker");
     assert!(
         matches!(
@@ -273,8 +273,6 @@ fn player(root: &Path) -> Result<Vec<Scaffolded>, BuildError> {
         &["io/angzarr/examples/v1/player.proto"],
         &[&spec()],
         &app,
-        &[],
-        &[],
         Existing::Keep,
     )
 }

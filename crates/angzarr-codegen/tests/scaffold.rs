@@ -12,16 +12,16 @@
 mod common;
 
 use angzarr_codegen::{
-    CodegenError, Existing, Notes, Owner, ScaffoldFile, Translate, UseError, adapters, complete,
+    CodegenError, Existing, Notes, Owner, ScaffoldFile, UseError, adapters, complete,
     markup_domain, scaffold,
 };
 use common::*;
 
 const GOLDEN: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden");
 
-/// The buy-in project's scaffold, with `translate`.
-fn buyin(translate: &[Translate]) -> Vec<ScaffoldFile> {
-    scaffold(&descriptors(BUYIN), BUYIN, translate).unwrap()
+/// The buy-in project's scaffold.
+fn buyin() -> Vec<ScaffoldFile> {
+    scaffold(&descriptors(BUYIN), BUYIN).unwrap()
 }
 
 /// The domain layer of `files`' one package, its interfaces in it.
@@ -46,16 +46,6 @@ fn file_at<'a>(files: &'a [ScaffoldFile], path: &str) -> &'a ScaffoldFile {
         .unwrap_or_else(|| panic!("no {path}: {files:#?}"))
 }
 
-/// The refusal switch set to translate for BuyInWallet's Hold, handing the
-/// buy-in its own HoldLost.
-fn translate_hold() -> Translate {
-    Translate {
-        policy: "buyin.v1.BuyInWalletPolicy".to_string(),
-        command: "buyin.v1.Hold".to_string(),
-        fact: "buyin.v1.HoldLost".to_string(),
-    }
-}
-
 /// `actual`, against the golden file at `path` under `tests/golden`;
 /// `ANGZARR_BLESS=1` rewrites the golden file instead.
 fn golden(path: &str, actual: &str) {
@@ -70,7 +60,7 @@ fn golden(path: &str, actual: &str) {
 
 #[test]
 fn test_scaffold_writes_an_implementation_per_component_and_reports_the_old_interface() {
-    let mut placed: Vec<(String, String, Owner)> = buyin(&[])
+    let mut placed: Vec<(String, String, Owner)> = buyin()
         .into_iter()
         .map(|f| (f.component, f.path, f.owner))
         .collect();
@@ -109,7 +99,7 @@ fn test_scaffold_writes_an_implementation_per_component_and_reports_the_old_inte
 
 #[test]
 fn test_scaffold_matches_the_golden_files() {
-    for f in buyin(&[]).iter().filter(|f| f.owner == Owner::User) {
+    for f in buyin().iter().filter(|f| f.owner == Owner::User) {
         golden(&format!("rust/buyin/{}", f.path), &f.source);
     }
 }
@@ -148,7 +138,7 @@ fn test_the_interfaces_are_the_domain_layers() {
 /// runtime's crates, nor its markup.
 #[test]
 fn test_the_users_files_import_nothing_from_the_runtime_directly() {
-    for f in buyin(&[translate_hold()]) {
+    for f in buyin() {
         let code: Vec<&str> = f
             .source
             .lines()
@@ -192,10 +182,7 @@ fn policy_trait<'a>(source: &'a str, name: &str) -> &'a str {
 
 #[test]
 fn test_every_implementation_body_is_todo_and_every_parameter_unused() {
-    for f in buyin(&[translate_hold()])
-        .iter()
-        .filter(|f| f.path.ends_with("_impl.rs"))
-    {
+    for f in buyin().iter().filter(|f| f.path.ends_with("_impl.rs")) {
         let file = syn::parse_file(&f.source).unwrap();
         let imp = file
             .items
@@ -304,7 +291,7 @@ fn test_the_refusal_choice_has_one_arm_per_refusal_message_of_the_target() {
 /// `todo!()`: it is required, never optional (decisions 14.89, 14.99).
 #[test]
 fn test_scaffold_writes_the_one_refused_method_of_the_policy() {
-    let files = buyin(&[]);
+    let files = buyin();
     let implementation = file_at(&files, "buy_in_wallet_policy_impl.rs");
     let source = &implementation.source;
     assert!(
@@ -335,7 +322,7 @@ fn test_a_target_that_cannot_refuse_has_no_refusal_choice_or_callback() {
     let adapters = adapters(&descriptors(UNREFUSED), UNREFUSED, &[]).unwrap();
     assert!(!adapters.contains("on_refused"), "{adapters}");
     assert!(!adapters.contains("Refused"), "{adapters}");
-    let files = scaffold(&descriptors(UNREFUSED), UNREFUSED, &[]).unwrap();
+    let files = scaffold(&descriptors(UNREFUSED), UNREFUSED).unwrap();
     let implementation = &file_at(&files, "order_to_inventory_policy_impl.rs").source;
     assert!(!implementation.contains("fn refused("), "{implementation}");
     // The contrast: the buy-in policies' targets refuse.
@@ -347,65 +334,6 @@ fn adapters_of_buyin() -> String {
     adapters(&descriptors(BUYIN), BUYIN, &[]).unwrap()
 }
 
-#[test]
-fn test_scaffold_refuses_translate_for_an_unknown_policy() {
-    let selection = Translate {
-        policy: "buyin.v1.Nowhere".to_string(),
-        ..translate_hold()
-    };
-    assert_eq!(
-        scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::Use(UseError::TranslateUnknownPolicy {
-            policy: "buyin.v1.Nowhere".to_string(),
-        }))
-    );
-}
-
-#[test]
-fn test_scaffold_refuses_translate_for_a_command_its_target_does_not_take() {
-    let selection = Translate {
-        command: "buyin.v1.StartBuyIn".to_string(),
-        ..translate_hold()
-    };
-    assert_eq!(
-        scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::Use(UseError::TranslateNotATargetCommand {
-            policy: "buyin.v1.BuyInWalletPolicy".to_string(),
-            command: "buyin.v1.StartBuyIn".to_string(),
-        }))
-    );
-}
-
-#[test]
-fn test_scaffold_refuses_translate_to_a_fact_its_source_does_not_take() {
-    let selection = Translate {
-        fact: "buyin.v1.Deposit".to_string(),
-        ..translate_hold()
-    };
-    assert_eq!(
-        scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::Use(UseError::TranslateNotASourceFact {
-            policy: "buyin.v1.BuyInWalletPolicy".to_string(),
-            fact: "buyin.v1.Deposit".to_string(),
-        }))
-    );
-}
-
-#[test]
-fn test_scaffold_refuses_translate_to_a_command_of_its_source() {
-    let selection = Translate {
-        fact: "buyin.v1.RecordHeld".to_string(),
-        ..translate_hold()
-    };
-    assert_eq!(
-        scaffold(&descriptors(BUYIN), BUYIN, &[selection]),
-        Err(CodegenError::Use(UseError::TranslateNotAFact {
-            policy: "buyin.v1.BuyInWalletPolicy".to_string(),
-            fact: "buyin.v1.RecordHeld".to_string(),
-        }))
-    );
-}
-
 // --------------------------------------------------------------- blackjack
 
 #[test]
@@ -414,7 +342,7 @@ fn test_an_interface_of_one_file_finds_its_policies_owners_and_events_elsewhere(
     // the policies' domains, and the events they react to, are declared in
     // other files, as the domain layer's interfaces are.
     const POLICIES: &str = "io/angzarr/examples/v1/policies.proto";
-    let files = scaffold(&descriptors(BLACKJACK), &[POLICIES], &[]).unwrap();
+    let files = scaffold(&descriptors(BLACKJACK), &[POLICIES]).unwrap();
     file_at(&files, "player_table_policy_impl.rs");
     let source = layer(BLACKJACK, "io.angzarr.examples.v1");
     let player_table = &source[source.find("pub trait PlayerTablePolicy").unwrap()..];
@@ -446,7 +374,7 @@ fn test_a_decision_returns_a_list_of_its_events() {
             "{expected}:\n{table}"
         );
     }
-    let files = scaffold(&descriptors(BLACKJACK), &[TABLE], &[]).unwrap();
+    let files = scaffold(&descriptors(BLACKJACK), &[TABLE]).unwrap();
     let state = &file_at(&files, "table_state_impl.rs").source;
     assert!(
         state.contains("pub state: crate::wire::TableState,"),
@@ -550,7 +478,7 @@ fn test_a_refused_method_takes_the_choice_of_the_targets_refusals() {
         })
         .expect("the audit state's refusal choice");
     assert_eq!(arms, ["PostRefused", "Unreasoned"]);
-    let files = scaffold(&descriptors(KINDS), KINDS, &[]).unwrap();
+    let files = scaffold(&descriptors(KINDS), KINDS).unwrap();
     let source = &file_at(&files, "ledger_audit_policy_impl.rs").source;
     assert!(source.contains("_refusal: AuditStateRefusal,"), "{source}");
 }
@@ -840,7 +768,7 @@ impl WalletState for WalletStateImpl {
 
 #[test]
 fn test_complete_adds_only_the_absent_required_methods_to_the_implementation() {
-    let files = buyin(&[]);
+    let files = buyin();
     let completion = complete(
         file_at(&files, "wallet_state_impl.rs"),
         USER_WALLET_IMPL,
@@ -867,7 +795,7 @@ fn test_complete_adds_only_the_absent_required_methods_to_the_implementation() {
 /// has for a message the protos no longer declare.
 #[test]
 fn test_complete_of_a_kept_file_reports_what_it_lacks_and_what_is_obsolete() {
-    let files = buyin(&[]);
+    let files = buyin();
     let completion = complete(
         file_at(&files, "wallet_state_impl.rs"),
         USER_WALLET_IMPL,
@@ -890,7 +818,7 @@ fn test_complete_of_a_kept_file_reports_what_it_lacks_and_what_is_obsolete() {
 /// a kept file reports it.
 #[test]
 fn test_complete_adds_a_missing_refused_method() {
-    let plain = buyin(&[]);
+    let plain = buyin();
     let path = "buy_in_wallet_policy_impl.rs";
     let fresh = file_at(&plain, path);
     let start = fresh.source.find("    fn refused(").unwrap();
@@ -909,7 +837,7 @@ fn test_complete_adds_a_missing_refused_method() {
 
 #[test]
 fn test_complete_refuses_a_command_taken_as_a_fact() {
-    let files = buyin(&[]);
+    let files = buyin();
     let fresh = file_at(&files, "buy_in_state_impl.rs");
     let as_fact = fresh
         .source
@@ -928,7 +856,7 @@ fn test_complete_refuses_a_command_taken_as_a_fact() {
 
 #[test]
 fn test_complete_refuses_a_file_without_the_components_impl() {
-    let files = buyin(&[]);
+    let files = buyin();
     assert_eq!(
         complete(
             file_at(&files, "wallet_state_impl.rs"),
@@ -944,7 +872,7 @@ fn test_complete_refuses_a_file_without_the_components_impl() {
 
 #[test]
 fn test_complete_inserts_before_a_closing_brace_that_ends_a_line() {
-    let files = buyin(&[]);
+    let files = buyin();
     let user = USER_WALLET_IMPL.replace(
         "        self.state.balance += event.cents;\n    }\n}\n",
         "        self.state.balance += event.cents;\n    } }\n",
@@ -969,7 +897,7 @@ fn test_complete_inserts_before_a_closing_brace_that_ends_a_line() {
 
 #[test]
 fn test_complete_takes_a_method_naming_its_event_otherwise_as_present() {
-    let files = buyin(&[]);
+    let files = buyin();
     let fresh = file_at(&files, "wallet_state_impl.rs");
     let renamed = fresh
         .source

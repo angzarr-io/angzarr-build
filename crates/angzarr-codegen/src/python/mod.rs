@@ -52,7 +52,7 @@ use prost_reflect::{EnumDescriptor, Kind, MessageDescriptor};
 use crate::common::{Arm, handed_refusals, local_name, snake, wire_name};
 use crate::error::{CodegenError, ProtoError, UseError};
 use crate::model::{self, ALL_KINDS, Component, ComponentKind, Input};
-use crate::scaffold::{Owner, ScaffoldFile, Translate};
+use crate::scaffold::{Owner, ScaffoldFile};
 use dispatch::dispatch;
 use domain::domain_py;
 use logic::{implementation, interface};
@@ -181,10 +181,8 @@ pub fn scaffold_python(
     descriptor_set: &[u8],
     files: &[&str],
     app: &PythonApp,
-    translate: &[Translate],
-    _on_refused: &[String],
 ) -> Result<Vec<ScaffoldFile>, CodegenError> {
-    let pool = crate::scaffold::checked_pool(descriptor_set, translate)?;
+    let pool = model::pool_components(descriptor_set)?;
     let components: Vec<Component> = model::components(descriptor_set, files, ALL_KINDS)?
         .into_iter()
         .filter(|c| c.domain == app.domain || c.component_name == app.domain)

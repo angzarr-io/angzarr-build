@@ -1,7 +1,7 @@
 //! A use of the protos they cannot serve: what a caller asks of them (a
-//! file, the wire path of a package's prost types, a translate selection,
-//! the Python domain), or a user's file read back to complete that does
-//! not match them. Each names what was asked for, or the user's file.
+//! file, the wire path of a package's prost types, the Python domain), or a
+//! user's file read back to complete that does not match them. Each names
+//! what was asked for, or the user's file.
 
 use std::fmt;
 
@@ -15,16 +15,6 @@ pub enum UseError {
     FileNotInSet { file: String },
     /// A package with domain types but no Rust path for its prost types.
     NoWirePath { package: String },
-    /// A translate selection names a policy no message declares.
-    TranslateUnknownPolicy { policy: String },
-    /// A translate selection names a command that is not one of the
-    /// policy's target's.
-    TranslateNotATargetCommand { policy: String, command: String },
-    /// A translate selection's fact is not an input of the policy's source.
-    TranslateNotASourceFact { policy: String, fact: String },
-    /// A translate selection's fact is an input of the policy's source, but
-    /// a command, not a fact.
-    TranslateNotAFact { policy: String, fact: String },
     /// The protos declare no component of the domain, or of the name,
     /// asked for.
     PythonNoDomain { domain: String },
@@ -55,14 +45,6 @@ impl Diagnostic for UseError {
         match self {
             UseError::FileNotInSet { .. } => code!("file-not-in-set"),
             UseError::NoWirePath { .. } => code!("no-wire-path"),
-            UseError::TranslateUnknownPolicy { .. } => code!("translate-unknown-policy"),
-            UseError::TranslateNotATargetCommand { .. } => {
-                code!("translate-not-a-target-command")
-            }
-            UseError::TranslateNotASourceFact { .. } => {
-                code!("translate-not-a-source-fact")
-            }
-            UseError::TranslateNotAFact { .. } => code!("translate-not-a-fact"),
             UseError::PythonNoDomain { .. } => code!("python-no-domain"),
             UseError::ScaffoldImplNotFound { .. } => code!("scaffold-impl-not-found"),
             UseError::InputMismatch { .. } => code!("input-mismatch"),
@@ -74,11 +56,6 @@ impl Diagnostic for UseError {
         match self {
             E::FileNotInSet { file } => texts![file],
             E::NoWirePath { package } => texts![package],
-            E::TranslateUnknownPolicy { policy } => texts![policy],
-            E::TranslateNotATargetCommand { policy, command } => texts![policy, command],
-            E::TranslateNotASourceFact { policy, fact } | E::TranslateNotAFact { policy, fact } => {
-                texts![policy, fact]
-            }
             E::PythonNoDomain { domain } => texts![domain],
             E::ScaffoldImplNotFound { path, component } => texts![path, component],
             E::InputMismatch {
@@ -98,21 +75,6 @@ pub(super) fn samples() -> Vec<UseError> {
         E::FileNotInSet { file: text("file") },
         E::NoWirePath {
             package: text("package"),
-        },
-        E::TranslateUnknownPolicy {
-            policy: text("policy"),
-        },
-        E::TranslateNotATargetCommand {
-            policy: text("policy"),
-            command: text("command"),
-        },
-        E::TranslateNotASourceFact {
-            policy: text("policy"),
-            fact: text("fact"),
-        },
-        E::TranslateNotAFact {
-            policy: text("policy"),
-            fact: text("fact"),
         },
         E::PythonNoDomain {
             domain: text("domain"),

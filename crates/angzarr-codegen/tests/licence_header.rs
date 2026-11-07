@@ -43,7 +43,7 @@ fn the_header_is_the_rulings_line() {
 
 #[test]
 fn every_rust_scaffold_file_is_headed() {
-    assert_headed(&scaffold(&descriptors(BUYIN), BUYIN, &[]).unwrap());
+    assert_headed(&scaffold(&descriptors(BUYIN), BUYIN).unwrap());
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn every_python_scaffold_file_is_headed() {
         },
         rules_version: "0.1.0".to_string(),
     };
-    assert_headed(&scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app, &[], &[]).unwrap());
+    assert_headed(&scaffold_python(&descriptors(BLACKJACK), &[PLAYER], &app).unwrap());
 }
 
 #[test]
