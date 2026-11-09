@@ -14,15 +14,15 @@ angzarr-build = { path = "crates/angzarr-build" }
 angzarr-codegen = { path = "crates/angzarr-codegen" }
 # angzarr core's shared crates, pinned by one full commit; bumps are
 # deliberate commits, moved together with the embedded pin below.
-angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "3311a3ae4f42d70c498581ea738449534048dad5" }
-angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "3311a3ae4f42d70c498581ea738449534048dad5" }
+angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "35b29dea0757fbb47d7b08be1d4c2b79e8369481" }
+angzarr-proto = { version = "0.1", git = "https://github.com/angzarr-io/angzarr", rev = "35b29dea0757fbb47d7b08be1d4c2b79e8369481" }
 # The tests' scratch directories (std alone), a dev-dependency only.
-angzarr-test-dir = { git = "https://github.com/angzarr-io/angzarr", rev = "3311a3ae4f42d70c498581ea738449534048dad5" }
+angzarr-test-dir = { git = "https://github.com/angzarr-io/angzarr", rev = "35b29dea0757fbb47d7b08be1d4c2b79e8369481" }
 # Rendering a diagnostic through its Fluent catalogs, a dev-dependency only:
 # the tests hold each crate's catalog to a real Fluent formatter.
-angzarr-presentation = { git = "https://github.com/angzarr-io/angzarr", rev = "3311a3ae4f42d70c498581ea738449534048dad5" }
+angzarr-presentation = { git = "https://github.com/angzarr-io/angzarr", rev = "35b29dea0757fbb47d7b08be1d4c2b79e8369481" }
 # angzarr-embedded is pinned by full commit; bumps are deliberate commits.
-angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ecfaaf65638781d913df417debcbde07a4f51a99" }
+angzarr-embedded-host-config = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ba73fabeb8a58c48892e3417c5ab9e2dd7228740" }
 serde = { version = "1", features = ["derive"] }
 
 # Every crate opts in with `[lints] workspace = true`.

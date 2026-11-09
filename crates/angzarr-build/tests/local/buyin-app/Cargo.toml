@@ -17,10 +17,10 @@ publish = false
 # it names, so the app has one router and one angzarr-proto (angzarr core's,
 # at the rev angzarr-embedded and angzarr-cli both pin).
 [dependencies]
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ecfaaf65638781d913df417debcbde07a4f51a99" }
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ecfaaf65638781d913df417debcbde07a4f51a99" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ecfaaf65638781d913df417debcbde07a4f51a99" }
-angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "9d22e8b7a0fdda0af615f47f6f6b99750c81ff46" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ba73fabeb8a58c48892e3417c5ab9e2dd7228740" }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ba73fabeb8a58c48892e3417c5ab9e2dd7228740" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr-embedded", rev = "ba73fabeb8a58c48892e3417c5ab9e2dd7228740" }
+angzarr-router = { git = "https://github.com/angzarr-io/angzarr-router", rev = "bc729edcbc2cd825299e3f789df66f6e6df0c565" }
 prost = "0.14"
 # The App is async, on the caller's runtime, which is tokio's
 # (angzarr-embedded-host), already in the graph through it.
